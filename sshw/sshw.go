@@ -4,17 +4,18 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"golang.org/x/crypto/ssh"
 	"os"
 	"os/user"
 	"path"
 	"runtime"
-	"sshw"
-	"sshw/auth"
-	"sshw/scp"
 	"strings"
 
+	"mysshw"
+	"mysshw/auth"
+	"mysshw/scp"
+
 	"github.com/manifoldco/promptui"
+	"golang.org/x/crypto/ssh"
 )
 
 const prev = "-parent-"
@@ -30,7 +31,7 @@ var (
 	U                = flag.Bool("u", false, " ✨ Updata sshw config '(~/|./).sshw(.yaml|.yml)' ")
 	Z                = flag.Bool("z", false, " ✨ Download sshw config '(~/|./).sshw(.yaml|.yml)' ")
 
-	log = sshw.GetLogger()
+	log = mysshw.GetLogger()
 
 	templates = &promptui.SelectTemplates{
 		Label:    "✨ {{ . | green}}",
@@ -39,7 +40,7 @@ var (
 	}
 )
 
-func findAlias(nodes []*sshw.Node, nodeAlias string) *sshw.Node {
+func findAlias(nodes []*mysshw.Node, nodeAlias string) *mysshw.Node {
 	for _, node := range nodes {
 		if node.Alias == nodeAlias {
 			return node
@@ -51,11 +52,11 @@ func findAlias(nodes []*sshw.Node, nodeAlias string) *sshw.Node {
 	return nil
 }
 
-func newScpClient() (scp.Client, error){
-	scpNode := &sshw.Node{
-		User: "root",
-		Host: "hwc.7y2.org",
-		Port: 65535,
+func newScpClient() (scp.Client, error) {
+	scpNode := &mysshw.Node{
+		User:     "root",
+		Host:     "hwc.7y2.org",
+		Port:     65535,
 		Password: "Kevin@0412",
 	}
 	cfg, _ := auth.PasswordKey(scpNode.User, scpNode.Password, ssh.InsecureIgnoreHostKey())
@@ -90,13 +91,13 @@ func main() {
 	}
 
 	if *S {
-		err := sshw.LoadSshConfig()
+		err := mysshw.LoadSshConfig()
 		if err != nil {
 			log.Error("load ssh config error", err)
 			os.Exit(1)
 		}
 	} else {
-		err := sshw.LoadConfig()
+		err := mysshw.LoadConfig()
 		if err != nil {
 			log.Error("load config error", err)
 			os.Exit(1)
@@ -110,8 +111,8 @@ func main() {
 	localPath := path.Join(u.HomeDir, ".sshw.yaml")
 	remotePath := "/data/backup/mysshw/sshw.yaml"
 	if *U {
-		fmt.Println("sshw:: Use Upload Local Config Remote Server!! Bigen... ")
-		c, _ := sshw.LoadConfigBytes(localPath)
+		fmt.Println("mysshw:: Use Upload Local Config Remote Server!! Bigen... ")
+		c, _ := mysshw.LoadConfigBytes(localPath)
 		err := scp.CopyFile(bytes.NewReader(c), remotePath, "0644")
 		if err != nil {
 			log.Errorf("Error while copying file: %s", err)
@@ -142,25 +143,25 @@ func main() {
 	// login by alias
 	if len(os.Args) > 1 {
 		var nodeAlias = os.Args[1]
-		var nodes = sshw.GetConfig()
+		var nodes = mysshw.GetConfig()
 		var node = findAlias(nodes, nodeAlias)
 		if node != nil {
-			client := sshw.NewClient(node)
+			client := mysshw.NewClient(node)
 			client.Login()
 			return
 		}
 	}
 
-	node := choose(nil, sshw.GetConfig())
+	node := choose(nil, mysshw.GetConfig())
 	if node == nil {
 		return
 	}
 
-	client := sshw.NewClient(node)
+	client := mysshw.NewClient(node)
 	client.Login()
 }
 
-func choose(parent, trees []*sshw.Node) *sshw.Node {
+func choose(parent, trees []*mysshw.Node) *mysshw.Node {
 	prompt := promptui.Select{
 		Label:        "select host",
 		Items:        trees,
@@ -196,15 +197,15 @@ func choose(parent, trees []*sshw.Node) *sshw.Node {
 	if len(node.Children) > 0 {
 		first := node.Children[0]
 		if first.Name != prev {
-			first = &sshw.Node{Name: prev}
-			node.Children = append(node.Children[:0], append([]*sshw.Node{first}, node.Children...)...)
+			first = &mysshw.Node{Name: prev}
+			node.Children = append(node.Children[:0], append([]*mysshw.Node{first}, node.Children...)...)
 		}
 		return choose(trees, node.Children)
 	}
 
 	if node.Name == prev {
 		if parent == nil {
-			return choose(nil, sshw.GetConfig())
+			return choose(nil, mysshw.GetConfig())
 		}
 		return choose(nil, parent)
 	}
