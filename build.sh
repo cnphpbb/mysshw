@@ -7,9 +7,10 @@ CurrentVersion=`date "+%Y%m%d"`
 Project=sshw
 BuildTime=`date "+%Y-%m-%d %H:%M:%S"`
 GoVersion=`go version`
-
-Path=${Project}/sshw
 GitCommit=$(git rev-parse --short=9 HEAD || echo unsupported)
+
+
+#Path=${Project}/sshw
 
 go build -o ./build/$Project \
 -ldflags \
