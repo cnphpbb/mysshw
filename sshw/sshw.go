@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"golang.org/x/crypto/ssh"
 	"os"
+	"os/user"
+	"path"
 	"runtime"
+	"sshw"
 	"sshw/auth"
 	"sshw/scp"
 	"strings"
-
-	"sshw"
 
 	"github.com/manifoldco/promptui"
 )
@@ -99,14 +100,33 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	// new function
+
+	scp, _ := newScpClient()
+	defer scp.Close()
+	u, _ := user.Current()
+	local := path.Join(u.HomeDir, ".sshw.yaml")
 
 	if *U {
-		fmt.Println("sshw:: Use Upload Local Config Remote Server!! ")
+		fmt.Println("sshw:: Use Upload Local Config Remote Server!! Bigen... ")
+
+		err := scp.Upload(local, "/data/backup/mysshw/sshw.yaml")
+		if err != nil {
+			log.Errorf("Error while copying file: %s", err)
+			os.Exit(1)
+		}
+
+		fmt.Println("sshw:: Use Upload Local Config Remote Server!! End... ")
 		return
 	}
 
 	if *Z {
-		fmt.Println("sshw:: Use Remote Config Download Local!! ")
+		fmt.Println("sshw:: Use Remote Config Download Local!!  Bigen... ")
+		err := scp.Download("/data/backup/mysshw/sshw.yaml", local)
+		if err != nil {
+			log.Errorf("Error Copy failed from remote: %s", err)
+			os.Exit(1)
+		}
 		return
 	}
 
