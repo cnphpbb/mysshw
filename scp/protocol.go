@@ -11,166 +11,118 @@ package scp
 import (
 	"bufio"
 	"errors"
-	"fmt"
 	"io"
-	"os"
+	"strconv"
+	"strings"
 )
 
-type RespType = uint8
+type ResponseType = uint8
 
 const (
-	Ok      RespType = 0
-	Warning RespType = 1
-	Error   RespType = 2
-	StreamC RespType = 'C'
-	StreamD RespType = 'D'
-	StreamE RespType = 'E'
+	Ok      ResponseType = 0
+	Warning ResponseType = 1
+	Error   ResponseType = 2
 )
 
-type Msg string
+const buffSize = 1024 * 256
 
-func (m Msg) String() string {
-	return string(m)
+// There are tree types of responses that the remote can send back:
+// ok, warning and error
+//
+// The difference between warning and error is that the connection is not closed by the remote,
+// however, a warning can indicate a file transfer failure (such as invalid destination directory)
+// and such be handled as such.
+//
+// All responses except for the `Ok` type always have a message (although these can be empty)
+//
+// The remote sends a confirmation after every SCP command, because a failure can occur after every
+// command, the response should be read and checked after sending them.
+type Response struct {
+	Type    ResponseType
+	Message string
 }
 
-func (m Msg) FileInfo() (mode os.FileMode, size int64, filename string, err error) {
-	_, err = fmt.Sscanf(string(m), "%04o %d %s", &mode, &size, &filename)
-	return
-}
-
-type Resp struct {
-	Type RespType
-	Msg  Msg
-}
-
-func ReadResp(reader io.Reader) (*Resp, error) {
+// Reads from the given reader (assuming it is the output of the remote) and parses it into a Response structure
+func ParseResponse(reader io.Reader) (Response, error) {
 	buffer := make([]uint8, 1)
 	_, err := reader.Read(buffer)
-	if err != nil && err != io.EOF {
-		return &Resp{}, err
-	}
-	msgType := buffer[0]
-	msg := ""
-	switch msgType {
-	case Ok:
-	case Warning:
-	case Error:
-	case StreamC:
-	case StreamD:
-	case StreamE:
-	default:
-		return nil, errors.New("invalid protocol " + string(msgType))
-	}
-	if msgType > Ok {
-		rd := bufio.NewReader(reader)
-		msg, err = rd.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				return &Resp{}, nil
-			}
-			return nil, err
-		}
-		msg = msg[:len(msg)-1]
-	}
-
-	return &Resp{Type: msgType, Msg: Msg(msg)}, nil
-}
-
-func (rsp *Resp) IsOk() bool {
-	return rsp.Type == Ok
-}
-
-func (rsp *Resp) IsWarning() bool {
-	return rsp.Type == Warning
-}
-
-func (rsp *Resp) IsError() bool {
-	return rsp.Type == Error
-}
-
-func (rsp *Resp) IsFailure() bool {
-	return rsp.Type == 1 || rsp.Type == 2
-}
-
-func (rsp *Resp) GetMessage() Msg {
-	return rsp.Msg
-}
-
-func (rsp *Resp) IsFile() bool {
-	return rsp.Type == StreamC
-}
-
-func (rsp *Resp) IsDir() bool {
-	return rsp.Type == StreamD
-}
-
-func (rsp *Resp) IsEndDir() bool {
-	return rsp.Type == StreamE
-}
-
-func (rsp *Resp) Write(w io.Writer) error {
-	_, err := fmt.Fprint(w, fmt.Sprintf("%s%s", string(rsp.Type), rsp.Msg))
 	if err != nil {
-		return err
+		return Response{}, err
 	}
-	if rsp.Type != Ok {
-		_, err = fmt.Fprintln(w, "")
+
+	response_type := buffer[0]
+	message := ""
+	if response_type > 0 {
+		buffered_reader := bufio.NewReader(reader)
+		message, err = buffered_reader.ReadString('\n')
 		if err != nil {
-			return err
+			return Response{}, err
 		}
 	}
 
+	return Response{response_type, message}, nil
+}
+
+func (r *Response) IsOk() bool {
+	return r.Type == Ok
+}
+
+func (r *Response) IsWarning() bool {
+	return r.Type == Warning
+}
+
+// Returns true when the remote responded with an error
+func (r *Response) IsError() bool {
+	return r.Type == Error
+}
+
+// Returns true when the remote answered with a warning or an error
+func (r *Response) IsFailure() bool {
+	return r.Type > 0
+}
+
+// Returns the message the remote sent back
+func (r *Response) GetMessage() string {
+	return r.Message
+}
+
+type FileInfos struct {
+	Message     string
+	Filename    string
+	Permissions string
+	Size        int64
+}
+
+func (r *Response) ParseFileInfos() (*FileInfos, error) {
+	message := strings.ReplaceAll(r.Message, "\n", "")
+	parts := strings.Split(message, " ")
+	if len(parts) < 3 {
+		return nil, errors.New("Unable to parse message as file infos")
+	}
+
+	size, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return nil, err
+	}
+
+	return &FileInfos{
+		Message:     r.Message,
+		Permissions: parts[0],
+		Size:        int64(size),
+		Filename:    parts[2],
+	}, nil
+}
+
+// Writes an `Ack` message to the remote, does not await its response, a seperate call to ParseResponse is
+// therefore required to check if the acknowledgement succeeded
+func Ack(writer io.Writer) error {
+	var msg = []byte{0}
+	n, err := writer.Write(msg)
+	if err != nil {
+		return err
+	}
+	if n < len(msg) {
+		return errors.New("Failed to write ack buffer")
+	}
 	return nil
-}
-
-func (rsp *Resp) WriteStream(w io.Writer, stream io.Reader) error {
-	err := rsp.Write(w)
-	if err != nil {
-		return err
-	}
-
-	_, err = io.Copy(w, stream)
-	if err != nil {
-		return err
-	}
-
-	_, err = fmt.Fprint(w, "\x00")
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func NewOkRsp() *Resp {
-	return &Resp{}
-}
-
-func NewErrorRsp(msg string) *Resp {
-	return &Resp{Type: Error, Msg: Msg(msg)}
-}
-
-func NewWarnRsp(msg string) *Resp {
-	return &Resp{Type: Warning, Msg: Msg(msg)}
-}
-
-func NewDirBegin(mode os.FileMode, dirname string) *Resp {
-	return &Resp{
-		Type: StreamD,
-		Msg:  Msg(fmt.Sprintf("%04o 0 %s", mode&os.ModePerm, dirname)),
-	}
-}
-
-func NewDirEnd() *Resp {
-	return &Resp{
-		Type: StreamE,
-		Msg:  "",
-	}
-}
-
-func NewFile(mode os.FileMode, filename string, size int64) *Resp {
-	return &Resp{
-		Type: StreamC,
-		Msg:  Msg(fmt.Sprintf("%04o %d %s", mode&os.ModePerm, size, filename)),
-	}
 }

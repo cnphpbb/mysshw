@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"golang.org/x/crypto/ssh"
@@ -50,7 +51,7 @@ func findAlias(nodes []*sshw.Node, nodeAlias string) *sshw.Node {
 	return nil
 }
 
-func newScpClient() (*scp.SCP, error){
+func newScpClient() (scp.Client, error){
 	scpNode := &sshw.Node{
 		User: "root",
 		Host: "hwc.7y2.org",
@@ -58,10 +59,11 @@ func newScpClient() (*scp.SCP, error){
 		Password: "Kevin@0412",
 	}
 	cfg, _ := auth.PasswordKey(scpNode.User, scpNode.Password, ssh.InsecureIgnoreHostKey())
-	client, err := scp.New(fmt.Sprintf("%s:%d", scpNode.Host, scpNode.Port), &cfg)
+	client := scp.NewClient(fmt.Sprintf("%s:%d", scpNode.Host, scpNode.Port), &cfg)
+	err := client.Connect()
 	if err != nil {
 		log.Errorf("Couldn't establish a connection to the remote server: %s", err)
-		return nil, err
+		return client, err
 	}
 	return client, nil
 }
@@ -105,28 +107,35 @@ func main() {
 	scp, _ := newScpClient()
 	defer scp.Close()
 	u, _ := user.Current()
-	local := path.Join(u.HomeDir, ".sshw.yaml")
-
+	localPath := path.Join(u.HomeDir, ".sshw.yaml")
+	remotePath := "/data/backup/mysshw/sshw.yaml"
 	if *U {
 		fmt.Println("sshw:: Use Upload Local Config Remote Server!! Bigen... ")
-
-		err := scp.Upload(local, "/data/backup/mysshw/sshw.yaml")
+		c, _ := sshw.LoadConfigBytes(localPath)
+		err := scp.CopyFile(bytes.NewReader(c), remotePath, "0644")
 		if err != nil {
 			log.Errorf("Error while copying file: %s", err)
 			os.Exit(1)
 		}
-
 		fmt.Println("sshw:: Use Upload Local Config Remote Server!! End... ")
 		return
 	}
 
 	if *Z {
 		fmt.Println("sshw:: Use Remote Config Download Local!!  Bigen... ")
-		err := scp.Download("/data/backup/mysshw/sshw.yaml", local)
+		f, err := os.OpenFile(localPath, os.O_RDWR|os.O_CREATE, 0644)
+		if err != nil {
+			log.Errorf("Couldn't open the output file: %s", err)
+			os.Exit(1)
+		}
+		defer f.Close()
+
+		err = scp.CopyFromRemote(f, remotePath)
 		if err != nil {
 			log.Errorf("Error Copy failed from remote: %s", err)
 			os.Exit(1)
 		}
+		fmt.Println("sshw:: Use Remote Config Download Local!!  End... ")
 		return
 	}
 
