@@ -1,4 +1,4 @@
-package sshw
+package mysshw
 
 import (
 	"bufio"

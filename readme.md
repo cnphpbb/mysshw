@@ -17,7 +17,7 @@ use `go install`
 go install 
 ```
 
-or download binary from [releases](//github.com/cnphpbb/sshw/releases).
+or download binary from [releases](//github.com/cnphpbb/mysshw/releases).
 
 ## config
 

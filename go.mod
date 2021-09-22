@@ -1,4 +1,4 @@
-module sshw
+module mysshw
 
 go 1.17
 
