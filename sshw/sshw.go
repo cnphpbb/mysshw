@@ -3,8 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"golang.org/x/crypto/ssh"
 	"os"
 	"runtime"
+	"sshw/auth"
+	"sshw/scp"
 	"strings"
 
 	"sshw"
@@ -46,6 +49,22 @@ func findAlias(nodes []*sshw.Node, nodeAlias string) *sshw.Node {
 	return nil
 }
 
+func newScpClient() (*scp.SCP, error){
+	scpNode := &sshw.Node{
+		User: "root",
+		Host: "hwc.7y2.org",
+		Port: 65535,
+		Password: "Kevin@0412",
+	}
+	cfg, _ := auth.PasswordKey(scpNode.User, scpNode.Password, ssh.InsecureIgnoreHostKey())
+	client, err := scp.New(fmt.Sprintf("%s:%d", scpNode.Host, scpNode.Port), &cfg)
+	if err != nil {
+		log.Errorf("Couldn't establish a connection to the remote server: %s", err)
+		return nil, err
+	}
+	return client, nil
+}
+
 func main() {
 	flag.Parse()
 	if !flag.Parsed() {
@@ -80,10 +99,7 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	// TODO: 新的指令
-	// 1. conf:: Local To Remote
-	// 2. conf:: Remote To Local
-	// TODO: 210919--210922
+
 	if *U {
 		fmt.Println("sshw:: Use Upload Local Config Remote Server!! ")
 		return
