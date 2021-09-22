@@ -8,7 +8,6 @@ require (
 	github.com/magefile/mage v1.11.0
 	github.com/manifoldco/promptui v0.8.0
 	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519
-	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	gopkg.in/yaml.v2 v2.4.0
 )
 
