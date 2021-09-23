@@ -20,3 +20,5 @@ go.sum
 
 #macosx
 .DS_Store
+#sshw.toml
+#.sshw.toml
