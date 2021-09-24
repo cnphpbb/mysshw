@@ -104,14 +104,13 @@ func main() {
 		}
 	}
 	// new function
-
-	scp, _ := newScpClient()
-	defer scp.Close()
 	u, _ := user.Current()
 	localPath := path.Join(u.HomeDir, ".sshw.yaml")
 	remotePath := "/data/backup/mysshw/sshw.yaml"
 	if *U {
 		fmt.Println("mysshw:: Use Upload Local Config Remote Server!! Bigen... ")
+		scp, _ := newScpClient()
+		defer scp.Close()
 		c, _ := mysshw.LoadConfigBytes(localPath)
 		err := scp.CopyFile(bytes.NewReader(c), remotePath, "0644")
 		if err != nil {
@@ -124,6 +123,8 @@ func main() {
 
 	if *Z {
 		fmt.Println("sshw:: Use Remote Config Download Local!!  Bigen... ")
+		scp, _ := newScpClient()
+		defer scp.Close()
 		f, err := os.OpenFile(localPath, os.O_RDWR|os.O_CREATE, 0644)
 		if err != nil {
 			log.Errorf("Couldn't open the output file: %s", err)
