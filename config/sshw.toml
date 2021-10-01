@@ -9,6 +9,7 @@ keyPath = ""
 passphrase = ""
 remote_path = "/data/backup/mysshw/sshw.toml"
 access_token = "64e0bdaa34181c96740941417ed4e7ec" # gitee
+gist_id = ""
 
 [[nodes]]
 groups = "ssh groups 01"
@@ -17,7 +18,7 @@ ssh = [
     { name = "dev server with key path", user = "test00", host= "192.168.18.35", port = 22, keypath = "/root/.ssh/id_rsa" },
     { name = "dev server fully configured", user = "test00", host= "192.168.18.35", port = 22, password = "123456" },
     { name = "dev server without port", user = "test00", host = "192.168.18.35", password = "123456" },
-    { name = "dev server without user", host = "192.168.18.35" },
+    { name = "dev server without user", alias="dev04", host = "192.168.18.35" },
 ]
 
 [[nodes]]
