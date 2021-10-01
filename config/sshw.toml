@@ -1,7 +1,7 @@
 cfg_dir = "~/.sshw.toml"   # default:  $HOME/.sshw.toml
 
 [sync]
-type = "scp" # type: (scp || github- || gitee || Api-http) default: scp
+type = "scp" # type: ( scp || github || gitee || Api-http || rpc ) default: scp
 remote_uri = "127.0.0.127:22"
 username = "yong"
 password = "Kevin#0412"
