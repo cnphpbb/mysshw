@@ -9,12 +9,12 @@
 package auth
 
 import (
-"io/ioutil"
-"net"
-"os"
+	"io/ioutil"
+	"net"
+	"os"
 
-"golang.org/x/crypto/ssh"
-"golang.org/x/crypto/ssh/agent"
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 )
 
 // PrivateKey Loads a private and public key from "path" and returns a SSH ClientConfig to authenticate with the server

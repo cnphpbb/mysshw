@@ -15,16 +15,16 @@ gist_id = ""
 groups = "ssh groups 01"
 ssh = [
     { name = "dev server with passphrase key", user = "test00", host = "192.168.18.35", port = 22, keypath = "/root/.ssh/id_rsa", passphrase = "abcdefghijklmn" },
-    { name = "dev server with key path", user = "test00", host= "192.168.18.35", port = 22, keypath = "/root/.ssh/id_rsa" },
-    { name = "dev server fully configured", user = "test00", host= "192.168.18.35", port = 22, password = "123456" },
+    { name = "dev server with key path", user = "test00", host = "192.168.18.35", port = 22, keypath = "/root/.ssh/id_rsa" },
+    { name = "dev server fully configured", user = "test00", host = "192.168.18.35", port = 22, password = "123456" },
     { name = "dev server without port", user = "test00", host = "192.168.18.35", password = "123456" },
-    { name = "dev server without user", alias="dev04", host = "192.168.18.35" },
+    { name = "dev server without user", alias = "dev04", host = "192.168.18.35" },
 ]
 
 [[nodes]]
 groups = "ssh groups 02"
 ssh = [
-    { name = "vm-00", user = "root", host= "192.168.10.200" },
-    { name = "vm-01", user = "root", host= "192.168.10.201" },
-    { name = "vm-02", user = "root", host= "192.168.10.202" },
+    { name = "vm-00", user = "root", host = "192.168.10.200" },
+    { name = "vm-01", user = "root", host = "192.168.10.201" },
+    { name = "vm-02", user = "root", host = "192.168.10.202" },
 ]
