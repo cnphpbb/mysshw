@@ -3,6 +3,7 @@ module mysshw
 go 1.17
 
 require (
+	github.com/BurntSushi/toml v0.4.1
 	github.com/atrox/homedir v1.0.0
 	github.com/kevinburke/ssh_config v1.1.0
 	github.com/magefile/mage v1.11.0
