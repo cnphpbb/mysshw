@@ -5,7 +5,10 @@ type = "scp" # type: ( scp || github || gitee || Api-http || rpc ) default: scp
 remote_uri = "127.0.0.127:22"
 username = "yong"
 password = "Kevin#0412"
+keyPath = ""
+passphrase = ""
 remote_path = "/data/backup/mysshw/sshw.toml"
+access_token = "64e0bdaa34181c96740941417ed4e7ec" # gitee
 
 [[nodes]]
 groups = "ssh groups 01"
@@ -13,7 +16,7 @@ ssh = [
     { name = "dev server with passphrase key", user = "test00", host = "192.168.18.35", port = 22, keypath = "/root/.ssh/id_rsa", passphrase = "abcdefghijklmn" },
     { name = "dev server with key path", user = "test00", host= "192.168.18.35", port = 22, keypath = "/root/.ssh/id_rsa" },
     { name = "dev server fully configured", user = "test00", host= "192.168.18.35", port = 22, password = "123456" },
-    { name = "dev server without port", user = "test00", host = "192.168.18.35" password = "123456" },
+    { name = "dev server without port", user = "test00", host = "192.168.18.35", password = "123456" },
     { name = "dev server without user", host = "192.168.18.35" },
 ]
 

@@ -8,9 +8,41 @@
 
 package config
 
-/**
- * config example:
- * cfg_dir = ~/.sshw.toml  //默认 $HOME/.sshw.toml
- * [sys]
- *
- */
+import (
+	"fmt"
+	"github.com/BurntSushi/toml"
+)
+
+type (
+	Configs struct {
+		CfgDir  string
+		SyncCfg *SyncCfg
+		Nodes *Nodes
+	}
+
+	SyncCfg struct {
+		Type        string
+		RemoteUri   string
+		UserName    string
+		Password    string
+		KeyPath     string
+		Passphrase  string
+		RemotePath  string
+		AccessToken string
+	}
+	Nodes struct {
+		Groups   string
+		SSHNodes []*SSHNode
+	}
+	SSHNode struct {
+		Name       string
+		Alias      string
+		Host       string
+		User       string
+		Port       int
+		KeyPath    string
+		Passphrase string
+		Password   string
+	}
+)
+
