@@ -15,6 +15,7 @@
 # Misc
 /dist
 /build
+/cmd
 .idea
 go.sum
 
@@ -22,3 +23,5 @@ go.sum
 .DS_Store
 #sshw.toml
 #.sshw.toml
+
+

@@ -43,4 +43,3 @@ func NewClientBySSHWithTimeout(ssh *ssh.Client, timeout time.Duration) (Client, 
 	}
 	return NewConfigurer("", nil).Session(session).Timeout(timeout).Create(), nil
 }
-

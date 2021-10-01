@@ -82,4 +82,3 @@ func (c *ClientConfigurer) Create() Client {
 		Session:      c.session,
 	}
 }
-
