@@ -9,7 +9,6 @@
 package config
 
 import (
-	"fmt"
 	"github.com/BurntSushi/toml"
 	"golang.org/x/crypto/ssh"
 	"io/ioutil"
@@ -137,7 +136,7 @@ func LoadConfig() error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(string(cfgBytes))
+	//fmt.Println(string(cfgBytes))
 	var c *Configs
 	err = toml.Unmarshal(cfgBytes, &c)
 	if err != nil {
