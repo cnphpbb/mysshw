@@ -49,6 +49,9 @@ type defaultClient struct {
 }
 
 func genSSHConfig(node *config.SSHNode) *defaultClient {
+	if node == nil {
+		return nil
+	}
 	u, err := user.Current()
 	if err != nil {
 		fmt.Println(err)
@@ -63,6 +66,7 @@ func genSSHConfig(node *config.SSHNode) *defaultClient {
 	} else {
 		pemBytes, err = ioutil.ReadFile(node.KeyPath)
 	}
+
 	if err != nil {
 		fmt.Println(err)
 	} else {
@@ -131,6 +135,9 @@ func NewClient(node *config.SSHNode) Client {
 }
 
 func (c *defaultClient) Login() {
+	if c == nil {
+		return
+	}
 	host := c.node.Host
 	port := strconv.Itoa(c.node.SetPort())
 	//jNodes := c.node.Jump

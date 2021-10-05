@@ -99,6 +99,13 @@ func (n *SSHNode) SetPort() int {
 	return n.Port
 }
 
+func (n *SSHNode) SetKeyPath() string {
+	if n.KeyPath == "" {
+		return ""
+	}
+	return n.KeyPath
+}
+
 func (n *SSHNode) SetPassword() ssh.AuthMethod {
 	if n.Password == "" {
 		return nil
