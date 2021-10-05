@@ -20,7 +20,7 @@ func main() {
 		app := &cli.App{
 			Name: "mysshw",
 			Usage: "a free and open source ssh cli client soft.",
-			Version: "v0.0.1",
+			Version: "v21.10.05",
 			UseShortOptionHandling: true,
 			Flags: cmd.GlobalOptions,
 			Before: cmd.LoadGlobalOptions,
