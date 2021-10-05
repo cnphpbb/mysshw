@@ -85,21 +85,21 @@ var (
 	CFG *Configs
 )
 
-func (n *SSHNode) user() string {
+func (n *SSHNode) SetUser() string {
 	if n.User == "" {
 		return "root"
 	}
 	return n.User
 }
 
-func (n *SSHNode) port() int {
+func (n *SSHNode) SetPort() int {
 	if n.Port <= 0 {
 		return 22
 	}
 	return n.Port
 }
 
-func (n *SSHNode) password() ssh.AuthMethod {
+func (n *SSHNode) SetPassword() ssh.AuthMethod {
 	if n.Password == "" {
 		return nil
 	}

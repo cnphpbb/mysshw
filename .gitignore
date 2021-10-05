@@ -15,7 +15,6 @@
 # Misc
 /dist
 /build
-/cmd
 .idea
 go.sum
 
@@ -25,3 +24,4 @@ go.sum
 #.sshw.toml
 
 
+/build/mysshw
