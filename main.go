@@ -3,15 +3,19 @@ package main
 
 import (
 	"fmt"
-	"github.com/urfave/cli/v2"
 	"os"
 
 	"mysshw/cmd"
 	"mysshw/config"
 	"mysshw/ssh"
+
+	"github.com/urfave/cli/v2"
 )
 
 func main() {
+	config.CFG_PATH = "build/.mysshw.toml"
+	config.LoadConfig()
+
 	if len(os.Args) > 1 {
 		app := &cli.App{
 			Name: "mysshw",
@@ -32,8 +36,6 @@ func main() {
 }
 
 func SSHRUN() {
-	config.CFG_PATH = "build/.mysshw.toml"
-	config.LoadConfig()
 	node := ssh.Choose(config.CFG)
 	client := ssh.NewClient(node)
 	client.Login()
