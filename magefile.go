@@ -11,7 +11,6 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -24,12 +23,12 @@ import (
 // var Default = Build
 
 // tidy code
-func Fmt() error {
-	packages := strings.Split("cmd", " ")
-	files, _ := filepath.Glob("*.go")
-	packages = append(packages, files...)
-	return sh.Run("gofmt", append([]string{"-s", "-l", "-w"}, packages...)...)
-}
+//func Fmt() error {
+//	packages := strings.Split("cmd", " ")
+//	files, _ := filepath.Glob("*.go")
+//	packages = append(packages, files...)
+//	return sh.Run("gofmt", append([]string{"-s", "-l", "-w"}, packages...)...)
+//}
 
 // for local machine build
 func Build() error {
@@ -39,15 +38,10 @@ func Build() error {
 // build all platform
 func Pack() error {
 	buildTarget("darwin", "amd64", nil)
-	buildTarget("darwin", "386", nil)
 	buildTarget("freebsd", "amd64", nil)
-	buildTarget("freebsd", "386", nil)
 	buildTarget("linux", "amd64", nil)
-	buildTarget("linux", "386", nil)
-	buildTarget("linux", "arm", nil)
 	buildTarget("linux", "arm64", nil)
 	buildTarget("windows", "amd64", nil)
-	buildTarget("windows", "386", nil)
 	return genCheckSum()
 }
 
@@ -74,9 +68,9 @@ func Test() error {
 // build to target (cross build)
 func buildTarget(OS, arch string, envs map[string]string) error {
 	tag := tag()
-	name := fmt.Sprintf("sshw-%s-%s-%s", OS, arch, tag)
+	name := fmt.Sprintf("mysshw-%s-%s-%s", OS, arch, tag)
 	dir := fmt.Sprintf("dist/%s", name)
-	target := fmt.Sprintf("%s/sshw", dir)
+	target := fmt.Sprintf("%s/mysshw", dir)
 
 	args := make([]string, 0, 10)
 	args = append(args, "build", "-o", target)
@@ -106,14 +100,15 @@ func buildTarget(OS, arch string, envs map[string]string) error {
 func flags() string {
 	hash := hash()
 	tag := tag()
-	return fmt.Sprintf(`-s -w -X "main.Build=%s-%s" -extldflags "-static"`, tag, hash)
+	buildTime := buildTime()
+	return fmt.Sprintf(`-s -w -X "main.Build=%s-%s" -X "main.BuildTime=%s" -extldflags "-static"`, tag, hash, buildTime)
 }
 
 // tag returns the git tag for the current branch or "" if none.
 func tag() string {
-	s, _ := sh.Output("bash", "-c", "git describe --abbrev=0 --tags 2> /dev/null")
+	s, _ := sh.Output("bash", "-c", "git branch --show-current> /dev/null")
 	if s == "" {
-		return "dev"
+		return "main"
 	}
 	return s
 }
@@ -176,4 +171,10 @@ func fileHash(filename string) (string, error) {
 	io.Copy(hash, file)
 	ret := hash.Sum(nil)
 	return hex.EncodeToString(ret[:]), nil
+}
+
+func buildTime() string {
+	//s, _ := sh.Output("bash", "-c", "`date \"+%Y-%m-%d %H:%M:%S\"`> /dev/null")
+	s, _ := sh.Output("date", "+%Y-%m-%d %H:%M:%S")
+	return s
 }
