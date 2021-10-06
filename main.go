@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	Version   = "v21.10.05"
+	Version   = "v21.10.06"
 	Build     = "master"
 	BuildTime string
 	GoVersion string = runtime.Version()
