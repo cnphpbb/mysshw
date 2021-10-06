@@ -14,7 +14,8 @@ import (
 
 func main() {
 	//config.CFG_PATH = "build/.mysshw.toml"
-	config.LoadViperConfig()
+	err := config.LoadViperConfig()
+	fmt.Println(err)
 
 	if len(os.Args) > 1 {
 		app := &cli.App{
