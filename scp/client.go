@@ -325,4 +325,3 @@ func (a *Client) Close() {
 		a.Conn.Close()
 	}
 }
-

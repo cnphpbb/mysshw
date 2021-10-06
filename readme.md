@@ -1,74 +1,60 @@
-# sshw
+# mysshw
 
 ## install
 
-
 go version <= 1.16.*    
-use `go get` 
+use `go get`
 
 ```
-go get -u 
+go get -u github.com/cnphpbb/mysshw
 ```
 
 go version >= 1.17.*
 use `go install`
 
 ```
-go install 
+go install github.com/cnphpbb/mysshw
 ```
 
 or download binary from [releases](//github.com/cnphpbb/mysshw/releases).
 
 ## config
 
-put config file in `~/.sshw` or `~/.sshw.yml` or `~/.sshw.yaml` or `./.sshw` or `./.sshw.yml` or `./.sshw.yaml`.
+put config file in `~/.mysshw` or `~/.mysshw.tml` or `~/.mysshw.toml` or `./.mysshw` or `./.mysshw.tml` or `./.mysshw.toml`.
 
 config example:
 
-```yaml
-- { name: dev server fully configured, user: appuser, host: 192.168.8.35, port: 22, password: 123456 }
-- { name: dev server with key path, user: appuser, host: 192.168.8.35, port: 22, keypath: /root/.ssh/id_rsa }
-- { name: dev server with passphrase key, user: appuser, host: 192.168.8.35, port: 22, keypath: /root/.ssh/id_rsa, passphrase: abcdefghijklmn}
-- { name: dev server without port, user: appuser, host: 192.168.8.35 }
-- { name: dev server without user, host: 192.168.8.35 }
-- { name: dev server without password, host: 192.168.8.35 }
-- { name: ⚡️ server with emoji name, host: 192.168.8.35 }
-- { name: server with alias, alias: dev, host: 192.168.8.35 }
-- name: server with jump
-  user: appuser
-  host: 192.168.8.35
-  port: 22
-  password: 123456
-  jump:
-  - user: appuser
-    host: 192.168.8.36
-    port: 2222
+```toml
+cfg_dir = "~/.mysshw.toml"   # default:  $HOME/.sshw.toml
 
+[sync]
+type = "scp" # type: ( scp || github || gitee || Api-http || rpc ) default: scp
+remote_uri = "127.0.0.1:22"
+username = "root"
+password = "qweqwe123"
+keyPath = ""
+passphrase = ""
+remote_path = "/data/backup/mysshw/mysshw.toml"
+access_token = "" # gitee_access_token
+gist_id = ""  #gist_id
 
-# server group 1
-- name: server group 1
-  children:
-  - { name: server 1, user: root, host: 192.168.1.2 }
-  - { name: server 2, user: root, host: 192.168.1.3 }
-  - { name: server 3, user: root, host: 192.168.1.4 }
+[[nodes]]
+groups = "Groups01"
+ssh = [
+    { name="vm-00", host="192.168.10.100", user="vm00", port=62922, password="qwe123!@#qwe" },
+    { name="vm-01", host="192.168.10.101", user="vm00", port=22, password="qwe123!@#qwe", keypath="~/.ssh/id_rsa" },
+    { name="vm-02", host="192.168.10.102", user="vm00", port=22, password="qwe123!@#qwe", keypath="~/.ssh/id_rsa", passphrase="abcdefghijklmn" },
+    { name="vm-00", alias="vm-03", host="192.168.10.100", user="vm00", port=62922, password="qwe123!@#qwe" },
+]
 
-# server group 2
-- name: server group 2
-  children:
-  - { name: server 1, user: root, host: 192.168.2.2 }
-  - { name: server 2, user: root, host: 192.168.3.3 }
-  - { name: server 3, user: root, host: 192.168.4.4 }
+[[nodes]]
+groups = "Groups02"
+ssh = [
+    { name="server 1", user="root", host="192.168.10.1", password="qwe123!@#qwe" },
+    { name="server 1", user="root", host="192.168.10.2" },
+    { name="server 2", host="192.168.10.3" },
+]
 ```
 
-# callback
-```
-- name: dev server fully configured
-  user: appuser
-  host: 192.168.8.35
-  port: 22
-  password: 123456
-  callback-shells:
-  - {cmd: 2}
-  - {delay: 1500, cmd: 0}
-  - {cmd: 'echo 1'}
- ```
+## 未实现的功能
+
