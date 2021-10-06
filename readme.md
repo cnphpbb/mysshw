@@ -2,9 +2,8 @@
 
 ## install
 
-
 go version <= 1.16.*    
-use `go get` 
+use `go get`
 
 ```
 go get -u 
@@ -61,6 +60,7 @@ config example:
 ```
 
 # callback
+
 ```
 - name: dev server fully configured
   user: appuser

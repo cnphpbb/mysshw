@@ -1,4 +1,4 @@
-package mysshw
+package ssh
 
 import (
 	"bufio"
@@ -13,6 +13,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"mysshw/config"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/terminal"
@@ -43,13 +45,16 @@ type Client interface {
 
 type defaultClient struct {
 	clientConfig *ssh.ClientConfig
-	node         *Node
+	node         *config.SSHNode
 }
 
-func genSSHConfig(node *Node) *defaultClient {
+func genSSHConfig(node *config.SSHNode) *defaultClient {
+	if node == nil {
+		return nil
+	}
 	u, err := user.Current()
 	if err != nil {
-		l.Error(err)
+		fmt.Println(err)
 		return nil
 	}
 
@@ -61,8 +66,9 @@ func genSSHConfig(node *Node) *defaultClient {
 	} else {
 		pemBytes, err = ioutil.ReadFile(node.KeyPath)
 	}
+
 	if err != nil {
-		l.Error(err)
+		fmt.Println(err)
 	} else {
 		var signer ssh.Signer
 		if node.Passphrase != "" {
@@ -71,13 +77,13 @@ func genSSHConfig(node *Node) *defaultClient {
 			signer, err = ssh.ParsePrivateKey(pemBytes)
 		}
 		if err != nil {
-			l.Error(err)
+			fmt.Println(err)
 		} else {
 			authMethods = append(authMethods, ssh.PublicKeys(signer))
 		}
 	}
 
-	password := node.password()
+	password := node.SetPassword()
 
 	if password != nil {
 		authMethods = append(authMethods, password)
@@ -109,7 +115,7 @@ func genSSHConfig(node *Node) *defaultClient {
 	}))
 
 	config := &ssh.ClientConfig{
-		User:            node.user(),
+		User:            node.SetUser(),
 		Auth:            authMethods,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         time.Second * 10,
@@ -124,37 +130,40 @@ func genSSHConfig(node *Node) *defaultClient {
 	}
 }
 
-func NewClient(node *Node) Client {
+func NewClient(node *config.SSHNode) Client {
 	return genSSHConfig(node)
 }
 
 func (c *defaultClient) Login() {
+	if c == nil {
+		return
+	}
 	host := c.node.Host
-	port := strconv.Itoa(c.node.port())
-	jNodes := c.node.Jump
+	port := strconv.Itoa(c.node.SetPort())
+	//jNodes := c.node.Jump
 
 	var client *ssh.Client
 
-	if len(jNodes) > 0 {
-		jNode := jNodes[0]
-		jc := genSSHConfig(jNode)
-		proxyClient, err := ssh.Dial("tcp", net.JoinHostPort(jNode.Host, strconv.Itoa(jNode.port())), jc.clientConfig)
-		if err != nil {
-			l.Error(err)
-			return
-		}
-		conn, err := proxyClient.Dial("tcp", net.JoinHostPort(host, port))
-		if err != nil {
-			l.Error(err)
-			return
-		}
-		ncc, chans, reqs, err := ssh.NewClientConn(conn, net.JoinHostPort(host, port), c.clientConfig)
-		if err != nil {
-			l.Error(err)
-			return
-		}
-		client = ssh.NewClient(ncc, chans, reqs)
-	} else {
+	//if len(jNodes) > 0 {
+	//	jNode := jNodes[0]
+	//	jc := genSSHConfig(jNode)
+	//	proxyClient, err := ssh.Dial("tcp", net.JoinHostPort(jNode.Host, strconv.Itoa(jNode.port())), jc.clientConfig)
+	//	if err != nil {
+	//		mysshw.l.Error(err)
+	//		return
+	//	}
+	//	conn, err := proxyClient.Dial("tcp", net.JoinHostPort(host, port))
+	//	if err != nil {
+	//		mysshw.l.Error(err)
+	//		return
+	//	}
+	//	ncc, chans, reqs, err := ssh.NewClientConn(conn, net.JoinHostPort(host, port), c.clientConfig)
+	//	if err != nil {
+	//		mysshw.l.Error(err)
+	//		return
+	//	}
+	//	client = ssh.NewClient(ncc, chans, reqs)
+	//} else {
 		client1, err := ssh.Dial("tcp", net.JoinHostPort(host, port), c.clientConfig)
 		client = client1
 		if err != nil {
@@ -175,17 +184,17 @@ func (c *defaultClient) Login() {
 			}
 		}
 		if err != nil {
-			l.Error(err)
+			fmt.Println(err)
 			return
 		}
-	}
+	//}
 	defer client.Close()
 
-	l.Infof("connect server ssh -p %d %s@%s version: %s\n", c.node.port(), c.node.user(), host, string(client.ServerVersion()))
+	fmt.Printf("connect server ssh -p %d %s@%s version: %s \n", c.node.SetPort(), c.node.SetUser(), host, string(client.ServerVersion()))
 
 	session, err := client.NewSession()
 	if err != nil {
-		l.Error(err)
+		fmt.Println(err)
 		return
 	}
 	defer session.Close()
@@ -193,14 +202,14 @@ func (c *defaultClient) Login() {
 	fd := int(os.Stdin.Fd())
 	state, err := terminal.MakeRaw(fd)
 	if err != nil {
-		l.Error(err)
+		fmt.Println(err)
 		return
 	}
 	defer terminal.Restore(fd, state)
 
 	w, h, err := terminal.GetSize(fd)
 	if err != nil {
-		l.Error(err)
+		fmt.Println(err)
 		return
 	}
 
@@ -211,7 +220,7 @@ func (c *defaultClient) Login() {
 	}
 	err = session.RequestPty("xterm", h, w, modes)
 	if err != nil {
-		l.Error(err)
+		fmt.Println(err)
 		return
 	}
 
@@ -219,27 +228,27 @@ func (c *defaultClient) Login() {
 	session.Stderr = os.Stderr
 	stdinPipe, err := session.StdinPipe()
 	if err != nil {
-		l.Error(err)
+		fmt.Println(err)
 		return
 	}
 
 	err = session.Shell()
 	if err != nil {
-		l.Error(err)
+		fmt.Println(err)
 		return
 	}
 
 	// then callback
-	for i := range c.node.CallbackShells {
-		shell := c.node.CallbackShells[i]
-		time.Sleep(shell.Delay * time.Millisecond)
-		stdinPipe.Write([]byte(shell.Cmd + "\r"))
-	}
+	//for i := range c.node.CallbackShells {
+	//	shell := c.node.CallbackShells[i]
+	//	time.Sleep(shell.Delay * time.Millisecond)
+	//	stdinPipe.Write([]byte(shell.Cmd + "\r"))
+	//}
 
 	// change stdin to user
 	go func() {
 		_, err = io.Copy(stdinPipe, os.Stdin)
-		l.Error(err)
+		fmt.Println(err)
 		session.Close()
 	}()
 
