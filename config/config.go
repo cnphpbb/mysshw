@@ -9,44 +9,46 @@
 package config
 
 import (
-	"github.com/BurntSushi/toml"
-	"golang.org/x/crypto/ssh"
 	"io/ioutil"
 	"os/user"
 	"path"
+
+	"github.com/BurntSushi/toml"
+	"github.com/spf13/viper"
+	"golang.org/x/crypto/ssh"
 )
 
 type (
 	Configs struct {
-		CfgDir  string   `toml:"cfg_dir"`
-		SyncCfg SyncInfo `toml:"sync"`
-		Nodes   []Nodes  `toml:"nodes"`
+		CfgDir  string   `toml:"cfg_dir" mapstructure:"cfg_dir"`
+		SyncCfg SyncInfo `toml:"sync" mapstructure:"sync"`
+		Nodes   []Nodes  `toml:"nodes" mapstructure:"nodes"`
 	}
 
 	SyncInfo struct {
-		Type        string `toml:"type"`
-		RemoteUri   string `toml:"remote_uri"`
-		UserName    string `toml:"username"`
-		Password    string `toml:"password"`
-		KeyPath     string `toml:"keyPath"`
-		Passphrase  string `toml:"passphrase"`
-		RemotePath  string `toml:"remote_path"`
-		AccessToken string `toml:"access_token"`
-		GistID      string `tome:"gist_id"`
+		Type        string `toml:"type" mapstructure:"type"`
+		RemoteUri   string `toml:"remote_uri" mapstructure:"remote_uri"`
+		UserName    string `toml:"username" mapstructure:"username"`
+		Password    string `toml:"password" mapstructure:"password"`
+		KeyPath     string `toml:"keyPath" mapstructure:"keyPath"`
+		Passphrase  string `toml:"passphrase" mapstructure:"passphrase"`
+		RemotePath  string `toml:"remote_path" mapstructure:"remote_path"`
+		AccessToken string `toml:"access_token" mapstructure:"access_token"`
+		GistID      string `tome:"gist_id" mapstructure:"gist_id"`
 	}
 	Nodes struct {
 		Groups   string     `toml:"groups"`
-		SSHNodes []*SSHNode `toml:"ssh"`
+		SSHNodes []*SSHNode `toml:"ssh" mapstructure:"ssh"`
 	}
 	SSHNode struct {
-		Name       string `toml:"name"`
-		Alias      string `toml:"alias,omitempty"`
-		Host       string `toml:"host"`
-		User       string `toml:"user,omitempty"`
-		Port       int    `toml:"port,omitempty"`
-		KeyPath    string `toml:"keypath,omitempty"`
-		Passphrase string `toml:"passphrase,omitempty"`
-		Password   string `toml:"password,omitempty"`
+		Name       string `toml:"name" mapstructure:"name"`
+		Alias      string `toml:"alias,omitempty" mapstructure:"alias"`
+		Host       string `toml:"host" mapstructure:"host"`
+		User       string `toml:"user,omitempty" mapstructure:"user"`
+		Port       int    `toml:"port,omitempty" mapstructure:"port"`
+		KeyPath    string `toml:"keypath,omitempty" mapstructure:"keypath"`
+		Passphrase string `toml:"passphrase,omitempty" mapstructure:"passphrase"`
+		Password   string `toml:"password,omitempty" mapstructure:"password"`
 	}
 )
 
@@ -79,7 +81,7 @@ type (
 //}
 
 var (
-	CFG_PATH string = "~/.sshw.toml"
+	CFG_PATH string = "~/.mysshw.toml"
 	//APP_VER  string = "2.5.6.1211"
 	//LOG_PATH  = "mysshw.log"
 	CFG *Configs
@@ -152,3 +154,20 @@ func LoadConfig() error {
 	CFG = c
 	return nil
 }
+
+func LoadViperConfig() error {
+	var c = new(Configs)
+	viper.SetConfigName(".mysshw")
+	viper.SetConfigType("toml")
+	viper.AddConfigPath("$HOME")
+	err := viper.ReadInConfig()
+	//fmt.Println(viper.GetViper())
+	if err != nil {
+		return err
+	}
+	err = viper.Unmarshal(c)
+	CFG = c
+	return err
+}
+
+
