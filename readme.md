@@ -56,5 +56,13 @@ ssh = [
 ]
 ```
 
-## 未实现的功能
+~~## 未实现的功能~~
 
+~~**暂时只有SCP同步配置文件的方法。**~~
+
+### Sync Actions Type List
+1. [x] SCP
+2. [ ] Github - gist
+3. [ ] Gitee - gist
+4. [ ] API - http(s)
+5. [ ] RPC
