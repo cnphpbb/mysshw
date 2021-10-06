@@ -14,9 +14,10 @@ GitCommit=$(git rev-parse --short=9 HEAD || echo unsupported)
 
 go build -o ./build/$Project \
 -ldflags \
-"-w -s -X main.Version=$CurrentVersion.$GitCommit \
--X 'main.BuildTime=$BuildTime' \
--X 'main.Build=${GitCommit}' " \
+"-w -s \
+-X main.Version=$CurrentVersion.$GitCommit \
+-X main.BuildTime=$BuildTime \
+-X main.Build=${GitCommit} " \
 main.go
 
 echo "build finish !!"
