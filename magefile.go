@@ -80,7 +80,7 @@ func buildTarget(OS, arch string, envs map[string]string) error {
 
 	args := make([]string, 0, 10)
 	args = append(args, "build", "-o", target)
-	args = append(args, "-ldflags", flags(), "cmd/sshw/main.go")
+	args = append(args, "-ldflags", flags(), "main.go")
 
 	fmt.Println("build", target)
 	env := make(map[string]string)
