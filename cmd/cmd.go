@@ -51,12 +51,12 @@ var (
 			&cli.BoolFlag{
 				Name: "upload",
 				Aliases: []string{"u"},
-				Usage: "✨ Update sshw config",
+				Usage: "✨ Update mysshw config",
 			},
 			&cli.BoolFlag{
 				Name: "down",
 				Aliases: []string{"z"},
-				Usage: "✨ Download sshw config",
+				Usage: "✨ Download mysshw config",
 			},
 		},
 		Action: func(ctx *cli.Context) error {
@@ -66,7 +66,7 @@ var (
 			}
 
 			syncCfg := config.CFG.SyncCfg
-			fmt.Println(syncCfg)
+			//fmt.Println(syncCfg)
 			cfg, _ := auth.PasswordKey(syncCfg.UserName, syncCfg.Password, ssh.InsecureIgnoreHostKey())
 			client := scp.NewClient(syncCfg.RemoteUri, &cfg)
 			err := client.Connect()
@@ -89,16 +89,16 @@ var (
 
 			if ctx.Bool("down") {
 				fmt.Println("mysshw:: Use Remote Config Download Local!!  Begin... ")
-				localPath := config.CFG_PATH
+				localPath, _ := config.GetCfgPath(config.CFG_PATH)
 				f, err := os.OpenFile(localPath, os.O_RDWR|os.O_CREATE, 0644)
 				if err != nil {
-					fmt.Printf("Couldn't open the output file: %s", err)
+					fmt.Printf("Couldn't open the output file: %s  \n", err)
 					os.Exit(1)
 				}
 				defer f.Close()
 				err = client.CopyFromRemote(f, syncCfg.RemotePath)
 				if err != nil {
-					fmt.Printf("Error Copy failed from remote: %s", err)
+					fmt.Printf("Error Copy failed from remote: %s \n", err)
 					os.Exit(1)
 				}
 				fmt.Println("mysshw:: Use Remote Config Download Local!!  End...  ")
