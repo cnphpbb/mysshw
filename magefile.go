@@ -102,7 +102,8 @@ func flags() string {
 	hash := hash()
 	tag := tag()
 	buildTime := buildTime()
-	return fmt.Sprintf(`-s -w -X "main.Build=%s-%s" -X "main.BuildTime=%s" -extldflags "-static"`, tag, hash, buildTime)
+	verStr := verStr()
+	return fmt.Sprintf(`-s -w -X "main.Version=%s"-X "main.Build=%s-%s" -X "main.BuildTime=%s" -extldflags "-static"`, verStr, tag, hash, buildTime)
 }
 
 // tag returns the git tag for the current branch or "" if none.
@@ -178,4 +179,9 @@ func buildTime() string {
 	//s, _ := sh.Output("bash", "-c", "`date \"+%Y-%m-%d %H:%M:%S\"`> /dev/null")
 	s, _ := sh.Output("date", "+%Y-%m-%d %H:%M:%S")
 	return s
+}
+
+func verStr() string {
+	s, _ := sh.Output("date", "+%y.%m.%d")
+	return fmt.Sprintf("v%s", s)
 }
