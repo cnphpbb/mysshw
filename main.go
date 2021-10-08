@@ -20,7 +20,6 @@ var (
 	GoVersion string = runtime.Version()
 )
 func main() {
-	//config.CFG_PATH = "build/.mysshw.toml"
 	if err := config.LoadViperConfig(); err != nil {
 		fmt.Println(err)
 		os.Exit(1)

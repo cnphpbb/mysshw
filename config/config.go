@@ -9,6 +9,7 @@
 package config
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os/user"
 	"path"
@@ -163,13 +164,21 @@ func LoadViperConfig() error {
 	viper.SetConfigType("toml")
 	viper.AddConfigPath("$HOME")
 	err := viper.ReadInConfig()
-	//fmt.Println(viper.GetViper())
 	if err != nil {
-		return err
+		GetCfgPath(CFG_PATH)
+		viper.SetDefault("cfg_dir", "~/.mysshw.toml")
+		viper.WriteConfigAs(CFG_PATH)
+
+		return fmt.Errorf("mysshw:: The configuration file '~/.myshw.toml' was not detected, \n" +
+			"  and a default configuration file '~/.myshw.toml' was generated. \n" +
+			"  vim ~/.mysshw.toml -> Run mysshw again. \n" +
+			"  see https://github.com/cnphpbb/mysshw/blob/master/readme.md#config \n")
 	}
 	err = viper.Unmarshal(c)
 	CFG = c
 	return err
 }
+//todo:
+//func WriteViperConfig() error {}
 
 
