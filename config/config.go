@@ -82,7 +82,6 @@ type (
 
 var (
 	CFG_PATH string = "~/.mysshw.toml"
-	//APP_VER  string = "2.5.6.1211"
 	//LOG_PATH  = "mysshw.log"
 	CFG *Configs
 )
@@ -115,37 +114,24 @@ func (n *SSHNode) SetPassword() ssh.AuthMethod {
 	return ssh.Password(n.Password)
 }
 
-func LoadConfigBytes(sshwpath string) ([]byte, error) {
-	var cfgPath string
-	u, err := user.Current()
+func LoadConfigBytes(cfgPath string) ([]byte, error) {
+	var err error
+	CFG_PATH, err = GetCfgPath(cfgPath)
 	if err != nil {
 		return nil, err
 	}
-	_cfgDir, _cfgFile := path.Split(sshwpath)
-	if _cfgDir == "~/" {
-		cfgPath = u.HomeDir
-	} else {
-		cfgPath = _cfgDir
-	}
-	if _cfgFile != ".sshw.toml" {
-		CFG_PATH = path.Join(cfgPath, _cfgFile)
-	} else {
-		CFG_PATH = path.Join(cfgPath, ".sshw.toml")
-	}
-	cfgBytes, err := ioutil.ReadFile(CFG_PATH)
-	if err == nil {
+	cfgBytes, err1 := ioutil.ReadFile(CFG_PATH)
+	if err1 == nil {
 		return cfgBytes, nil
 	}
 	return nil, err
 }
 
 func LoadConfig() error {
-	//fmt.Println("CFG_PATH::", CFG_PATH)
 	cfgBytes, err := LoadConfigBytes(CFG_PATH)
 	if err != nil {
 		return err
 	}
-	//fmt.Println(string(cfgBytes))
 	var c *Configs
 	err = toml.Unmarshal(cfgBytes, &c)
 	if err != nil {
@@ -153,6 +139,22 @@ func LoadConfig() error {
 	}
 	CFG = c
 	return nil
+}
+
+func GetCfgPath(cfgPath string) (string, error) {
+	var _cfgPath string
+	u, err := user.Current()
+	if err != nil {
+		return "", err
+	}
+	_cfgDir, _cfgFile := path.Split(cfgPath)
+	if _cfgDir == "~/" {
+		_cfgPath = u.HomeDir
+	} else {
+		_cfgPath = _cfgDir
+	}
+	CFG_PATH = path.Join(_cfgPath, _cfgFile)
+	return CFG_PATH, err
 }
 
 func LoadViperConfig() error {
