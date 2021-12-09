@@ -13,6 +13,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"runtime"
 
 	"mysshw/config"
 
@@ -207,6 +208,10 @@ func (c *defaultClient) Login() {
 	}
 	defer terminal.Restore(fd, state)
 
+	//OS:windows
+	if runtime.GOOS == "windows" {
+		fd = int(os.Stdout.Fd())
+	}
 	w, h, err := terminal.GetSize(fd)
 	if err != nil {
 		fmt.Println(err)
