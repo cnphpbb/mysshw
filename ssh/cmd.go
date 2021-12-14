@@ -8,12 +8,12 @@ import (
 
 var (
 	templates = &promptui.SelectTemplates{
-		Label:    "✨ {{ . | green}}",
+		Label:    " {{ . | green}}",
 		Active:   "➤ {{ .Groups | cyan  }}",
 		Inactive: "{{ .Groups | faint}}",
 	}
 	ctemplates = &promptui.SelectTemplates{
-		Label:    "✨ {{ . | green}}",
+		Label:    " {{ . | green}}",
 		Active:   "➤ {{ .Name | cyan  }}{{if .Alias}}({{.Alias | yellow}}){{end}} {{if .Host}}{{if .User}}{{.User | faint}}{{`@` | faint}}{{end}}{{.Host | faint}}{{end}}",
 		Inactive: "  {{.Name | faint}}{{if .Alias}}({{.Alias | faint}}){{end}} {{if .Host}}{{if .User}}{{.User | faint}}{{`@` | faint}}{{end}}{{.Host | faint}}{{end}}",
 	}
@@ -22,7 +22,7 @@ var (
 
 func Choose(trees *config.Configs) *config.SSHNode {
 	prompt := promptui.Select{}
-	prompt.Label = "select host"
+	prompt.Label = " select host"
 	prompt.HideSelected = true
 	prompt.Size = 20
 	prompt.Items = trees.Nodes

@@ -38,6 +38,7 @@ var (
 
 	LoadGlobalOptions = func(ctx *cli.Context) error {
 		if ctx.IsSet("cfg") {
+			//config.CFG_PATH = ctx.Path("cfg")
 			fmt.Println("started path changed to", ctx.Path("cfg"))
 		}
 		return nil
@@ -51,18 +52,18 @@ var (
 			&cli.BoolFlag{
 				Name: "upload",
 				Aliases: []string{"u"},
-				Usage: "✨ Update mysshw config",
+				Usage: " Update mysshw config",
 			},
 			&cli.BoolFlag{
 				Name: "down",
 				Aliases: []string{"z"},
-				Usage: "✨ Download mysshw config",
+				Usage: " Download mysshw config",
 			},
 		},
 		Action: func(ctx *cli.Context) error {
 			// 全局选项
-			if ctx.IsSet("c") {
-				// do something
+			if ctx.IsSet("cfg") {
+				config.CFG_PATH = ctx.Path("cfg")
 			}
 
 			syncCfg := config.CFG.SyncCfg
