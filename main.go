@@ -20,11 +20,6 @@ var (
 	GoVersion string = runtime.Version()
 )
 func main() {
-	if err := config.LoadViperConfig(); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-
 	cli.VersionPrinter = func(c *cli.Context) {
 		fmt.Println(" mysshw - a free and open source ssh cli client soft.")
 		fmt.Println("    - Version::", Version)
@@ -40,19 +35,30 @@ func main() {
 			Version: Version,
 			UseShortOptionHandling: true,
 			Flags: cmd.GlobalOptions,
-			Before: cmd.LoadGlobalOptions,
+			//Before: cmd.LoadGlobalOptions,
 			Commands: cmd.Commands,
+		}
+		app.Action = func(ctx *cli.Context) error {
+			config.CFG_PATH = ctx.Path("cfg")
+			fmt.Println("started path changed to", config.CFG_PATH)
+			//run
+			RunSSH()
+			return nil
 		}
 		err := app.Run(os.Args)
 		if err != nil && err != cmd.ErrPrintAndExit {
 			fmt.Println(err)
 		}
 	}else{
-		SSHRUN()
+		RunSSH()
 	}
 }
 
-func SSHRUN() {
+func RunSSH() {
+	if err := config.LoadViperConfig(); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 	node := ssh.Choose(config.CFG)
 	client := ssh.NewClient(node)
 	client.Login()

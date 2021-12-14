@@ -160,11 +160,19 @@ func GetCfgPath(cfgPath string) (string, error) {
 
 func LoadViperConfig() error {
 	var c = new(Configs)
-	viper.SetConfigName(".mysshw")
+	if CFG_PATH != "~/.mysshw.toml" {
+		viper.SetConfigName("mysshw")
+		viper.AddConfigPath(".")
+	}else{
+		viper.SetConfigName(".mysshw")
+		viper.AddConfigPath("$HOME")
+	}
 	viper.SetConfigType("toml")
-	viper.AddConfigPath("$HOME")
+	//log.Println(CFG_PATH)
 	err := viper.ReadInConfig()
+	//log.Println(err)
 	if err != nil {
+		//log.Println(CFG_PATH)
 		GetCfgPath(CFG_PATH)
 		viper.SetDefault("cfg_dir", "~/.mysshw.toml")
 		viper.WriteConfigAs(CFG_PATH)
