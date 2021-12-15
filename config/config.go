@@ -13,6 +13,8 @@ import (
 	"io/ioutil"
 	"os/user"
 	"path"
+	"path/filepath"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 	"github.com/spf13/viper"
@@ -83,6 +85,7 @@ type (
 
 var (
 	CFG_PATH string = "~/.mysshw.toml"
+	CFG_EXT_TYPE string = "toml"
 	//LOG_PATH  = "mysshw.log"
 	CFG *Configs
 )
@@ -160,24 +163,22 @@ func GetCfgPath(cfgPath string) (string, error) {
 
 func LoadViperConfig() error {
 	var c = new(Configs)
-	if CFG_PATH != "~/.mysshw.toml" {
-		viper.SetConfigName("mysshw")
-		viper.AddConfigPath(".")
-	}else{
-		viper.SetConfigName(".mysshw")
-		viper.AddConfigPath("$HOME")
+	_cfgDir, _cfgFile, _ := isCfgPath(CFG_PATH)
+	if strings.HasSuffix(_cfgFile, "mysshw") {
+		return  fmt.Errorf("mysshw:: The configuration file '~/.mysshw.toml' || '~/mysshw.toml' || './mysshw.toml'")
 	}
-	viper.SetConfigType("toml")
-	//log.Println(CFG_PATH)
+	viper.SetConfigName(_cfgFile)
+	viper.AddConfigPath(_cfgDir)
+	viper.SetConfigType(CFG_EXT_TYPE)
+
 	err := viper.ReadInConfig()
-	//log.Println(err)
 	if err != nil {
 		//log.Println(CFG_PATH)
 		GetCfgPath(CFG_PATH)
 		viper.SetDefault("cfg_dir", "~/.mysshw.toml")
 		viper.WriteConfigAs(CFG_PATH)
 
-		return fmt.Errorf("mysshw:: The configuration file '~/.myshw.toml' was not detected, \n" +
+		return fmt.Errorf("mysshw:: The configuration file '~/.mysshw.toml' was not detected, \n" +
 			"  and a default configuration file '~/.myshw.toml' was generated. \n" +
 			"  vim ~/.mysshw.toml -> Run mysshw again. \n" +
 			"  see https://github.com/cnphpbb/mysshw/blob/master/readme.md#config \n")
@@ -186,6 +187,32 @@ func LoadViperConfig() error {
 	CFG = c
 	return err
 }
+
+func isCfgPath(cfgPath string) (dir, file, ext string) {
+	_cfgDir, _cfgFile := path.Split(cfgPath)
+	_cfgDir = path.Dir(_cfgDir)
+	_cfgExt := filepath.Ext(cfgPath)
+	if cfgPath != CFG_PATH {
+		// _cfgFile ".myConfig.toml"
+		if strings.HasPrefix(_cfgFile, ".") {
+			if strings.HasSuffix(_cfgFile, ".toml") {
+				_cfgFile = _cfgFile[:len(_cfgFile)-len(_cfgExt)]
+			}
+		} else { 	// _cfgFile "myConfig.toml"
+			if strings.HasSuffix(_cfgFile, ".toml") {
+				_cfgFile = _cfgFile[:len(_cfgFile)-len(_cfgExt)]
+			}
+		}
+	} else {
+		_cfgFile = ".mysshw"
+		_cfgExt = CFG_EXT_TYPE
+		_cfgDir = "$HOME"
+	}
+
+
+	return _cfgDir, _cfgFile, _cfgExt
+}
+
 //todo:
 //func WriteViperConfig() error {}
 
