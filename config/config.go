@@ -200,7 +200,7 @@ func isCfgPath(cfgPath string) (dir, file, ext string) {
 			}
 		} else { 	// _cfgFile "myConfig.toml"
 			if strings.HasSuffix(_cfgFile, ".toml") {
-				_cfgFile = _cfgFile[:len(_cfgFile)-len(_cfgExt)]
+				_cfgFile = _cfgFile[:(len(_cfgFile)-len(_cfgExt))]
 			}
 		}
 	} else {
