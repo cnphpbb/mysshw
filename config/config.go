@@ -90,6 +90,8 @@ var (
 	CFG *Configs
 )
 
+const CFGPATH string = "~/.mysshw.toml"
+
 func (n *SSHNode) SetUser() string {
 	if n.User == "" {
 		return "root"
@@ -163,10 +165,13 @@ func GetCfgPath(cfgPath string) (string, error) {
 
 func LoadViperConfig() error {
 	var c = new(Configs)
+
 	_cfgDir, _cfgFile, _ := isCfgPath(CFG_PATH)
-	if strings.HasSuffix(_cfgFile, "mysshw") {
-		return  fmt.Errorf("mysshw:: The configuration file '~/.mysshw.toml' || '~/mysshw.toml' || './mysshw.toml'")
+
+	if !strings.HasSuffix(_cfgFile, "mysshw") {
+		return  fmt.Errorf("mysshw:: The configuration file '~/.mysshw.toml' || '~/mysshw.toml' || './mysshw.toml' ")
 	}
+
 	viper.SetConfigName(_cfgFile)
 	viper.AddConfigPath(_cfgDir)
 	viper.SetConfigType(CFG_EXT_TYPE)
@@ -189,26 +194,20 @@ func LoadViperConfig() error {
 }
 
 func isCfgPath(cfgPath string) (dir, file, ext string) {
+
 	_cfgDir, _cfgFile := path.Split(cfgPath)
 	_cfgDir = path.Dir(_cfgDir)
 	_cfgExt := filepath.Ext(cfgPath)
-	if cfgPath != CFG_PATH {
-		// _cfgFile ".myConfig.toml"
-		if strings.HasPrefix(_cfgFile, ".") {
-			if strings.HasSuffix(_cfgFile, ".toml") {
-				_cfgFile = _cfgFile[:len(_cfgFile)-len(_cfgExt)]
-			}
-		} else { 	// _cfgFile "myConfig.toml"
-			if strings.HasSuffix(_cfgFile, ".toml") {
-				_cfgFile = _cfgFile[:(len(_cfgFile)-len(_cfgExt))]
-			}
+
+	if cfgPath != CFGPATH  {
+		if strings.HasSuffix(_cfgFile, ".toml") {
+			_cfgFile = _cfgFile[:(len(_cfgFile)-len(_cfgExt))]
 		}
 	} else {
 		_cfgFile = ".mysshw"
 		_cfgExt = CFG_EXT_TYPE
 		_cfgDir = "$HOME"
 	}
-
 
 	return _cfgDir, _cfgFile, _cfgExt
 }

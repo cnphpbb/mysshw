@@ -92,7 +92,8 @@ func buildTarget(OS, arch string, envs map[string]string) error {
 	if err := sh.RunWith(env, mg.GoCmd(), args...); err != nil {
 		return err
 	}
-
+	// cp -a ./example/mysshw.toml ./dist/{name}/mysshw.toml
+	sh.Run("cp", "-a", "example/mysshw.toml", fmt.Sprintf("%s/mysshw.toml", dir))
 	sh.Run("tar", "-czf", fmt.Sprintf("%s.tar.gz", dir), "-C", "dist", name)
 
 	return nil
@@ -102,7 +103,7 @@ func flags() string {
 	hash := hash()
 	tag := tag()
 	buildTime := buildTime()
-	verStr := verStr()
+	verStr := versionStr()
 	return fmt.Sprintf(`-s -w -X "main.Version=%s" -X "main.Build=%s-%s" -X "main.BuildTime=%s" -extldflags "-static"`, verStr, tag, hash, buildTime)
 }
 
@@ -180,7 +181,7 @@ func buildTime() string {
 	return s
 }
 
-func verStr() string {
+func versionStr() string {
 	s, _ := sh.Output("date", "+%y.%m.%d")
 	return fmt.Sprintf("v%s", s)
 }
