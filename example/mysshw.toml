@@ -1,0 +1,23 @@
+# config example.
+# see URL: https://github.com/cnphpbb/mysshw/blob/master/readme.md#config
+cfg_dir = "./mysshw.toml"   # default:  $HOME/.sshw.toml
+
+[sync]
+type = "scp" # type: ( scp || github || gitee || Api-http || rpc ) default: scp
+remote_uri = "127.0.0.1:22"
+username = "root"
+password = "$ZK7M@~1RY"
+keyPath = ""
+passphrase = ""
+remote_path = "/data/backup/mysshw/mysshw.toml" # remote file path
+access_token = "" # gitee_access_token
+gist_id = ""  # gist_id
+
+# config example.
+# see URL: https://github.com/cnphpbb/mysshw/blob/master/readme.md#config
+[[nodes]]
+groups = "Groups01"
+ssh = [
+    # { name="no ssh conf", alias="", host="", user="", port=22, password="" },
+    { name="no ssh conf", alias="", host="", user="", port=22, password="" },
+]
