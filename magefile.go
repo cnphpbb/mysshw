@@ -71,7 +71,14 @@ func buildTarget(OS, arch string, envs map[string]string) error {
 	tag := tag()
 	name := fmt.Sprintf("mysshw-%s-%s-%s", OS, arch, tag)
 	dir := fmt.Sprintf("dist/%s", name)
-	target := fmt.Sprintf("%s/mysshw", dir)
+	target_unix := fmt.Sprintf("%s/mysshw", dir)
+	target_win := fmt.Sprintf("%s/mysshw.exe", dir)
+	target := ""
+	if OS == "windows" {
+		target = target_win
+	}else{
+		target = target_unix
+	}
 
 	args := make([]string, 0, 10)
 	args = append(args, "build", "-o", target)

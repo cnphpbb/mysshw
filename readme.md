@@ -1,5 +1,7 @@
 # mysshw
 
+**mysshw - a free and open source ssh cli client soft.**
+
 ## install
 
 go version <= 1.16.*    
@@ -56,11 +58,10 @@ ssh = [
 ]
 ```
 
-~~## 未实现的功能~~
+## testing
+use [testify](http://github.com/stretchr/testify) Go testing framework.
 
-~~**暂时只有SCP同步配置文件的方法。**~~
-
-### Sync Actions Type List
+## Sync Actions Type List
 1. [x] SCP
 2. [ ] Github - gist
 3. [ ] Gitee - gist
