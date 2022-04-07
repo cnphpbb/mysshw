@@ -1,4 +1,3 @@
-
 package main
 
 import (
@@ -20,6 +19,7 @@ var (
 	GoVersion string = runtime.Version()
 )
 func main() {
+
 	cli.VersionPrinter = func(c *cli.Context) {
 		fmt.Println(" mysshw - a free and open source ssh cli client soft.")
 		fmt.Println("    - Version::", Version)
@@ -35,7 +35,7 @@ func main() {
 			Version: Version,
 			UseShortOptionHandling: true,
 			Flags: cmd.GlobalOptions,
-			//Before: cmd.LoadGlobalOptions,
+			Before: cmd.LoadGlobalOptions,
 			Commands: cmd.Commands,
 		}
 		app.Action = func(ctx *cli.Context) error {

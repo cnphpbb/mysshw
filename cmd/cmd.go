@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 
 	"mysshw/auth"
@@ -62,12 +63,17 @@ var (
 		},
 		Action: func(ctx *cli.Context) error {
 			// 全局选项
-			if ctx.IsSet("cfg") {
+			if ctx.IsSet("c") {
+				log.Println("started path changed to", ctx.Path("cfg"))
 				config.CFG_PATH = ctx.Path("cfg")
+			}
+			log.Println("started path changed to", config.CFG_PATH)
+			if err := config.LoadViperConfig(); err != nil {
+				fmt.Println(err)
+				os.Exit(1)
 			}
 
 			syncCfg := config.CFG.SyncCfg
-			//fmt.Println(syncCfg)
 			cfg, _ := auth.PasswordKey(syncCfg.UserName, syncCfg.Password, ssh.InsecureIgnoreHostKey())
 			client := scp.NewClient(syncCfg.RemoteUri, &cfg)
 			err := client.Connect()
