@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"os"
 	"os/user"
@@ -63,9 +62,9 @@ func genSSHConfig(node *config.SSHNode) *defaultClient {
 
 	var pemBytes []byte
 	if node.KeyPath == "" {
-		pemBytes, err = ioutil.ReadFile(path.Join(u.HomeDir, ".ssh/id_rsa"))
+		pemBytes, err = os.ReadFile(path.Join(u.HomeDir, ".ssh/id_rsa"))
 	} else {
-		pemBytes, err = ioutil.ReadFile(node.KeyPath)
+		pemBytes, err = os.ReadFile(node.KeyPath)
 	}
 
 	if err != nil {
@@ -165,29 +164,29 @@ func (c *defaultClient) Login() {
 	//	}
 	//	client = ssh.NewClient(ncc, chans, reqs)
 	//} else {
-		client1, err := ssh.Dial("tcp", net.JoinHostPort(host, port), c.clientConfig)
-		client = client1
-		if err != nil {
-			msg := err.Error()
-			// use terminal password retry
-			if strings.Contains(msg, "no supported methods remain") && !strings.Contains(msg, "password") {
-				fmt.Printf("%s@%s's password:", c.clientConfig.User, host)
-				var b []byte
-				b, err = terminal.ReadPassword(int(syscall.Stdin))
-				if err == nil {
-					p := string(b)
-					if p != "" {
-						c.clientConfig.Auth = append(c.clientConfig.Auth, ssh.Password(p))
-					}
-					fmt.Println()
-					client, err = ssh.Dial("tcp", net.JoinHostPort(host, port), c.clientConfig)
+	client1, err := ssh.Dial("tcp", net.JoinHostPort(host, port), c.clientConfig)
+	client = client1
+	if err != nil {
+		msg := err.Error()
+		// use terminal password retry
+		if strings.Contains(msg, "no supported methods remain") && !strings.Contains(msg, "password") {
+			fmt.Printf("%s@%s's password:", c.clientConfig.User, host)
+			var b []byte
+			b, err = terminal.ReadPassword(int(syscall.Stdin))
+			if err == nil {
+				p := string(b)
+				if p != "" {
+					c.clientConfig.Auth = append(c.clientConfig.Auth, ssh.Password(p))
 				}
+				fmt.Println()
+				client, err = ssh.Dial("tcp", net.JoinHostPort(host, port), c.clientConfig)
 			}
 		}
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
+	}
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 	//}
 	defer client.Close()
 

@@ -4,7 +4,7 @@
  * @Description: 采用toml做为新版本的配置文件
  * @Version: 	1.0.0
  * @Date:     	2021/9/23
- * @Update:     2025-04-04
+ * @Updated:     2025-04-04
  */
 
 package config
