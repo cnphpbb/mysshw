@@ -3,7 +3,8 @@
  *
  * @Description //TODO
  * @Version: 1.0.0
- * @Date     2021/9/22
+ * @Date:     2021/9/22
+ * @Updated:  2025-04-04
  */
 
 package scp
@@ -13,7 +14,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path"
 	"sync"
@@ -85,7 +85,7 @@ func (a *Client) CopyFile(fileReader io.Reader, remotePath string, permissions s
 // if the file length in know in advance please use "Copy" instead.
 // Access copied bytes by providing a PassThru reader factory
 func (a *Client) CopyFilePassThru(fileReader io.Reader, remotePath string, permissions string, passThru PassThru) error {
-	contents_bytes, _ := ioutil.ReadAll(fileReader)
+	contents_bytes, _ := io.ReadAll(fileReader)
 	bytes_reader := bytes.NewReader(contents_bytes)
 
 	return a.CopyPassThru(bytes_reader, remotePath, permissions, int64(len(contents_bytes)), passThru)
