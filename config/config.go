@@ -4,13 +4,14 @@
  * @Description: 采用toml做为新版本的配置文件
  * @Version: 	1.0.0
  * @Date:     	2021/9/23
+ * @Update:     2025-04-04
  */
 
 package config
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"os/user"
 	"path"
 	"path/filepath"
@@ -37,7 +38,7 @@ type (
 		Passphrase  string `toml:"passphrase" mapstructure:"passphrase"`
 		RemotePath  string `toml:"remote_path" mapstructure:"remote_path"`
 		AccessToken string `toml:"access_token" mapstructure:"access_token"`
-		GistID      string `tome:"gist_id" mapstructure:"gist_id"`
+		GistID      string `toml:"gist_id" mapstructure:"gist_id"`
 	}
 	Nodes struct {
 		Groups   string     `toml:"groups"`
@@ -84,7 +85,7 @@ type (
 //}
 
 var (
-	CFG_PATH string = "~/.mysshw.toml"
+	CFG_PATH     string = "~/.mysshw.toml"
 	CFG_EXT_TYPE string = "toml"
 	//LOG_PATH  = "mysshw.log"
 	CFG *Configs
@@ -126,7 +127,8 @@ func LoadConfigBytes(cfgPath string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfgBytes, err1 := ioutil.ReadFile(CFG_PATH)
+	// 使用 os.ReadFile 替代已弃用的 ioutil.ReadFile
+	cfgBytes, err1 := os.ReadFile(CFG_PATH)
 	if err1 == nil {
 		return cfgBytes, nil
 	}
@@ -169,7 +171,7 @@ func LoadViperConfig() error {
 	_cfgDir, _cfgFile, _ := isCfgPath(CFG_PATH)
 
 	if !strings.HasSuffix(_cfgFile, "mysshw") {
-		return  fmt.Errorf("mysshw:: The configuration file '~/.mysshw.toml' || '~/mysshw.toml' || './mysshw.toml' ")
+		return fmt.Errorf("mysshw:: The configuration file must be named '~/.mysshw.toml', '~/mysshw.toml' or './mysshw.toml'")
 	}
 
 	viper.SetConfigName(_cfgFile)
@@ -199,9 +201,9 @@ func isCfgPath(cfgPath string) (dir, file, ext string) {
 	_cfgDir = path.Dir(_cfgDir)
 	_cfgExt := filepath.Ext(cfgPath)
 
-	if cfgPath != CFGPATH  {
+	if cfgPath != CFGPATH {
 		if strings.HasSuffix(_cfgFile, ".toml") {
-			_cfgFile = _cfgFile[:(len(_cfgFile)-len(_cfgExt))]
+			_cfgFile = _cfgFile[:(len(_cfgFile) - len(_cfgExt))]
 		}
 	} else {
 		_cfgFile = ".mysshw"
@@ -214,5 +216,3 @@ func isCfgPath(cfgPath string) (dir, file, ext string) {
 
 //todo:
 //func WriteViperConfig() error {}
-
-
