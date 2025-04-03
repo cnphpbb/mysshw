@@ -1,6 +1,6 @@
 module mysshw
 
-go 1.17
+go 1.23
 
 require (
 	github.com/BurntSushi/toml v0.4.1
