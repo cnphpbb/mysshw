@@ -67,3 +67,13 @@ use [testify](http://github.com/stretchr/testify) Go testing framework.
 3. [ ] Gitee - gist
 4. [ ] API - http(s)
 5. [ ] RPC
+
+## build
+
+```bash
+docker compose -p base -f ./docker-compose.yml up -d
+docker exec -it build_go bash
+go mod tidy
+go install github.com/magefile/mage@latest
+git config --global --add safe.directory /app
+```

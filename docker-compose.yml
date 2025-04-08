@@ -1,0 +1,18 @@
+# run:: docker compose -p base -f ./docker-compose.yml up -d
+services:
+  go:
+    image: golang:1.23.8-bookworm
+    container_name: build_go
+    restart: always
+    volumes:
+      - ./:/app/
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    working_dir: /app/
+    command: bash
+    environment:
+      - GO111MODULE=on
+      - GOPROXY=https://goproxy.cn,direct
+      - TZ=Asia/Shanghai
+    tty: true
+    
