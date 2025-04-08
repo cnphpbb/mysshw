@@ -84,6 +84,11 @@ connect server ssh -p 22 admin@192.168.1.101 version: SSH-2.0-OpenSSH_8.2p1
 ## 许可证
 MIT
 
+## go pkg
+github.com/magefile/mage
+github.com/urfave/cli/v2
+github.com/BurntSushi/toml
+github.com/spf13/viper
 
 ## 项目编译
 
