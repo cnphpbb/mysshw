@@ -83,3 +83,14 @@ connect server ssh -p 22 admin@192.168.1.101 version: SSH-2.0-OpenSSH_8.2p1
 
 ## 许可证
 MIT
+
+
+## 项目编译
+
+```bash
+docker compose -p base -f ./docker-compose.yml up -d
+docker exec -it build_go bash
+go mod tidy
+go install github.com/magefile/mage@latest
+git config --global --add safe.directory /app
+```
