@@ -99,5 +99,5 @@ mage pack // 发布打包编译
 ./mysshw -c ./mysshw.toml // 启动程序, 指定配置文件 然后做个alias
 //参考：
 //alias mysshw='./mysshw -c ./mysshw.toml'
-./mysshw // 查找默认配置文件, 位置 ~/.mysshw.toml
+./mysshw // 查找默认配置文件, 位置 ~/.mysshw.toml。 如果没有默认配置文件, 则第一次会报错并自动生成默认配置文件
 ```
