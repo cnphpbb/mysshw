@@ -76,4 +76,8 @@ docker exec -it build_go bash
 go mod tidy
 go install github.com/magefile/mage@latest
 git config --global --add safe.directory /app
+mage build // Development build
+mage pack // Release build
+./mysshw -h // view help information
+./mysshw -c ./mysshw.toml // run with config file
 ```
