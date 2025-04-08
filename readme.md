@@ -2,6 +2,7 @@
 
 **mysshw - a free and open source ssh cli client soft.**
 
+[Chinese Documentation](readme.zh.md)
 ## install
 
 go version <= 1.16.*    
