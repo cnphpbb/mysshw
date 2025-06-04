@@ -181,7 +181,9 @@ func LoadViperConfig() error {
 
 	err := viper.ReadInConfig()
 	if err != nil {
-		//log.Println(CFG_PATH)
+		// 先备份一份已经存在的配置文件, 如果有的话
+		BackupConfig()
+		// 如果配置文件不存在，则创建一个默认的配置文件
 		GetCfgPath(CFG_PATH)
 		viper.SetDefault("cfg_dir", "~/.mysshw.toml")
 		viper.WriteConfigAs(CFG_PATH)
