@@ -42,7 +42,8 @@ func PrivateKey(user, keyPath string, keyCallBack ssh.HostKeyCallback) (ssh.Clie
 
 // Creates the configuration for a client that authenticates with a password protected private key
 func PrivateKeyWithPassphrase(user, keyPath string, passpharase []byte, keyCallBack ssh.HostKeyCallback) (ssh.ClientConfig, error) {
-	privateKey, err := ioutil.ReadFile(keyPath)
+	// 由于 ioutil.ReadFile 已弃用，从 Go 1.16 开始改用 os.ReadFile
+	privateKey, err := os.ReadFile(keyPath)
 
 	if err != nil {
 		return ssh.ClientConfig{}, err
@@ -82,8 +83,8 @@ func SshAgent(user string, keyCallBack ssh.HostKeyCallback) (ssh.ClientConfig, e
 
 // Creates a configuration for a client that authenticates using username and password
 func PasswordKey(user, password string) ssh.AuthMethod {
-    if password == "" {
-        return ssh.PublicKeys() // 改为公钥认证
-    }
-    return ssh.Password(password)
+	if password == "" {
+		return ssh.PublicKeys() // 改为公钥认证
+	}
+	return ssh.Password(password)
 }
