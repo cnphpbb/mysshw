@@ -81,13 +81,9 @@ func SshAgent(user string, keyCallBack ssh.HostKeyCallback) (ssh.ClientConfig, e
 }
 
 // Creates a configuration for a client that authenticates using username and password
-func PasswordKey(user, passwd string, keyCallBack ssh.HostKeyCallback) (ssh.ClientConfig, error) {
-
-	return ssh.ClientConfig{
-		User: user,
-		Auth: []ssh.AuthMethod{
-			ssh.Password(passwd),
-		},
-		HostKeyCallback: keyCallBack,
-	}, nil
+func PasswordKey(user, password string) ssh.AuthMethod {
+    if password == "" {
+        return ssh.PublicKeys() // 改为公钥认证
+    }
+    return ssh.Password(password)
 }
