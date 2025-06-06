@@ -9,7 +9,6 @@
 package auth
 
 import (
-	"io/ioutil"
 	"net"
 	"os"
 
@@ -19,7 +18,7 @@ import (
 
 // PrivateKey Loads a private and public key from "path" and returns a SSH ClientConfig to authenticate with the server
 func PrivateKey(user, keyPath string, keyCallBack ssh.HostKeyCallback) (ssh.ClientConfig, error) {
-	privateKey, err := ioutil.ReadFile(keyPath)
+	privateKey, err := os.ReadFile(keyPath)
 
 	if err != nil {
 		return ssh.ClientConfig{}, err
