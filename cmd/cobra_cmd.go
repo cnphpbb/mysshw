@@ -68,24 +68,21 @@ Use "mysshw help" for more information about a specific command.
   mysshw -c /path/to/custom/config.toml
 
   # Sync local config to remote server
-  mysshw sync --upload
-  or
-  mysshw sync -u
+  mysshw sync --upload | -u
 
   # Download remote config to local
-  mysshw sync --down
+  mysshw sync --down | -z
+
+  # Custom configuration file path for sync command
+  mysshw sync --cfg /path/to/custom/config.toml --upload or --down
   or
-  mysshw sync -d
+  mysshw sync -c /path/to/custom/config.toml -u or -z
 
   # Display version information
-  mysshw version
-  or
-  mysshw -v | --version
+  mysshw version | -v | --version
 
   # Display help information
-  mysshw help
-  or
-  mysshw -h | --help
+  mysshw help | -h | --help
   `,
 }
 
