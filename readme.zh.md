@@ -156,3 +156,12 @@ mage pack   // 发布打包编译
 # 可以直接使用 mysshw 命令
 ./mysshw // 查找默认配置文件, 位置 ~/.mysshw.toml。 如果没有默认配置文件, 则第一次会报错并自动生成默认配置文件
 ```
+### Windows 平台
+- 推荐使用 PowerShell 或 Windows Terminal 等终端工具
+- 确保已安装 OpenSSH 客户端
+- 配置环境变量
+- 重启终端，使环境变量生效  
+
+**支持 `.\mysshw.exe -c D:\mydata\mysshw\mysshw.toml` 启动程序, 指定配置文件**
+- 支持 `Ctrl+d` 退出程序
+- 支持 `q` 退出程序 （试验性）
