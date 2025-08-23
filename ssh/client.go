@@ -39,7 +39,7 @@ var (
 )
 
 // Client 定义SSH客户端接口
- type Client interface {
+type Client interface {
 	// Login 建立SSH连接并启动会话，sessionEndCallback在会话结束时被调用
 	Login(sessionEndCallback func())
 }
@@ -158,14 +158,25 @@ func (c *defaultClient) Login(sessionEndCallback func()) {
 		if strings.Contains(msg, "no supported methods remain") && !strings.Contains(msg, "password") {
 			fmt.Printf("%s@%s's password:", c.clientConfig.User, host)
 			var b []byte
-			b, err := term.ReadPassword(int(syscall.Stdin))
-			if err == nil {
+			var readPasswordErr error
+
+			b, readPasswordErr = term.ReadPassword(int(syscall.Stdin))
+			if readPasswordErr == nil {
+
 				p := string(b)
 				if p != "" {
 					c.clientConfig.Auth = append(c.clientConfig.Auth, ssh.Password(p))
 				}
 				fmt.Println()
-				client, err = ssh.Dial("tcp", net.JoinHostPort(host, port), c.clientConfig)
+				clientC, errclientC := ssh.Dial("tcp", net.JoinHostPort(host, port), c.clientConfig)
+				if errclientC != nil {
+					fmt.Println(errclientC)
+					if sessionEndCallback != nil {
+						sessionEndCallback()
+					}
+					return
+				}
+				client = clientC
 			}
 		}
 	}
@@ -238,7 +249,6 @@ func (c *defaultClient) Login(sessionEndCallback func()) {
 		fmt.Println(err)
 		return
 	}
-
 
 	// change stdin to user
 	go func() {
