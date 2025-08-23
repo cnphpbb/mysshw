@@ -1,8 +1,8 @@
 # mysshw
 
-**开源免费的SSH命令行客户端工具**
-**Go 1.23.0 及以上版本**
-**支持 Linux、macOS、Windows 平台**
+**开源免费的SSH命令行客户端工具**  
+**Go 1.23.0 及以上版本**  
+**支持 Linux、macOS、Windows 平台**  
 
 [English Documentation](readme.md)
 
@@ -121,26 +121,33 @@ mysshw sync --help | -h
 ## 许可证
 MIT
 
-## go pkg
-github.com/magefile/mage
-github.com/spf13/cobra
-github.com/BurntSushi/toml
-github.com/spf13/viper
-github.com/manifoldco/promptui
-github.com/magefile/mage
+## Go Packages 依赖
+
+- github.com/magefile/mage
+- github.com/spf13/cobra
+- github.com/BurntSushi/toml
+- github.com/spf13/viper
+- github.com/manifoldco/promptui
+- github.com/pkg/sftp
+- golang.org/x/crypto/ssh
+
 
 ## 项目编译
 
 ```bash
+# 可选：使用 Docker 编译
 docker compose -p base -f ./docker-compose.yml up -d
 docker exec -it build_go bash
+# 可选：添加安全目录
+git config --global --add safe.directory /app
+# 以下必须在项目根目录执行
 go mod tidy
 go install github.com/magefile/mage@latest
-git config --global --add safe.directory /app
-mage build // 开发编译，不打tar包
-mage pack // 发布打包编译
-./mysshw -h // 查看帮助信息
-./mysshw -c ./mysshw.toml // 启动程序, 指定配置文件 然后做个alias
+mage clean  // 清理编译目录 dist
+mage build  // 开发编译，不打tar包
+mage pack   // 发布打包编译
+./mysshw -h   // 查看帮助信息
+./mysshw -c ./mysshw.toml   // 启动程序, 指定配置文件 然后做个alias
 # 参考：
 # alias mysshw='./mysshw -c ./mysshw.toml'
 # 或者
