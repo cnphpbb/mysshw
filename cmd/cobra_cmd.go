@@ -9,6 +9,8 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"os/user"
+	"path"
 	"syscall"
 	"time"
 
@@ -194,9 +196,17 @@ func init() {
 
 }
 
-// 从 context 中获取配置路径
+// 从 context 中获取配置路径，如果不存在则返回默认路径
 func GetCfgPath(ctx context.Context) string {
-	return ctx.Value(cfgKey).(string)
+	if path, ok := ctx.Value(cfgKey).(string); ok {
+		return path
+	}
+	// 默认配置路径: $HOME/.sshw.toml
+	usr, err := user.Current()
+	if err != nil {
+		return "./mysshw.toml"
+	}
+	return path.Join(usr.HomeDir, ".sshw.toml")
 }
 
 // Execute 执行根命令
