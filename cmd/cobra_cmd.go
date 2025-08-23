@@ -199,13 +199,16 @@ func init() {
 // 从 context 中获取配置路径，如果不存在则返回默认路径
 func GetCfgPath(ctx context.Context) string {
 	if path, ok := ctx.Value(cfgKey).(string); ok {
+		//fmt.Println("GetCfgPath::path", path)
 		return path
 	}
-	// 默认配置路径: $HOME/.sshw.toml
+	// 默认配置路径: $HOME/.mysshw.toml
 	usr, err := user.Current()
 	if err != nil {
-		return "./mysshw.toml"
+		//fmt.Println("GetCfgPath::user.Current().err", config.CFGPATH)
+		return config.CFGPATH
 	}
+	//fmt.Println("GetCfgPath::return", path.Join(usr.HomeDir, ".mysshw.toml"))
 	return path.Join(usr.HomeDir, ".mysshw.toml")
 }
 
@@ -268,8 +271,8 @@ func RunSSH(ctx context.Context) {
 
 	for {
 		// 显示菜单前提示按Ctrl+d退出
+		fmt.Print("\033[H\033[2J")
 		fmt.Println("Press 'Ctrl+d' or 'q' to quit, or select an SSH node:")
-
 		node := ssh.Choose(config.CFG)
 		if node == nil {
 			fmt.Println("mysshw:: exiting...")
