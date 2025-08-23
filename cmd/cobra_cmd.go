@@ -33,10 +33,10 @@ const cfgKey cfgKeyType = "cfg"
 var rootCmd = &cobra.Command{
 	Use:     "mysshw",
 	Version: Version,
-	Short:   "CLI mysshw: A free and open source ssh cli client soft.",
-	Long: `CLI mysshw: A free and open source ssh cli client soft.
+	Short:   "CLI mysshw: A free and open source SSH command line client software.",
+	Long: `CLI mysshw: A free and open source SSH command line client software.
 
-Use "mysshw help" for more information about a command.
+Use "mysshw help" for more information about a specific command.
 `,
 	Run: func(cmd *cobra.Command, args []string) {
 		// 检查是否请求版本信息
@@ -59,6 +59,34 @@ Use "mysshw help" for more information about a command.
 		// 当没有子命令时执行 RunSSH
 		RunSSH(cmd.Context())
 	},
+	Example: `  # Connect to SSH using default configuration
+  mysshw
+
+  # Connect using a custom configuration file
+  mysshw --cfg /path/to/custom/config.toml
+  or
+  mysshw -c /path/to/custom/config.toml
+
+  # Sync local config to remote server
+  mysshw sync --upload
+  or
+  mysshw sync -u
+
+  # Download remote config to local
+  mysshw sync --down
+  or
+  mysshw sync -d
+
+  # Display version information
+  mysshw version
+  or
+  mysshw -v | --version
+
+  # Display help information
+  mysshw help
+  or
+  mysshw -h | --help
+  `,
 }
 
 var VersionCmd = &cobra.Command{
@@ -72,8 +100,8 @@ var VersionCmd = &cobra.Command{
 // syncCmd 同步配置文件到远程
 var syncCmd = &cobra.Command{
 	Use:   "sync",
-	Short: "Sync config file to remote",
-	Long:  `Sync config file to remote server or download from remote.`,
+	Short: "Sync config file to remote server or download from remote server.",
+	Long:  `Sync config file to remote server or download from remote server.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		// 处理配置文件路径
 		cfgPath, _ := cmd.Flags().GetString("cfg")
@@ -146,16 +174,17 @@ var syncCmd = &cobra.Command{
 // 初始化命令，添加标志等
 func init() {
 	// 添加全局标志
-	rootCmd.PersistentFlags().StringP("cfg", "c", "", "config file (default is $HOME/.mysshw.toml)")
-	rootCmd.PersistentFlags().BoolP("version", "v", false, "version for mysshw")
+	rootCmd.PersistentFlags().StringP("cfg", "c", "", "Custom config file path (default is $HOME/.mysshw.toml)")
+
+	rootCmd.PersistentFlags().BoolP("version", "v", false, "Print version for mysshw")
 
 	// 添加子命令
 	rootCmd.AddCommand(syncCmd)
 	rootCmd.AddCommand(VersionCmd)
 
 	// 为 sync 命令添加标志
-	syncCmd.Flags().BoolP("upload", "u", false, "Update mysshw config")
-	syncCmd.Flags().BoolP("down", "z", false, "Download mysshw config")
+	syncCmd.Flags().BoolP("upload", "u", false, "Upload local config to remote server")
+	syncCmd.Flags().BoolP("down", "z", false, "Download remote config to local")
 	//rootCmd.Context()
 	rootCmd.SetContext(context.Background())
 	rootCmd.SetContext(context.WithValue(rootCmd.Context(), cfgKey, config.CFG_PATH))
