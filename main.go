@@ -1,20 +1,18 @@
 package main
 
 import (
-	"fmt"
-	"os"
 	"runtime"
 
 	"mysshw/cmd"
-	"mysshw/config"
-	"mysshw/ssh"
 )
 
+// Version information - These variables are parameters passed during Go build
+// Go build need
 var (
-	Version   = "v21.10.06"
-	Build     = "master"
-	BuildTime string
-	GoVersion string = runtime.Version()
+	Version   = "v21.10.06"                     // Application version:: "date +%y.%m.%d"
+	Build     = "master"                        // Git branch name + commit id
+	BuildTime string                            // Build timestamp
+	GoVersion string        = runtime.Version() // Go version used for building
 )
 
 func main() {
@@ -22,14 +20,4 @@ func main() {
 	cmd.SetVersion(Version, Build, BuildTime, GoVersion)
 	// 使用 cobra 命令
 	cmd.ExecuteCobra()
-}
-
-func RunSSH() {
-	if err := config.LoadViperConfig(); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-	node := ssh.Choose(config.CFG)
-	client := ssh.NewClient(node)
-	client.Login()
 }

@@ -10,7 +10,6 @@ import (
 	"mysshw/config"
 	"mysshw/scp"
 	"mysshw/ssh"
-	"mysshw/utils"
 
 	"github.com/spf13/cobra"
 	crypto_ssh "golang.org/x/crypto/ssh"
@@ -26,11 +25,25 @@ var (
 
 // rootCmd 代表没有调用子命令时的基础命令
 var rootCmd = &cobra.Command{
-	Use:   "mysshw",
-	Short: "Name: mysshw, A free and open source ssh cli client soft.",
-	Long: `Name: mysshw, A free and open source ssh cli client soft. 
+	Use:     "mysshw",
+	Version: Version,
+	Short:   "A free and open source ssh cli client soft.",
+	Long: `A free and open source ssh cli client soft.
 
-Use "mysshw help" for more information about a command.`,
+Usage:
+  mysshw [command]
+
+Available Commands:
+  sync       Sync config file to remote
+  help       Help about any command
+
+Flags:
+  -c, --cfg string    config file (default is $HOME/.mysshw.toml)
+  -h, --help          help for mysshw
+  -v, --version       version for mysshw
+
+Use "mysshw [command] --help" for more information about a command.
+`,
 	Run: func(cmd *cobra.Command, args []string) {
 		// 检查是否请求版本信息
 		versionFlag, _ := cmd.Flags().GetBool("version")
@@ -138,10 +151,6 @@ func init() {
 	// 为 sync 命令添加标志
 	syncCmd.Flags().BoolP("upload", "u", false, "Update mysshw config")
 	syncCmd.Flags().BoolP("down", "z", false, "Download mysshw config")
-	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
-		utils.SetupSignalHandler()
-		return nil
-	}
 }
 
 // Execute 执行根命令
