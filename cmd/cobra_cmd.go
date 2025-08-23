@@ -49,14 +49,15 @@ Use "mysshw help" for more information about a command.
 		// 处理配置文件路径
 		cfgPath, _ := cmd.Flags().GetString("cfg")
 		if cfgPath != "" {
-			log.Println("Config path changed to", cfgPath)
+			//log.Println("Config path changed to", cfgPath)
 			config.CFG_PATH = cfgPath
 			// 更新上下文中的配置路径
-			cmd.SetContext(context.WithValue(cmd.Context(), cfgKey, cfgPath))
+			cmd.SetContext(context.WithValue(cmd.Context(),
+				cfgKey, cfgPath))
 		}
 
 		// 当没有子命令时执行 RunSSH
-		RunSSH()
+		RunSSH(cmd.Context())
 	},
 }
 
@@ -158,8 +159,8 @@ func init() {
 	//rootCmd.Context()
 	rootCmd.SetContext(context.Background())
 	rootCmd.SetContext(context.WithValue(rootCmd.Context(), cfgKey, config.CFG_PATH))
-	ctx := rootCmd.Context()
-	fmt.Println("started path changed to", GetCfgPath(ctx))
+	// ctx := rootCmd.Context()
+	// fmt.Println("started path changed to", GetCfgPath(ctx))
 
 }
 
@@ -202,7 +203,10 @@ func SetVersion(version, build, buildTime, goVersion string) {
 }
 
 // RunSSH 执行 SSH 登录
-func RunSSH() {
+// 修复初始化循环问题，将 context 作为参数传入
+func RunSSH(ctx context.Context) {
+	cfgPath := GetCfgPath(ctx)
+	fmt.Println("Config path changed to:", cfgPath)
 	if err := config.LoadViperConfig(); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
