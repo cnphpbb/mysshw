@@ -23,6 +23,32 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+// DefaultConfig 包含默认配置的字符串
+const DefaultConfig = `# config example.
+# see URL: https://github.com/cnphpbb/mysshw/blob/master/readme.md#config
+cfg_dir = "./mysshw.toml"   # default:  $HOME/.sshw.toml
+
+[sync]
+type = "scp" # type: ( scp || github || gitee || Api-http || rpc ) default: scp
+remote_uri = "127.0.0.1:22"
+username = "root"
+password = "$ZK7M@~1RY"
+keyPath = ""
+passphrase = ""
+remote_path = "/data/backup/mysshw/mysshw.toml" # remote file path
+access_token = "" # gitee_access_token
+gist_id = ""  # gist_id
+
+# config example.
+# see URL: https://github.com/cnphpbb/mysshw/blob/master/readme.md#config
+[[nodes]]
+groups = "Groups01"
+ssh = [
+    # 
+	# { name="no ssh conf", alias="", host="192.168.10.60", user="vm00", port=22, password="qwe123!@#qwe", keypath="~/.ssh/id_rsa", passphrase="abcdefghijklmn" },
+    { name="vm-test", alias="TestNode", host="127.0.0.1", user="root", port=22, password="test#Password" },
+]`
+
 type (
 	Configs struct {
 		CfgDir  string   `toml:"cfg_dir" mapstructure:"cfg_dir"`
@@ -207,8 +233,8 @@ func LoadViperConfig(cfgPath string) error {
 		// 先备份一份已经存在的配置文件, 如果有的话
 		BackupConfig()
 		// 如果配置文件不存在，则创建一个默认的配置文件
-		//GetCfgPath(CFG_PATH)
-		viper.SetDefault("cfg_dir", cfgPath)
+		viper.ReadConfig(strings.NewReader(DefaultConfig))
+		viper.Set("cfg_dir", _cfgPath)
 		viper.WriteConfigAs(_cfgPath)
 
 		return fmt.Errorf(`mysshw:: The configuration file '%s' was not detected,
