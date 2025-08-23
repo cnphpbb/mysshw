@@ -1,31 +1,27 @@
 # mysshw
 
-**mysshw - a free and open source ssh cli client soft.**
+**mysshw - A free and open source SSH command line client software.**  
+**Go 1.23.0 and above**  
+**Supports Linux, macOS, and Windows platforms**  
 
-[Chinese Documentation](readme.zh.md)
-## install
+[中文文档](readme.zh.md)
 
-go version <= 1.16.*    
-use `go get`
+### Binary Release
+Download the latest binary from [releases](https://github.com/cnphpbb/mysshw/releases).
 
-```
-go get -u github.com/cnphpbb/mysshw
-```
+## Configuration
 
-go version >= 1.17.*
-use `go install`
+The configuration file can be placed in one of the following locations:
+- `~/.mysshw`
+- `~/.mysshw.tml`
+- `~/.mysshw.toml`
+- `./.mysshw`
+- `./.mysshw.tml`
+- `./.mysshw.toml`
 
-```
-go install github.com/cnphpbb/mysshw
-```
+Default configuration path: `$HOME/.mysshw.toml`
 
-or download binary from [releases](//github.com/cnphpbb/mysshw/releases).
-
-## config
-
-put config file in `~/.mysshw` or `~/.mysshw.tml` or `~/.mysshw.toml` or `./.mysshw` or `./.mysshw.tml` or `./.mysshw.toml`.
-
-config example:
+### Configuration Example:
 
 ```toml
 cfg_dir = "~/.mysshw.toml"   # default:  $HOME/.sshw.toml
@@ -58,27 +54,78 @@ ssh = [
     { name="server 2", host="192.168.10.3" },
 ]
 ```
+## Go Packages
 
-## testing
-use [testify](http://github.com/stretchr/testify) Go testing framework.
+- github.com/magefile/mage
+- github.com/spf13/cobra
+- github.com/BurntSushi/toml
+- github.com/spf13/viper
+- github.com/manifoldco/promptui
+- github.com/pkg/sftp
+- golang.org/x/crypto/ssh
 
-## Sync Actions Type List
+## Testing
+We use [testify](http://github.com/stretchr/testify) as our Go testing framework.
+
+## TODO
+
+### RunSSH todo
+- [ ] Exit SSH session and return to main interface 
+
+### Sync Actions Type List
 1. [x] SCP
-2. [ ] Github - gist
-3. [ ] Gitee - gist
-4. [ ] API - http(s)
+2. [ ] Github - Gist
+3. [ ] Gitee - Gist
+4. [ ] API - HTTP(s)
 5. [ ] RPC
 
-## build
-
+## Usage Examples
 ```bash
+# View help information
+mysshw --help | -h
+
+# Start the program (enter interactive mode by default without parameters)
+mysshw
+
+# Specify configuration file path
+mysshw --cfg /path/to/custom/config.toml
+# Or use short option
+mysshw -c /path/to/custom/config.toml
+
+# View version information
+mysshw version | --version | -v
+
+# Sync configuration file to remote server
+mysshw sync --upload | -u
+
+# Download configuration file from remote server
+mysshw sync --down |-z
+
+# Sync with custom configuration file path
+mysshw sync --cfg /path/to/custom/config.toml --upload
+# Or mix short options
+mysshw sync -c /path/to/custom/config.toml -u
+
+# View sync command help
+mysshw sync --help | -h
+```
+
+## Build
+```bash
+# Optional: Use Docker to build
 docker compose -p base -f ./docker-compose.yml up -d
 docker exec -it build_go bash
+git config --global --add safe.directory /app
+# Must be in project root directory
 go mod tidy
 go install github.com/magefile/mage@latest
-git config --global --add safe.directory /app
-mage build // Development build
-mage pack // Release build
-./mysshw -h // view help information
-./mysshw -c ./mysshw.toml // run with config file
+mage clean  // Clean build directory dist
+mage build  // Development build (without tar package)
+mage pack   // Release build (with tar package)
+./mysshw -h   // View help information
+./mysshw -c ./mysshw.toml   // Run with config file
+
+# Create an alias for convenience
+# echo "alias mysshw='./mysshw -c ./mysshw.toml'" >> ~/.bashrc
+# source ~/.bashrc
 ```
