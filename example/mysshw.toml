@@ -19,5 +19,5 @@ gist_id = ""  # gist_id
 groups = "Groups01"
 ssh = [
     # { name="no ssh conf", alias="", host="", user="", port=22, password="" },
-    { name="no ssh conf", alias="", host="", user="", port=22, password="" },
+    { name="vm-test", alias="TestNode", host="127.0.0.1", user="root", port=22, password="test#Password" },
 ]

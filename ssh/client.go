@@ -39,8 +39,10 @@ var (
 	}
 )
 
-type Client interface {
-	Login()
+// Client 定义SSH客户端接口
+ type Client interface {
+	// Login 建立SSH连接并启动会话，sessionEndCallback在会话结束时被调用
+	Login(sessionEndCallback func())
 }
 
 type defaultClient struct {
@@ -134,8 +136,12 @@ func NewClient(node *config.SSHNode) Client {
 	return genSSHConfig(node)
 }
 
-func (c *defaultClient) Login() {
+// Login 建立SSH连接并启动会话，sessionEndCallback在会话结束时被调用
+func (c *defaultClient) Login(sessionEndCallback func()) {
 	if c == nil {
+		if sessionEndCallback != nil {
+			sessionEndCallback()
+		}
 		return
 	}
 	host := c.node.Host
@@ -144,26 +150,6 @@ func (c *defaultClient) Login() {
 
 	var client *ssh.Client
 
-	//if len(jNodes) > 0 {
-	//	jNode := jNodes[0]
-	//	jc := genSSHConfig(jNode)
-	//	proxyClient, err := ssh.Dial("tcp", net.JoinHostPort(jNode.Host, strconv.Itoa(jNode.port())), jc.clientConfig)
-	//	if err != nil {
-	//		mysshw.l.Error(err)
-	//		return
-	//	}
-	//	conn, err := proxyClient.Dial("tcp", net.JoinHostPort(host, port))
-	//	if err != nil {
-	//		mysshw.l.Error(err)
-	//		return
-	//	}
-	//	ncc, chans, reqs, err := ssh.NewClientConn(conn, net.JoinHostPort(host, port), c.clientConfig)
-	//	if err != nil {
-	//		mysshw.l.Error(err)
-	//		return
-	//	}
-	//	client = ssh.NewClient(ncc, chans, reqs)
-	//} else {
 	client1, err := ssh.Dial("tcp", net.JoinHostPort(host, port), c.clientConfig)
 	client = client1
 	if err != nil {
@@ -185,6 +171,9 @@ func (c *defaultClient) Login() {
 	}
 	if err != nil {
 		fmt.Println(err)
+		if sessionEndCallback != nil {
+			sessionEndCallback()
+		}
 		return
 	}
 	//}
@@ -195,9 +184,17 @@ func (c *defaultClient) Login() {
 	session, err := client.NewSession()
 	if err != nil {
 		fmt.Println(err)
+		if sessionEndCallback != nil {
+			sessionEndCallback()
+		}
 		return
 	}
 	defer session.Close()
+	defer func() {
+		if sessionEndCallback != nil {
+			sessionEndCallback()
+		}
+	}()
 
 	fd := int(os.Stdin.Fd())
 	state, err := terminal.MakeRaw(fd)
@@ -242,12 +239,6 @@ func (c *defaultClient) Login() {
 		return
 	}
 
-	// then callback
-	//for i := range c.node.CallbackShells {
-	//	shell := c.node.CallbackShells[i]
-	//	time.Sleep(shell.Delay * time.Millisecond)
-	//	stdinPipe.Write([]byte(shell.Cmd + "\r"))
-	//}
 
 	// change stdin to user
 	go func() {
