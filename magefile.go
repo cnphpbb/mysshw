@@ -32,17 +32,19 @@ import (
 
 // for local machine build
 func Build() error {
-	return buildTarget(runtime.GOOS, runtime.GOARCH, nil)
+	return buildTarget(runtime.GOOS, runtime.GOARCH, nil, false)
 }
 
 // build all platform
 func Pack() error {
-	buildTarget("darwin", "amd64", nil)
-	buildTarget("darwin", "arm64", nil)
-	buildTarget("freebsd", "amd64", nil)
-	buildTarget("linux", "amd64", nil)
-	buildTarget("linux", "arm64", nil)
-	buildTarget("windows", "amd64", nil)
+	buildTarget("darwin", "amd64", nil, true)
+	buildTarget("darwin", "arm64", nil, true)
+	buildTarget("freebsd", "amd64", nil, true)
+	buildTarget("freebsd", "arm64", nil, true)
+	buildTarget("linux", "amd64", nil, true)
+	buildTarget("linux", "arm64", nil, true)
+	buildTarget("windows", "amd64", nil, true)
+	buildTarget("windows", "arm64", nil, true)
 	return genCheckSum()
 }
 
@@ -67,7 +69,8 @@ func Test() error {
 }
 
 // build to target (cross build)
-func buildTarget(OS, arch string, envs map[string]string) error {
+// createTar is an optional parameter (default: false) that controls whether to create a tar archive
+func buildTarget(OS, arch string, envs map[string]string, createTar bool) error {
 	tag := tag()
 	name := fmt.Sprintf("mysshw-%s-%s-%s", OS, arch, tag)
 	dir := fmt.Sprintf("dist/%s", name)
@@ -76,14 +79,21 @@ func buildTarget(OS, arch string, envs map[string]string) error {
 	target := ""
 	if OS == "windows" {
 		target = target_win
-	}else{
+	} else {
 		target = target_unix
+	}
+
+	// Determine if we should create tar archive (default: false)
+	shouldCreateTar := false
+	if createTar == true {
+		shouldCreateTar = createTar
 	}
 
 	args := make([]string, 0, 10)
 	args = append(args, "build", "-o", target)
 	args = append(args, "-ldflags", flags(), "main.go")
 
+	fmt.Println("args: ", args)
 	fmt.Println("build", target)
 	env := make(map[string]string)
 	env["GOOS"] = OS
@@ -101,7 +111,11 @@ func buildTarget(OS, arch string, envs map[string]string) error {
 	}
 	// cp -a ./example/mysshw.toml ./dist/{name}/mysshw.toml
 	sh.Run("cp", "-a", "example/mysshw.toml", fmt.Sprintf("%s/mysshw.toml", dir))
-	sh.Run("tar", "-czf", fmt.Sprintf("%s.tar.gz", dir), "-C", "dist", name)
+
+	// Only create tar archive if requested
+	if shouldCreateTar == true {
+		sh.Run("tar", "-czf", fmt.Sprintf("%s.tar.gz", dir), "-C", "dist", name)
+	}
 
 	return nil
 }
@@ -109,17 +123,19 @@ func buildTarget(OS, arch string, envs map[string]string) error {
 func flags() string {
 	hash := hash()
 	tag := tag()
+	gitBranchCommit := fmt.Sprintf("%s-%s", tag, hash)
 	buildTime := buildTime()
 	verStr := versionStr()
-	return fmt.Sprintf(`-s -w -X "main.Version=%s" -X "main.Build=%s-%s" -X "main.BuildTime=%s" -extldflags "-static"`, verStr, tag, hash, buildTime)
+	return fmt.Sprintf(`-s -w -X "main.Version=%s" -X "main.Build=%s" -X "main.BuildTime=%s" -extldflags "-static"`, verStr, gitBranchCommit, buildTime)
 }
 
 // tag returns the git tag for the current branch or "" if none.
 func tag() string {
-	s, _ := sh.Output("bash", "-c", "git branch --show-current> /dev/null")
-	if s == "" {
-		return "main"
-	}
+	s, _ := sh.Output("git", "branch", "--show-current")
+	// fmt.Println("tag: ", s)
+	// if s == "" {
+	// 	return "main"
+	// }
 	return s
 }
 
