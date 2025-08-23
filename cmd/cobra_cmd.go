@@ -27,22 +27,10 @@ var (
 var rootCmd = &cobra.Command{
 	Use:     "mysshw",
 	Version: Version,
-	Short:   "A free and open source ssh cli client soft.",
-	Long: `A free and open source ssh cli client soft.
+	Short:   "Name: mysshw, A free and open source ssh cli client soft.",
+	Long: `Name: mysshw, A free and open source ssh cli client soft.
 
-Usage:
-  mysshw [command]
-
-Available Commands:
-  sync       Sync config file to remote
-  help       Help about any command
-
-Flags:
-  -c, --cfg string    config file (default is $HOME/.mysshw.toml)
-  -h, --help          help for mysshw
-  -v, --version       version for mysshw
-
-Use "mysshw [command] --help" for more information about a command.
+Use "mysshw help" for more information about a command.
 `,
 	Run: func(cmd *cobra.Command, args []string) {
 		// 检查是否请求版本信息
@@ -168,12 +156,13 @@ func ExecuteCobra() {
 
 // printVersion 打印版本信息
 func printVersion() {
-	fmt.Printf("mysshw version: %s\n", Version)
-	fmt.Printf("Build: %s\n", Build)
+	fmt.Println(" mysshw - a free and open source ssh cli client soft.")
+	fmt.Printf("    - Version:: %s\n", Version)
+	fmt.Printf("    - GitVersion:: %s\n", Build)
 	if BuildTime != "" {
-		fmt.Printf("Build Time: %s\n", BuildTime)
+		fmt.Printf("    - BuildTime :: %s\n", BuildTime)
 	}
-	fmt.Printf("Go Version: %s\n", GoVersion)
+	fmt.Printf("    - Go Version :: %s\n", GoVersion)
 }
 
 // SetVersion 设置版本信息
