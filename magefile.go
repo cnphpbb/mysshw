@@ -79,7 +79,7 @@ func buildTarget(OS, arch string, envs map[string]string, createTar bool) error 
 	target := ""
 	if OS == "windows" {
 		target = target_win
-	}else{
+	} else {
 		target = target_unix
 	}
 
@@ -93,6 +93,7 @@ func buildTarget(OS, arch string, envs map[string]string, createTar bool) error 
 	args = append(args, "build", "-o", target)
 	args = append(args, "-ldflags", flags(), "main.go")
 
+	fmt.Println("args: ", args)
 	fmt.Println("build", target)
 	env := make(map[string]string)
 	env["GOOS"] = OS
@@ -122,17 +123,19 @@ func buildTarget(OS, arch string, envs map[string]string, createTar bool) error 
 func flags() string {
 	hash := hash()
 	tag := tag()
+	gitBranchCommit := fmt.Sprintf("%s-%s", tag, hash)
 	buildTime := buildTime()
 	verStr := versionStr()
-	return fmt.Sprintf(`-s -w -X "main.Version=%s" -X "main.Build=%s-%s" -X "main.BuildTime=%s" -extldflags "-static"`, verStr, tag, hash, buildTime)
+	return fmt.Sprintf(`-s -w -X "main.Version=%s" -X "main.Build=%s" -X "main.BuildTime=%s" -extldflags "-static"`, verStr, gitBranchCommit, buildTime)
 }
 
 // tag returns the git tag for the current branch or "" if none.
 func tag() string {
-	s, _ := sh.Output("bash", "-c", "git branch --show-current> /dev/null")
-	if s == "" {
-		return "main"
-	}
+	s, _ := sh.Output("git", "branch", "--show-current")
+	// fmt.Println("tag: ", s)
+	// if s == "" {
+	// 	return "main"
+	// }
 	return s
 }
 

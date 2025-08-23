@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -23,26 +24,19 @@ var (
 	GoVersion string
 )
 
+// 定义自定义类型作为 context key，避免与其他包的 key 冲突
+type cfgKeyType string
+
+const cfgKey cfgKeyType = "cfg"
+
 // rootCmd 代表没有调用子命令时的基础命令
 var rootCmd = &cobra.Command{
 	Use:     "mysshw",
 	Version: Version,
-	Short:   "A free and open source ssh cli client soft.",
-	Long: `A free and open source ssh cli client soft.
+	Short:   "CLI mysshw: A free and open source ssh cli client soft.",
+	Long: `CLI mysshw: A free and open source ssh cli client soft.
 
-Usage:
-  mysshw [command]
-
-Available Commands:
-  sync       Sync config file to remote
-  help       Help about any command
-
-Flags:
-  -c, --cfg string    config file (default is $HOME/.mysshw.toml)
-  -h, --help          help for mysshw
-  -v, --version       version for mysshw
-
-Use "mysshw [command] --help" for more information about a command.
+Use "mysshw help" for more information about a command.
 `,
 	Run: func(cmd *cobra.Command, args []string) {
 		// 检查是否请求版本信息
@@ -51,6 +45,16 @@ Use "mysshw [command] --help" for more information about a command.
 			printVersion()
 			return
 		}
+
+		// 处理配置文件路径
+		cfgPath, _ := cmd.Flags().GetString("cfg")
+		if cfgPath != "" {
+			log.Println("Config path changed to", cfgPath)
+			config.CFG_PATH = cfgPath
+			// 更新上下文中的配置路径
+			cmd.SetContext(context.WithValue(cmd.Context(), cfgKey, cfgPath))
+		}
+
 		// 当没有子命令时执行 RunSSH
 		RunSSH()
 	},
@@ -151,11 +155,23 @@ func init() {
 	// 为 sync 命令添加标志
 	syncCmd.Flags().BoolP("upload", "u", false, "Update mysshw config")
 	syncCmd.Flags().BoolP("down", "z", false, "Download mysshw config")
+	//rootCmd.Context()
+	rootCmd.SetContext(context.Background())
+	rootCmd.SetContext(context.WithValue(rootCmd.Context(), cfgKey, config.CFG_PATH))
+	ctx := rootCmd.Context()
+	fmt.Println("started path changed to", GetCfgPath(ctx))
+
+}
+
+// 从 context 中获取配置路径
+func GetCfgPath(ctx context.Context) string {
+	return ctx.Value(cfgKey).(string)
 }
 
 // Execute 执行根命令
 func Execute() {
-	if err := rootCmd.Execute(); err != nil {
+	err := rootCmd.ExecuteContext(context.Background())
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
