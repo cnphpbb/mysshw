@@ -54,13 +54,15 @@ ssh = [
     { name="server 2", host="192.168.10.3" },
 ]
 ```
-## go pkg
+## Go Packages
 
 - github.com/magefile/mage
 - github.com/spf13/cobra
 - github.com/BurntSushi/toml
 - github.com/spf13/viper
 - github.com/manifoldco/promptui
+- github.com/pkg/sftp
+- golang.org/x/crypto/ssh
 
 ## Testing
 We use [testify](http://github.com/stretchr/testify) as our Go testing framework.
