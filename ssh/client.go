@@ -290,4 +290,18 @@ func (c *defaultClient) Login() {
 	}()
 
 	session.Wait()
+
+	// 会话结束后，提示用户按 'q' 或 Ctrl+D 退出，或自动返回主界面
+	fmt.Println("\nSSH session closed. Press 'q' to quit or any other key to return to main menu...")
+	reader := bufio.NewReader(os.Stdin)
+	char, _, err := reader.ReadRune()
+	if err != nil {
+		// 处理 Ctrl+D 或其他错误情况
+		return
+	}
+	if char == 'q' || char == 'Q' {
+		fmt.Println("Exiting...")
+		os.Exit(0)
+	}
+	// 否则返回主界面，由上层逻辑处理
 }

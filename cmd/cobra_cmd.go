@@ -173,11 +173,14 @@ func SetVersion(version, build, buildTime, goVersion string) {
 
 // RunSSH 执行 SSH 登录
 func RunSSH() {
-	if err := config.LoadViperConfig(); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+	for {
+		if err := config.LoadViperConfig(); err != nil {
+			fmt.Println(err)
+			return
+		}
+		node := ssh.Choose(config.CFG)
+		client := ssh.NewClient(node)
+		client.Login()
+		// SSH 会话结束后，循环继续，重新显示主界面
 	}
-	node := ssh.Choose(config.CFG)
-	client := ssh.NewClient(node)
-	client.Login()
 }
