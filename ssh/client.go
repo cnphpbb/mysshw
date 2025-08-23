@@ -7,7 +7,6 @@ import (
 	"net"
 	"os"
 	"os/user"
-	"path"
 	"runtime"
 	"strconv"
 	"strings"
@@ -17,7 +16,7 @@ import (
 	"mysshw/config"
 
 	"golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/terminal"
+	"golang.org/x/term"
 )
 
 var (
@@ -54,7 +53,7 @@ func genSSHConfig(node *config.SSHNode) *defaultClient {
 	if node == nil {
 		return nil
 	}
-	u, err := user.Current()
+	_, err := user.Current()
 	if err != nil {
 		fmt.Println(err)
 		return nil
@@ -64,7 +63,8 @@ func genSSHConfig(node *config.SSHNode) *defaultClient {
 
 	var pemBytes []byte
 	if node.KeyPath == "" {
-		pemBytes, err = os.ReadFile(path.Join(u.HomeDir, ".ssh/id_rsa"))
+		fmt.Println("请提供SSH私钥路径或确保默认路径~/.ssh/id_rsa存在")
+		return nil
 	} else {
 		pemBytes, err = os.ReadFile(node.KeyPath)
 	}
@@ -105,7 +105,7 @@ func genSSHConfig(node *config.SSHNode) *defaultClient {
 					return nil, err
 				}
 			} else {
-				b, err := terminal.ReadPassword(int(syscall.Stdin))
+				b, err := term.ReadPassword(int(syscall.Stdin))
 				if err != nil {
 					return nil, err
 				}
@@ -158,7 +158,7 @@ func (c *defaultClient) Login(sessionEndCallback func()) {
 		if strings.Contains(msg, "no supported methods remain") && !strings.Contains(msg, "password") {
 			fmt.Printf("%s@%s's password:", c.clientConfig.User, host)
 			var b []byte
-			b, err = terminal.ReadPassword(int(syscall.Stdin))
+			b, err := term.ReadPassword(int(syscall.Stdin))
 			if err == nil {
 				p := string(b)
 				if p != "" {
@@ -197,18 +197,18 @@ func (c *defaultClient) Login(sessionEndCallback func()) {
 	}()
 
 	fd := int(os.Stdin.Fd())
-	state, err := terminal.MakeRaw(fd)
+	state, err := term.MakeRaw(fd)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	defer terminal.Restore(fd, state)
+	defer term.Restore(fd, state)
 
 	//OS:windows
 	if runtime.GOOS == "windows" {
 		fd = int(os.Stdout.Fd())
 	}
-	w, h, err := terminal.GetSize(fd)
+	w, h, err := term.GetSize(fd)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -255,7 +255,7 @@ func (c *defaultClient) Login(sessionEndCallback func()) {
 			oh = h
 		)
 		for {
-			cw, ch, err := terminal.GetSize(fd)
+			cw, ch, err := term.GetSize(fd)
 			if err != nil {
 				break
 			}
