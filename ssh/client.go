@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/user"
+	"path"
 	"runtime"
 	"strconv"
 	"strings"
@@ -53,7 +54,7 @@ func genSSHConfig(node *config.SSHNode) *defaultClient {
 	if node == nil {
 		return nil
 	}
-	_, err := user.Current()
+	u, err := user.Current()
 	if err != nil {
 		fmt.Println(err)
 		return nil
@@ -63,8 +64,7 @@ func genSSHConfig(node *config.SSHNode) *defaultClient {
 
 	var pemBytes []byte
 	if node.KeyPath == "" {
-		fmt.Println("请提供SSH私钥路径或确保默认路径~/.ssh/id_rsa存在")
-		return nil
+		pemBytes, err = os.ReadFile(path.Join(u.HomeDir, ".ssh", "id_rsa"))
 	} else {
 		pemBytes, err = os.ReadFile(node.KeyPath)
 	}
@@ -89,6 +89,17 @@ func genSSHConfig(node *config.SSHNode) *defaultClient {
 
 	if password != nil {
 		authMethods = append(authMethods, password)
+	} else {
+		// 当密码为空时，提示用户输入密码
+		fmt.Print("请输入SSH密码: ")
+		var passwordStr string
+		fmt.Scanln(&passwordStr)
+		if passwordStr != "" {
+			password = ssh.Password(passwordStr)
+			authMethods = append(authMethods, password)
+		} else {
+			fmt.Println("警告: 密码认证方式不可用，将尝试其他认证方式")
+		}
 	}
 
 	authMethods = append(authMethods, ssh.KeyboardInteractive(func(user, instruction string, questions []string, echos []bool) ([]string, error) {

@@ -253,10 +253,12 @@ func RunSSH(ctx context.Context) {
 
 	// 创建一个读取器用于检测键盘输入
 	reader := bufio.NewReader(os.Stdin)
+	// 提示用户输入
+	fmt.Println("请输入您的选择 (输入节点编号或按Ctrl+d退出):")
 
 	for {
 		// 显示菜单前提示按Ctrl+d退出
-		fmt.Println("Press 'Ctrl+d' to quit, or select an SSH node:")
+		fmt.Println("Press 'Ctrl+d' or 'q' to quit, or select an SSH node:")
 
 		node := ssh.Choose(config.CFG)
 		if node == nil {
