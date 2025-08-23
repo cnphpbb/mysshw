@@ -10,6 +10,7 @@ import (
 	"mysshw/config"
 	"mysshw/scp"
 	"mysshw/ssh"
+	"mysshw/utils"
 
 	"github.com/spf13/cobra"
 	crypto_ssh "golang.org/x/crypto/ssh"
@@ -137,6 +138,10 @@ func init() {
 	// 为 sync 命令添加标志
 	syncCmd.Flags().BoolP("upload", "u", false, "Update mysshw config")
 	syncCmd.Flags().BoolP("down", "z", false, "Download mysshw config")
+	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		utils.SetupSignalHandler()
+		return nil
+	}
 }
 
 // Execute 执行根命令
@@ -173,6 +178,10 @@ func SetVersion(version, build, buildTime, goVersion string) {
 
 // RunSSH 执行 SSH 登录
 func RunSSH() {
+	//exec.Command("clear").Run()
+	// 设置信号处理器
+	utils.SetupSignalHandler()
+
 	for {
 		if err := config.LoadViperConfig(); err != nil {
 			fmt.Println(err)

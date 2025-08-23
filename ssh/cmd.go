@@ -2,6 +2,7 @@ package ssh
 
 import (
 	"mysshw/config"
+	"mysshw/utils"
 
 	"github.com/manifoldco/promptui"
 )
@@ -17,16 +18,18 @@ var (
 		Active:   "➤ {{ .Name | cyan  }}{{if .Alias}}({{.Alias | yellow}}){{end}} {{if .Host}}{{if .User}}{{.User | faint}}{{`@` | faint}}{{end}}{{.Host | faint}}{{end}}",
 		Inactive: "  {{.Name | faint}}{{if .Alias}}({{.Alias | faint}}){{end}} {{if .Host}}{{if .User}}{{.User | faint}}{{`@` | faint}}{{end}}{{.Host | faint}}{{end}}",
 	}
-	//tres string
 )
 
 func Choose(trees *config.Configs) *config.SSHNode {
-	prompt := promptui.Select{}
-	prompt.Label = " select host"
-	prompt.HideSelected = true
-	prompt.Size = 20
-	prompt.Items = trees.Nodes
-	prompt.Templates = templates
+	prompt := promptui.Select{
+		Label:        " select host",
+		HideSelected: true,
+		Size:         20,
+		Items:        trees.Nodes,
+		Templates:    templates,
+		//IsVimMode:    true,
+		Searcher: HandleExitKey,
+	}
 	index, _, err := prompt.Run()
 	if err != nil {
 		return nil
@@ -39,9 +42,25 @@ func Choose(trees *config.Configs) *config.SSHNode {
 	}
 	prompt.Items = cTrees
 	prompt.Templates = ctemplates
-	index, _, _ = prompt.Run()
+	// Handle 'q' key to exit
+	prompt.Searcher = HandleExitKey
+
+	index, _, err = prompt.Run()
+	if err != nil {
+		return nil
+	}
 	if cTrees[index].Name == "-parent-" {
 		return Choose(trees)
 	}
 	return cTrees[index]
+}
+
+// HandleExitKey handles 'q' or 'Q' key to exit the program
+func HandleExitKey(input string, index int) bool {
+	if input == "q" || input == "Q" {
+		// 保存终端原始状态
+		utils.SetupSignalHandler()
+		//return true
+	}
+	return false
 }
