@@ -20,6 +20,8 @@ go.sum
 
 #macosx
 .DS_Store
-#sshw.toml
-#.sshw.toml
-
+# 忽略 .toml 文件
+sshw.toml
+.sshw.toml
+.mysshw.toml
+mysshw.toml

@@ -26,7 +26,7 @@ import (
 // DefaultConfig 包含默认配置的字符串
 const DefaultConfig = `# config example.
 # see URL: https://github.com/cnphpbb/mysshw/blob/master/readme.md#config
-cfg_dir = "./mysshw.toml"   # default:  $HOME/.sshw.toml
+cfg_dir = "./.mysshw.toml"   # default:  $HOME/.mysshw.toml
 
 [sync]
 type = "scp" # type: ( scp || github || gitee || Api-http || rpc ) default: scp
