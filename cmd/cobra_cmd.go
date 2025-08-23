@@ -206,7 +206,7 @@ func GetCfgPath(ctx context.Context) string {
 	if err != nil {
 		return "./mysshw.toml"
 	}
-	return path.Join(usr.HomeDir, ".sshw.toml")
+	return path.Join(usr.HomeDir, ".mysshw.toml")
 }
 
 // Execute 执行根命令
