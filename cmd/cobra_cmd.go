@@ -1,11 +1,16 @@
 package cmd
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"mysshw/auth"
 	"mysshw/config"
@@ -36,8 +41,7 @@ var rootCmd = &cobra.Command{
 	Short:   "CLI mysshw: A free and open source SSH command line client software.",
 	Long: `CLI mysshw: A free and open source SSH command line client software.
 
-Use "mysshw help" for more information about a specific command.
-`,
+Use "mysshw help" for more information about a specific command.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		// 检查是否请求版本信息
 		versionFlag, _ := cmd.Flags().GetBool("version")
@@ -109,7 +113,7 @@ var syncCmd = &cobra.Command{
 		log.Println("started path changed to", config.CFG_PATH)
 
 		// 加载配置
-		if err := config.LoadViperConfig(); err != nil {
+		if err := config.LoadViperConfig(config.CFG_PATH); err != nil {
 			fmt.Println(err)
 			os.Exit(1)
 		}
@@ -233,11 +237,60 @@ func SetVersion(version, build, buildTime, goVersion string) {
 func RunSSH(ctx context.Context) {
 	cfgPath := GetCfgPath(ctx)
 	fmt.Println("Config path changed to:", cfgPath)
-	if err := config.LoadViperConfig(); err != nil {
+	if err := config.LoadViperConfig(cfgPath); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	node := ssh.Choose(config.CFG)
-	client := ssh.NewClient(node)
-	client.Login()
+
+	// 设置信号处理捕获Ctrl+C和SIGTERM
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		fmt.Println("\nReceived termination signal, exiting...")
+		os.Exit(0)
+	}()
+
+	// 创建一个读取器用于检测键盘输入
+	reader := bufio.NewReader(os.Stdin)
+
+	for {
+		// 显示菜单前提示按Ctrl+d退出
+		fmt.Println("Press 'Ctrl+d' to quit, or select an SSH node:")
+
+		node := ssh.Choose(config.CFG)
+		if node == nil {
+			fmt.Println("mysshw:: exiting...")
+			return
+		}
+
+		// 检查是否按下q键
+		select {
+		case <-time.After(100 * time.Millisecond):
+			// 没有按键输入，继续执行
+		default:
+			char, _, err := reader.ReadRune()
+			if err != nil {
+				// 检测到Ctrl+D (EOF)
+				if err == io.EOF {
+					fmt.Println("\nReceived Ctrl+D, exiting...")
+					os.Exit(0)
+				}
+				continue
+			}
+			if char == 'q' || char == 'Q' {
+				fmt.Println("Exiting...")
+				os.Exit(0)
+			}
+		}
+
+		client := ssh.NewClient(node)
+		// 传递会话结束回调函数，在SSH会话结束后返回主界面
+		client.Login(func() {
+			fmt.Println("SSH session ended, returning to main menu...")
+			// 清屏
+			fmt.Print("\033[H\033[2J")
+		})
+		// 会话结束后继续循环，重新显示菜单
+	}
 }
