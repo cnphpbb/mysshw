@@ -67,17 +67,31 @@ ssh = [
 
 ## 使用示例
 ```bash
-# 启动程序
+# 查看帮助信息
+mysshw --help
+
+# 启动程序（无参数时默认进入交互模式）
 mysshw
 
-# 选择主机
-? select host [使用方向键选择]
-➤ 生产服务器
-  测试环境
+# 指定配置文件路径
+mysshw -c ./mysshw.toml
 
-# 连接成功后
-connect server ssh -p 22 admin@192.168.1.101 version: SSH-2.0-OpenSSH_8.2p1
- ```
+# 同步配置文件
+mysshw sync
+
+# 查看同步命令帮助
+mysshw sync --help
+```
+
+## 命令行选项
+```bash
+# 全局选项
+-c, --cfg string: 指定配置文件路径（默认为 $HOME/.mysshw.toml）
+-h, --help: 显示帮助信息
+
+# sync 子命令选项
+-h, --help: 显示同步命令帮助
+```
 ## 贡献指南
 欢迎提交Issue和PR！项目遵循MIT开源协议。
 
@@ -86,7 +100,7 @@ MIT
 
 ## go pkg
 github.com/magefile/mage
-github.com/urfave/cli/v2
+github.com/spf13/cobra
 github.com/BurntSushi/toml
 github.com/spf13/viper
 
