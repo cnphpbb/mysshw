@@ -25,13 +25,11 @@ var (
 
 // rootCmd 代表没有调用子命令时的基础命令
 var rootCmd = &cobra.Command{
-	Use:     "mysshw",
-	Version: Version,
-	Short:   "Name: mysshw, A free and open source ssh cli client soft.",
-	Long: `Name: mysshw, A free and open source ssh cli client soft.
+	Use:   "mysshw",
+	Short: "Name: mysshw, A free and open source ssh cli client soft.",
+	Long: `Name: mysshw, A free and open source ssh cli client soft. 
 
-Use "mysshw help" for more information about a command.
-`,
+Use "mysshw help" for more information about a command.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		// 检查是否请求版本信息
 		versionFlag, _ := cmd.Flags().GetBool("version")
