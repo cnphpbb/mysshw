@@ -32,17 +32,19 @@ import (
 
 // for local machine build
 func Build() error {
-	return buildTarget(runtime.GOOS, runtime.GOARCH, nil)
+	return buildTarget(runtime.GOOS, runtime.GOARCH, nil, false)
 }
 
 // build all platform
 func Pack() error {
-	buildTarget("darwin", "amd64", nil)
-	buildTarget("darwin", "arm64", nil)
-	buildTarget("freebsd", "amd64", nil)
-	buildTarget("linux", "amd64", nil)
-	buildTarget("linux", "arm64", nil)
-	buildTarget("windows", "amd64", nil)
+	buildTarget("darwin", "amd64", nil, true)
+	buildTarget("darwin", "arm64", nil, true)
+	buildTarget("freebsd", "amd64", nil, true)
+	buildTarget("freebsd", "arm64", nil, true)
+	buildTarget("linux", "amd64", nil, true)
+	buildTarget("linux", "arm64", nil, true)
+	buildTarget("windows", "amd64", nil, true)
+	buildTarget("windows", "arm64", nil, true)
 	return genCheckSum()
 }
 
@@ -67,7 +69,8 @@ func Test() error {
 }
 
 // build to target (cross build)
-func buildTarget(OS, arch string, envs map[string]string) error {
+// createTar is an optional parameter (default: false) that controls whether to create a tar archive
+func buildTarget(OS, arch string, envs map[string]string, createTar bool) error {
 	tag := tag()
 	name := fmt.Sprintf("mysshw-%s-%s-%s", OS, arch, tag)
 	dir := fmt.Sprintf("dist/%s", name)
@@ -78,6 +81,12 @@ func buildTarget(OS, arch string, envs map[string]string) error {
 		target = target_win
 	}else{
 		target = target_unix
+	}
+
+	// Determine if we should create tar archive (default: false)
+	shouldCreateTar := false
+	if createTar == true {
+		shouldCreateTar = createTar
 	}
 
 	args := make([]string, 0, 10)
@@ -101,7 +110,11 @@ func buildTarget(OS, arch string, envs map[string]string) error {
 	}
 	// cp -a ./example/mysshw.toml ./dist/{name}/mysshw.toml
 	sh.Run("cp", "-a", "example/mysshw.toml", fmt.Sprintf("%s/mysshw.toml", dir))
-	sh.Run("tar", "-czf", fmt.Sprintf("%s.tar.gz", dir), "-C", "dist", name)
+
+	// Only create tar archive if requested
+	if shouldCreateTar == true {
+		sh.Run("tar", "-czf", fmt.Sprintf("%s.tar.gz", dir), "-C", "dist", name)
+	}
 
 	return nil
 }
