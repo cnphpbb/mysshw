@@ -1,8 +1,8 @@
 # mysshw
 
-**mysshw - A free and open source SSH command line client software.**
-**Go 1.23.0 and above**
-**Supports Linux, macOS, and Windows platforms**
+**mysshw - A free and open source SSH command line client software.**  
+**Go 1.23.0 and above**  
+**Supports Linux, macOS, and Windows platforms**  
 
 [中文文档](readme.zh.md)
 
@@ -54,6 +54,15 @@ ssh = [
     { name="server 2", host="192.168.10.3" },
 ]
 ```
+## Go Packages
+
+- github.com/magefile/mage
+- github.com/spf13/cobra
+- github.com/BurntSushi/toml
+- github.com/spf13/viper
+- github.com/manifoldco/promptui
+- github.com/pkg/sftp
+- golang.org/x/crypto/ssh
 
 ## Testing
 We use [testify](http://github.com/stretchr/testify) as our Go testing framework.
@@ -107,13 +116,14 @@ mysshw sync --help | -h
 docker compose -p base -f ./docker-compose.yml up -d
 docker exec -it build_go bash
 git config --global --add safe.directory /app
-# Must Use Go modules
+# Must be in project root directory
 go mod tidy
 go install github.com/magefile/mage@latest
-mage build // Development build (without tar package)
-mage pack // Release build (with tar package)
-./mysshw -h // View help information
-./mysshw -c ./mysshw.toml // Run with config file
+mage clean  // Clean build directory dist
+mage build  // Development build (without tar package)
+mage pack   // Release build (with tar package)
+./mysshw -h   // View help information
+./mysshw -c ./mysshw.toml   // Run with config file
 
 # Create an alias for convenience
 # echo "alias mysshw='./mysshw -c ./mysshw.toml'" >> ~/.bashrc
