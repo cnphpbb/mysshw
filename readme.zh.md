@@ -121,12 +121,15 @@ mysshw sync --help | -h
 ## 许可证
 MIT
 
-## go pkg
+## Go Packages 依赖
+
 - github.com/magefile/mage
 - github.com/spf13/cobra
 - github.com/BurntSushi/toml
 - github.com/spf13/viper
 - github.com/manifoldco/promptui
+- github.com/pkg/sftp
+- golang.org/x/crypto/ssh
 
 
 ## 项目编译
