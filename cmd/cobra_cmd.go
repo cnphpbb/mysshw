@@ -191,13 +191,11 @@ func init() {
 	//rootCmd.Context()
 	rootCmd.SetContext(context.Background())
 	rootCmd.SetContext(context.WithValue(rootCmd.Context(), cfgKey, config.CFG_PATH))
-	// ctx := rootCmd.Context()
-	// fmt.Println("started path changed to", GetCfgPath(ctx))
 
 }
 
 // 从 context 中获取配置路径，如果不存在则返回默认路径
-func GetCfgPath(ctx context.Context) string {
+func GetCtxConfigPath(ctx context.Context) string {
 	if path, ok := ctx.Value(cfgKey).(string); ok {
 		//fmt.Println("GetCfgPath::path", path)
 		return path
@@ -248,7 +246,7 @@ func SetVersion(version, build, buildTime, goVersion string) {
 // RunSSH 执行 SSH 登录
 // 修复初始化循环问题，将 context 作为参数传入
 func RunSSH(ctx context.Context) {
-	cfgPath := GetCfgPath(ctx)
+	cfgPath := GetCtxConfigPath(ctx)
 	fmt.Println("Config path changed to:", cfgPath)
 	if err := config.LoadViperConfig(cfgPath); err != nil {
 		fmt.Println(err)
