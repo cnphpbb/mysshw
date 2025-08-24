@@ -23,6 +23,32 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+// DefaultConfig 包含默认配置的字符串
+const DefaultConfig = `# config example.
+# see URL: https://github.com/cnphpbb/mysshw/blob/master/readme.md#config
+cfg_dir = "./.mysshw.toml"   # default:  $HOME/.mysshw.toml
+
+[sync]
+type = "scp" # type: ( scp || github || gitee || Api-http || rpc ) default: scp
+remote_uri = "127.0.0.1:22"
+username = "root"
+password = "$ZK7M@~1RY"
+keyPath = ""
+passphrase = ""
+remote_path = "/data/backup/mysshw/mysshw.toml" # remote file path
+access_token = "" # gitee_access_token
+gist_id = ""  # gist_id
+
+# config example.
+# see URL: https://github.com/cnphpbb/mysshw/blob/master/readme.md#config
+[[nodes]]
+groups = "Groups01"
+ssh = [
+    # 
+	# { name="no ssh conf", alias="", host="192.168.10.60", user="vm00", port=22, password="qwe123!@#qwe", keypath="~/.ssh/id_rsa", passphrase="abcdefghijklmn" },
+    { name="vm-test", alias="TestNode", host="127.0.0.1", user="root", port=22, password="test#Password" },
+]`
+
 type (
 	Configs struct {
 		CfgDir  string   `toml:"cfg_dir" mapstructure:"cfg_dir"`
@@ -156,23 +182,45 @@ func GetCfgPath(cfgPath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
+	// 兼容Windows路径格式，将反斜杠替换为正斜杠
+	cfgPath = strings.ReplaceAll(cfgPath, "\\", "/")
+
 	_cfgDir, _cfgFile := path.Split(cfgPath)
+
+	// 处理家目录路径
 	if _cfgDir == "~/" {
 		_cfgPath = u.HomeDir
-	} else {
+	} else if strings.HasPrefix(_cfgDir, "/") {
+		// 绝对路径
 		_cfgPath = _cfgDir
+	} else if strings.Contains(_cfgDir, ":/") {
+		// Windows绝对路径 (如 D:/mydata/)
+		_cfgPath = _cfgDir
+	} else {
+		// 相对路径
+		currentDir, _ := os.Getwd()
+		_cfgPath = path.Join(currentDir, _cfgDir)
 	}
+
 	CFG_PATH = path.Join(_cfgPath, _cfgFile)
 	return CFG_PATH, err
 }
 
-func LoadViperConfig() error {
+func LoadViperConfig(cfgPath string) error {
 	var c = new(Configs)
+	var _cfgDir string
+	var _cfgFile string
 
-	_cfgDir, _cfgFile, _ := isCfgPath(CFG_PATH)
+	_cfgPath, _ := GetCfgPath(cfgPath)
+	_cfgDir, _cfgFile, _ = isCfgPath(_cfgPath)
 
-	if !strings.HasSuffix(_cfgFile, "mysshw") {
-		return fmt.Errorf("mysshw:: The configuration file must be named '~/.mysshw.toml', '~/mysshw.toml' or './mysshw.toml'")
+	// 兼容Windows路径格式，将反斜杠替换为正斜杠
+	_cfgDir = strings.ReplaceAll(_cfgDir, "\\", "/")
+
+	// 检查文件名是否正确
+	if !strings.HasSuffix(strings.ToLower(_cfgFile), "mysshw.toml") && !strings.HasSuffix(strings.ToLower(_cfgFile), "mysshw") {
+		return fmt.Errorf("mysshw:: The configuration file must be named '~/.mysshw.toml', '~/mysshw.toml', './mysshw.toml' or custom path with 'mysshw' prefix")
 	}
 
 	viper.SetConfigName(_cfgFile)
@@ -184,34 +232,157 @@ func LoadViperConfig() error {
 		// 先备份一份已经存在的配置文件, 如果有的话
 		BackupConfig()
 		// 如果配置文件不存在，则创建一个默认的配置文件
-		GetCfgPath(CFG_PATH)
-		viper.SetDefault("cfg_dir", "~/.mysshw.toml")
-		viper.WriteConfigAs(CFG_PATH)
+		viper.ReadConfig(strings.NewReader(DefaultConfig))
+		viper.Set("cfg_dir", _cfgPath)
+		viper.WriteConfigAs(_cfgPath)
 
-		return fmt.Errorf("mysshw:: The configuration file '~/.mysshw.toml' was not detected, \n" +
-			"  and a default configuration file '~/.myshw.toml' was generated. \n" +
-			"  vim ~/.mysshw.toml -> Run mysshw again. \n" +
-			"  see https://github.com/cnphpbb/mysshw/blob/master/readme.md#config \n")
+		return fmt.Errorf(`mysshw:: The configuration file '%s' was not detected,
+and a default configuration file '%s' was generated.
+vim %s -> Run mysshw again. 
+see https://github.com/cnphpbb/mysshw/blob/master/readme.md#config`, cfgPath, _cfgPath, _cfgPath)
 	}
 	err = viper.Unmarshal(c)
+	if err != nil {
+		return fmt.Errorf("mysshw:: Failed to unmarshal configuration: %v", err)
+	}
 	CFG = c
-	return err
+
+	// 验证配置
+	if err := ValidateConfig(CFG); err != nil {
+		return fmt.Errorf("mysshw:: Configuration validation failed: %v", err)
+	}
+
+	return nil
+}
+
+// ValidateConfig 验证配置的有效性
+func ValidateConfig(cfg *Configs) error {
+	// 验证同步配置
+	if err := validateSyncConfig(&cfg.SyncCfg); err != nil {
+		return err
+	}
+
+	// 验证节点配置
+	if len(cfg.Nodes) == 0 {
+		return fmt.Errorf("no nodes configured")
+	}
+
+	for i, nodeGroup := range cfg.Nodes {
+		if err := validateNodeGroup(nodeGroup, i); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateSyncConfig 验证同步配置
+func validateSyncConfig(sync *SyncInfo) error {
+	// 验证同步类型
+	supportedTypes := map[string]bool{
+		"scp": true,
+		// 可以根据实际支持的同步类型添加更多
+	}
+
+	if sync.Type != "" && !supportedTypes[strings.ToLower(sync.Type)] {
+		return fmt.Errorf("unsupported sync type: %s. Supported types: scp", sync.Type)
+	}
+
+	// 根据同步类型验证必要字段
+	if strings.ToLower(sync.Type) == "scp" {
+		if sync.RemoteUri == "" {
+			return fmt.Errorf("remote_uri is required for scp sync type")
+		}
+		if sync.RemotePath == "" {
+			return fmt.Errorf("remote_path is required for scp sync type")
+		}
+		// SCP需要至少一种认证方式
+		if sync.Password == "" && sync.KeyPath == "" {
+			return fmt.Errorf("either password or keyPath is required for scp sync type")
+		}
+	}
+
+	return nil
+}
+
+// validateNodeGroup 验证节点组配置
+func validateNodeGroup(group Nodes, index int) error {
+	if group.Groups == "" {
+		return fmt.Errorf("group at index %d has empty group name", index)
+	}
+
+	if len(group.SSHNodes) == 0 {
+		return fmt.Errorf("group '%s' has no SSH nodes configured", group.Groups)
+	}
+
+	for i, sshNode := range group.SSHNodes {
+		if err := validateSSHNode(sshNode, group.Groups, i); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateSSHNode 验证SSH节点配置
+func validateSSHNode(node *SSHNode, group string, index int) error {
+	if node.Name == "" {
+		return fmt.Errorf("SSH node at index %d in group '%s' has no name", index, group)
+	}
+
+	if node.Host == "" {
+		return fmt.Errorf("SSH node '%s' in group '%s' has no host", node.Name, group)
+	}
+
+	// 验证端口范围
+	if node.Port < 0 || node.Port > 65535 {
+		return fmt.Errorf("SSH node '%s' in group '%s' has invalid port: %d. Must be between 1 and 65535", node.Name, group, node.Port)
+	}
+
+	// // 确保至少有一种认证方式
+	// if node.Password == "" && node.KeyPath == "" {
+	// 	return fmt.Errorf("SSH node '%s' in group '%s' has no authentication method (password or keyPath)", node.Name, group)
+	// }
+
+	// 如果提供了密钥路径，检查是否存在
+	if node.KeyPath != "" {
+		// 处理路径格式，兼容Windows
+		node.KeyPath = strings.ReplaceAll(node.KeyPath, "\\", "/")
+		if _, err := os.Stat(node.KeyPath); os.IsNotExist(err) {
+			return fmt.Errorf("SSH node '%s' in group '%s' key file not found: %s", node.Name, group, node.KeyPath)
+		}
+	}
+
+	return nil
 }
 
 func isCfgPath(cfgPath string) (dir, file, ext string) {
+	// 兼容Windows路径格式，将反斜杠替换为正斜杠
+	cfgPath = strings.ReplaceAll(cfgPath, "\\", "/")
 
 	_cfgDir, _cfgFile := path.Split(cfgPath)
-	_cfgDir = path.Dir(_cfgDir)
+	_cfgDir = path.Clean(_cfgDir)
 	_cfgExt := filepath.Ext(cfgPath)
 
 	if cfgPath != CFGPATH {
-		if strings.HasSuffix(_cfgFile, ".toml") {
+		if strings.HasSuffix(strings.ToLower(_cfgFile), ".toml") {
 			_cfgFile = _cfgFile[:(len(_cfgFile) - len(_cfgExt))]
 		}
 	} else {
+		// 获取实际的家目录路径
+		u, err := user.Current()
+		if err != nil {
+			_cfgDir = "$HOME"
+		} else {
+			_cfgDir = u.HomeDir
+		}
 		_cfgFile = ".mysshw"
 		_cfgExt = CFG_EXT_TYPE
-		_cfgDir = "$HOME"
+	}
+
+	// 确保目录路径以斜杠结尾
+	if !strings.HasSuffix(_cfgDir, "/") {
+		_cfgDir += "/"
 	}
 
 	return _cfgDir, _cfgFile, _cfgExt

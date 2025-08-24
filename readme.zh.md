@@ -156,3 +156,23 @@ mage pack   // 发布打包编译
 # 可以直接使用 mysshw 命令
 ./mysshw // 查找默认配置文件, 位置 ~/.mysshw.toml。 如果没有默认配置文件, 则第一次会报错并自动生成默认配置文件
 ```
+### Windows 平台
+- 在 Windows 平台下，推荐使用 PowerShell、Windows Terminal、Windows Subsystem for Linux (WSL) 或 Git Bash 等终端工具，以获得最佳使用体验。
+- 确保已安装 OpenSSH 客户端, git, mingw64 等工具
+- 配置环境变量
+  - 确保 `C:\Windows\System32\OpenSSH` 目录已添加到系统环境变量 `PATH` 中
+  - 确保 `C:\Program Files\Git\usr\bin` 目录已添加到系统环境变量 `PATH` 中
+  - 确保 `C:\Program Files\Git\mingw64\bin` 目录已添加到系统环境变量 `PATH` 中
+  - 确保 `C:\Program Files\Git\usr\sbin` 目录已添加到系统环境变量 `PATH` 中
+  - 确保 `C:\Program Files\Git\usr\libexec\git-core` 目录已添加到系统环境变量 `PATH` 中
+  - 确保 `C:\Program Files\Git\mingw64\libexec\git-core` 目录已添加到系统环境变量 `PATH` 中
+  - 确保 `C:\Program Files\Git\mingw64\bin` 目录已添加到系统环境变量 `PATH` 中
+  - 确保 `C:\Program Files\Git\usr\libexec\git-core` 目录已添加到系统环境变量 `PATH` 中
+
+- 重启终端，使环境变量生效  
+
+**支持 `.\mysshw.exe -c D:\mydata\mysshw\mysshw.toml` 启动程序, 指定配置文件**
+- 支持 `Ctrl+d` 退出程序
+- 支持 `q` 退出程序 （试验性）
+
+**支持 `D:\sbin\mysshw.exe -c D:\mydata\mysshw\mysshw.toml` 启动程序, 指定配置文件** by 2025-08-24
