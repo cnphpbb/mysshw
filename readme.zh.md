@@ -48,7 +48,10 @@ https://github.com/cnphpbb/mysshw/releases
 ## TODO
 
 ### RunSSH todo
-- [ ] 退出 SSH 会话, 返回主界面
+- [x] 退出 SSH 会话, 返回主界面
+- [x] 支持 `Ctrl+d` 退出程序
+- [x] 支持 `q` 退出程序 （试验性）
+- [x] 支持 `Ctrl+c` 退出程序 （试验性，可能会有异常退出）
 
 ### Sync Actions Type List
 1. [x] SCP
