@@ -22,14 +22,25 @@
 - 🛠 **配置管理**
   - TOML格式配置文件
   - 支持节点分组管理
-  - 配置同步功能（SCP/GitHub/Gitee）
+  - 配置同步功能（SCP已实现，GitHub/Gitee开发中）
   - 自动生成默认配置
+  - 完善的配置文件校验功能
+  - 支持自定义配置文件路径
+  - 跨平台路径格式支持（Windows/Linux/MacOS）
+  - 配置的远程备份与恢复
+  - 配置文件的自动备份
 
 - 🖥 **终端体验**
   - 自适应窗口大小
   - 支持KeepAlive保活
   - 颜色高亮显示
-  - 历史命令记录
+  - 历史命令记录(开发中)
+  - 多种退出方式（Ctrl+d、Ctrl+c、输入q）
+  - 退出SSH会话后自动返回主界面
+
+- 💻 **跨平台兼容**
+  - 支持Linux、macOS、Windows操作系统
+  - 针对不同平台的路径处理优化
 
 ## 安装指南
 
@@ -48,7 +59,10 @@ https://github.com/cnphpbb/mysshw/releases
 ## TODO
 
 ### RunSSH todo
-- [ ] 退出 SSH 会话, 返回主界面
+- [x] 退出 SSH 会话, 返回主界面
+- [x] 支持 `Ctrl+d` 退出程序
+- [x] 支持 `q` 退出程序 （试验性）
+- [x] 支持 `Ctrl+c` 退出程序 （试验性，可能会有异常退出）
 
 ### Sync Actions Type List
 1. [x] SCP
@@ -156,3 +170,23 @@ mage pack   // 发布打包编译
 # 可以直接使用 mysshw 命令
 ./mysshw // 查找默认配置文件, 位置 ~/.mysshw.toml。 如果没有默认配置文件, 则第一次会报错并自动生成默认配置文件
 ```
+### Windows 平台
+- 在 Windows 平台下，推荐使用 PowerShell、Windows Terminal、Windows Subsystem for Linux (WSL) 或 Git Bash 等终端工具，以获得最佳使用体验。
+- 确保已安装 OpenSSH 客户端, git, mingw64 等工具
+- 配置环境变量
+  - 确保 `C:\Windows\System32\OpenSSH` 目录已添加到系统环境变量 `PATH` 中
+  - 确保 `C:\Program Files\Git\usr\bin` 目录已添加到系统环境变量 `PATH` 中
+  - 确保 `C:\Program Files\Git\mingw64\bin` 目录已添加到系统环境变量 `PATH` 中
+  - 确保 `C:\Program Files\Git\usr\sbin` 目录已添加到系统环境变量 `PATH` 中
+  - 确保 `C:\Program Files\Git\usr\libexec\git-core` 目录已添加到系统环境变量 `PATH` 中
+  - 确保 `C:\Program Files\Git\mingw64\libexec\git-core` 目录已添加到系统环境变量 `PATH` 中
+  - 确保 `C:\Program Files\Git\mingw64\bin` 目录已添加到系统环境变量 `PATH` 中
+  - 确保 `C:\Program Files\Git\usr\libexec\git-core` 目录已添加到系统环境变量 `PATH` 中
+
+- 重启终端，使环境变量生效  
+
+**支持 `.\mysshw.exe -c D:\mydata\mysshw\mysshw.toml` 启动程序, 指定配置文件**
+- 支持 `Ctrl+d` 退出程序
+- 支持 `q` 退出程序 （试验性）
+
+**支持 `D:\sbin\mysshw.exe -c D:\mydata\mysshw\mysshw.toml` 启动程序, 指定配置文件** by 2025-08-24

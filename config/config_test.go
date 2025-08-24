@@ -9,7 +9,7 @@ import (
 func TestGetCfgPath(t *testing.T) {
 	var cfgPath string
 	var err error
-	cfgPath = "~/.mysshw/mysshw"
+	cfgPath = "~/.mysshw.toml"
 	//cfgPath = "$HOME/.mysshw.toml"
 	_cfgPath, err := GetCfgPath(cfgPath)
 	t.Log(_cfgPath)
@@ -19,4 +19,3 @@ func TestGetCfgPath(t *testing.T) {
 		assert.EqualError(t, err, "GetCfgPath:Error")
 	}
 }
-

@@ -70,7 +70,10 @@ We use [testify](http://github.com/stretchr/testify) as our Go testing framework
 ## TODO
 
 ### RunSSH todo
-- [ ] Exit SSH session and return to main interface 
+- [x] Exit SSH session and return to main interface 
+- [x] Support `Ctrl+d` exit program
+- [x] Support `q` exit program （experimental）
+- [x] Support `Ctrl+c` exit program （experimental，may exit with exception）
 
 ### Sync Actions Type List
 1. [x] SCP
