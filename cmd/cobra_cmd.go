@@ -258,24 +258,20 @@ func RunSSH(ctx context.Context) {
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-sigChan
-		fmt.Println("\nReceived termination signal, exiting...")
+		fmt.Println("\nReceived termination signal, mysshw:: Exiting...")
 		os.Exit(0)
 	}()
 
 	// 创建一个读取器用于检测键盘输入
 	reader := bufio.NewReader(os.Stdin)
 	// 提示用户输入
-	fmt.Println("请输入您的选择 (输入节点编号或按Ctrl+d退出):")
+	//fmt.Println("请输入您的选择 (输入节点编号或按Ctrl+C退出):")
 
 	for {
-		// 显示菜单前提示按Ctrl+d退出
+		// huh 中 Ctrl+d & /{string} 被占用了
 		fmt.Print("\033[H\033[2J")
-		fmt.Println("Press 'Ctrl+d' or 'q' to quit, or select an SSH node:")
+		fmt.Println(`Press "Ctrl+C" and then press "q | Q" or "Ctrl+D" to exit, or select the SSH node:`)
 		node := ssh.Choose(config.CFG)
-		if node == nil {
-			fmt.Println("mysshw:: exiting...")
-			return
-		}
 
 		// 检查是否按下q键
 		select {
@@ -286,13 +282,13 @@ func RunSSH(ctx context.Context) {
 			if err != nil {
 				// 检测到Ctrl+D (EOF)
 				if err == io.EOF {
-					fmt.Println("\nReceived Ctrl+D, exiting...")
+					fmt.Println("\nReceived Ctrl+D, mysshw:: Exiting...")
 					os.Exit(0)
 				}
 				continue
 			}
 			if char == 'q' || char == 'Q' {
-				fmt.Println("Exiting...")
+				fmt.Printf("\nReceived input %s, mysshw:: Exiting...\n", string(char))
 				os.Exit(0)
 			}
 		}
