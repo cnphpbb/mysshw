@@ -45,7 +45,7 @@ func Choose(trees *config.Configs) *config.SSHNode {
 	err := form.Run()
 	if err != nil {
 		// 处理用户取消操作
-		if err.Error() == "interrupted" {
+		if err.Error() == errFormRunError {
 			fmt.Println(MsgPrintLnStr)
 		}
 		return nil
@@ -95,13 +95,13 @@ func Choose(trees *config.Configs) *config.SSHNode {
 	err = nodeForm.Run()
 	if err != nil {
 		// 处理用户取消操作
-		if err.Error() == "interrupted" {
+		if err.Error() == errFormRunError {
 			fmt.Println(MsgPrintLnStr)
 		}
 		return nil
 	}
 
-	if nodesWithParent[selectedNodeIndex].Name == "-parent-" {
+	if nodesWithParent[selectedNodeIndex].Name == NodeParentName {
 		return Choose(trees)
 	}
 	return nodesWithParent[selectedNodeIndex]
