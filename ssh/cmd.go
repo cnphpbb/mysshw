@@ -35,7 +35,8 @@ func Choose(trees *config.Configs) *config.SSHNode {
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[int]().
-				Title("选择主机组").
+				Title(MsgSelectNodeGroup).
+				Description(MsgSelectDesc).
 				Options(groupOptions...).
 				Value(&selectedGroupIndex),
 		),
@@ -45,7 +46,7 @@ func Choose(trees *config.Configs) *config.SSHNode {
 	if err != nil {
 		// 处理用户取消操作
 		if err.Error() == "interrupted" {
-			fmt.Println("操作已取消")
+			fmt.Println(MsgPrintLnStr)
 		}
 		return nil
 	}
@@ -55,7 +56,7 @@ func Choose(trees *config.Configs) *config.SSHNode {
 
 	// 创建带返回上级选项的节点列表
 	nodesWithParent := make([]*config.SSHNode, len(cTrees)+1)
-	nodesWithParent[0] = &config.SSHNode{Name: "-parent-", Alias: "返回上级"}
+	nodesWithParent[0] = &config.SSHNode{Name: NodeParentName, Alias: NodeParentAlias}
 	copy(nodesWithParent[1:], cTrees)
 
 	nodeOptions := make([]huh.Option[int], len(nodesWithParent))
@@ -84,7 +85,8 @@ func Choose(trees *config.Configs) *config.SSHNode {
 	nodeForm := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[int]().
-				Title("选择主机").
+				Title(MsgSelectNode).
+				Description(MsgSelectDesc).
 				Options(nodeOptions...).
 				Value(&selectedNodeIndex),
 		),
@@ -94,7 +96,7 @@ func Choose(trees *config.Configs) *config.SSHNode {
 	if err != nil {
 		// 处理用户取消操作
 		if err.Error() == "interrupted" {
-			fmt.Println("操作已取消")
+			fmt.Println(MsgPrintLnStr)
 		}
 		return nil
 	}
