@@ -45,11 +45,14 @@ type Client interface {
 	Login(sessionEndCallback func())
 }
 
+// DefaultClient 默认SSH客户端实现
+// 实现了 Client 接口
 type defaultClient struct {
 	clientConfig *ssh.ClientConfig
 	node         *config.SSHNode
 }
 
+// genSSHConfig 生成SSH客户端配置
 func genSSHConfig(node *config.SSHNode) *defaultClient {
 	if node == nil {
 		return nil
@@ -143,6 +146,7 @@ func genSSHConfig(node *config.SSHNode) *defaultClient {
 	}
 }
 
+// NewClient 创建SSH客户端
 func NewClient(node *config.SSHNode) Client {
 	return genSSHConfig(node)
 }
