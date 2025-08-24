@@ -7,4 +7,6 @@ const (
 	MsgPrintLnStr      = "Operation cancelled"
 	NodeParentAlias    = "返回上级"
 	NodeParentName     = "-parent-"
+	SSHConnectInfoStr = "connect server ssh -p %d %s@%s version: %s \n"
+	SSHClientConnectPwdStr = "Contains %s@%s's password:"
 )

@@ -171,7 +171,7 @@ func (c *defaultClient) Login(sessionEndCallback func()) {
 		msg := err.Error()
 		// use terminal password retry
 		if strings.Contains(msg, "no supported methods remain") && !strings.Contains(msg, "password") {
-			fmt.Printf("%s@%s's password:", c.clientConfig.User, host)
+			fmt.Printf(SSHClientConnectPwdStr, c.clientConfig.User, host)
 			var b []byte
 			var readPasswordErr error
 
@@ -205,7 +205,7 @@ func (c *defaultClient) Login(sessionEndCallback func()) {
 	//}
 	defer client.Close()
 
-	fmt.Printf("connect server ssh -p %d %s@%s version: %s \n", c.node.SetPort(), c.node.SetUser(), host, string(client.ServerVersion()))
+	fmt.Printf(SSHConnectInfoStr, c.node.SetPort(), c.node.SetUser(), host, string(client.ServerVersion()))
 
 	session, err := client.NewSession()
 	if err != nil {
