@@ -45,11 +45,14 @@ type Client interface {
 	Login(sessionEndCallback func())
 }
 
+// DefaultClient 默认SSH客户端实现
+// 实现了 Client 接口
 type defaultClient struct {
 	clientConfig *ssh.ClientConfig
 	node         *config.SSHNode
 }
 
+// genSSHConfig 生成SSH客户端配置
 func genSSHConfig(node *config.SSHNode) *defaultClient {
 	if node == nil {
 		return nil
@@ -143,6 +146,7 @@ func genSSHConfig(node *config.SSHNode) *defaultClient {
 	}
 }
 
+// NewClient 创建SSH客户端
 func NewClient(node *config.SSHNode) Client {
 	return genSSHConfig(node)
 }
@@ -167,7 +171,7 @@ func (c *defaultClient) Login(sessionEndCallback func()) {
 		msg := err.Error()
 		// use terminal password retry
 		if strings.Contains(msg, "no supported methods remain") && !strings.Contains(msg, "password") {
-			fmt.Printf("%s@%s's password:", c.clientConfig.User, host)
+			fmt.Printf(SSHClientConnectPwdStr, c.clientConfig.User, host)
 			var b []byte
 			var readPasswordErr error
 
@@ -201,7 +205,7 @@ func (c *defaultClient) Login(sessionEndCallback func()) {
 	//}
 	defer client.Close()
 
-	fmt.Printf("connect server ssh -p %d %s@%s version: %s \n", c.node.SetPort(), c.node.SetUser(), host, string(client.ServerVersion()))
+	fmt.Printf(SSHConnectInfoStr, c.node.SetPort(), c.node.SetUser(), host, string(client.ServerVersion()))
 
 	session, err := client.NewSession()
 	if err != nil {
