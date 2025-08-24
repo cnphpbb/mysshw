@@ -16,7 +16,7 @@
 3. 实现了多种退出方式：`Ctrl+d`， `Ctrl+c` 或者 输入 `q` 退出
 
 #### 功能亮点
-- 支持多种退出方式：`Ctrl+d`， `Ctrl+c` 或者 输入 `q` 退出
+- 支持多种退出方式：先按 `Ctrl+c`，再按 `Ctrl+d`  或  `Ctrl+c`  或 输入 `q | Q` 退出
 - 清屏功能提升了用户体验，使界面更加整洁
 - 改进了配置路径获取逻辑，确保默认配置路径在不同操作系统上正确工作
 
@@ -61,7 +61,8 @@
 
 ### 用户界面
 - [x] 实现命令自动补全
-- [ ] 替换pkg "github.com/manifoldco/promptui" （此项目已经停止维护）
+- [x] 替换pkg "github.com/manifoldco/promptui" （此项目已经停止维护）
+- [x] 实现 "github.com/charmbracelet/huh" 替换 "github.com/manifoldco/promptui"
 
 ### 其他功能
 - [ ] 添加日志记录

@@ -1,48 +1,108 @@
 package ssh
 
 import (
+	"fmt"
 	"mysshw/config"
 
-	"github.com/manifoldco/promptui"
+	"github.com/charmbracelet/huh"
+	"github.com/charmbracelet/lipgloss"
 )
 
 var (
-	templates = &promptui.SelectTemplates{
-		Label:    " {{ . | green}}",
-		Active:   "➤ {{ .Groups | cyan  }}",
-		Inactive: "{{ .Groups | faint}}",
-	}
-	ctemplates = &promptui.SelectTemplates{
-		Label:    " {{ . | green}}",
-		Active:   "➤ {{ .Name | cyan  }}{{if .Alias}}({{.Alias | yellow}}){{end}} {{if .Host}}{{if .User}}{{.User | faint}}{{`@` | faint}}{{end}}{{.Host | faint}}{{end}}",
-		Inactive: "  {{.Name | faint}}{{if .Alias}}({{.Alias | faint}}){{end}} {{if .Host}}{{if .User}}{{.User | faint}}{{`@` | faint}}{{end}}{{.Host | faint}}{{end}}",
-	}
+	// 定义样式
+	yellowStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("226"))
+	faintStyle  = lipgloss.NewStyle().Faint(true)
+	parentStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Italic(true)
 )
 
+// Choose 交互式选择SSH节点
+// 参数 trees 是配置文件中的所有节点组
+// 返回选中的SSH节点，用户取消操作时返回nil
 func Choose(trees *config.Configs) *config.SSHNode {
-	prompt := promptui.Select{
-		Label:        " select host",
-		HideSelected: true,
-		Size:         20,
-		Items:        trees.Nodes,
-		Templates:    templates,
+	// 选择节点组
+	groups := make([]string, len(trees.Nodes))
+	for i, node := range trees.Nodes {
+		groups[i] = node.Groups
 	}
 
-	index, _, err := prompt.Run()
+	// 转换为huh.Option[int]类型
+	groupOptions := make([]huh.Option[int], len(groups))
+	for i, group := range groups {
+		groupOptions[i] = huh.NewOption(group, i)
+	}
+
+	var selectedGroupIndex int
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[int]().
+				Title(MsgSelectNodeGroup).
+				Description(MsgSelectDesc).
+				Options(groupOptions...).
+				Value(&selectedGroupIndex),
+		),
+	)
+
+	err := form.Run()
 	if err != nil {
+		// 处理用户取消操作
+		if err.Error() == errFormRunError {
+			fmt.Println(MsgPrintLnStr)
+		}
 		return nil
 	}
 
-	cTrees := trees.Nodes[index].SSHNodes
-	if len(cTrees) > 0 {
-		first := &config.SSHNode{Name: "-parent-"}
-		cTrees = append(cTrees[:0], append([]*config.SSHNode{first}, cTrees...)...)
+	// 选择SSH节点
+	cTrees := trees.Nodes[selectedGroupIndex].SSHNodes
+
+	// 创建带返回上级选项的节点列表
+	nodesWithParent := make([]*config.SSHNode, len(cTrees)+1)
+	nodesWithParent[0] = &config.SSHNode{Name: NodeParentName, Alias: NodeParentAlias}
+	copy(nodesWithParent[1:], cTrees)
+
+	nodeOptions := make([]huh.Option[int], len(nodesWithParent))
+	for i, node := range nodesWithParent {
+		name := node.Name
+		if i == 0 {
+			// 特殊处理返回上级选项
+			name = parentStyle.Render(name + " " + node.Alias)
+		} else {
+			if node.Alias != "" {
+				name += yellowStyle.Render("(" + node.Alias + ")")
+			}
+			if node.Host != "" {
+				userHost := ""
+				if node.User != "" {
+					userHost += faintStyle.Render(node.User + "@")
+				}
+				userHost += faintStyle.Render(node.Host)
+				name += " " + userHost
+			}
+		}
+		nodeOptions[i] = huh.NewOption(name, i)
 	}
-	prompt.Items = cTrees
-	prompt.Templates = ctemplates
-	index, _, _ = prompt.Run()
-	if cTrees[index].Name == "-parent-" {
+
+	var selectedNodeIndex int
+	nodeForm := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[int]().
+				Title(MsgSelectNode).
+				Description(MsgSelectDesc).
+				Options(nodeOptions...).
+				Value(&selectedNodeIndex),
+		),
+	)
+
+	err = nodeForm.Run()
+	if err != nil {
+		// 处理用户取消操作
+		if err.Error() == errFormRunError {
+			fmt.Println(MsgPrintLnStr)
+		}
+		return nil
+	}
+
+	if nodesWithParent[selectedNodeIndex].Name == NodeParentName {
 		return Choose(trees)
 	}
-	return cTrees[index]
+	return nodesWithParent[selectedNodeIndex]
 }

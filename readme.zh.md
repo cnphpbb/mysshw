@@ -37,6 +37,7 @@
   - 历史命令记录(开发中)
   - 多种退出方式（Ctrl+d、Ctrl+c、输入q）
   - 退出SSH会话后自动返回主界面
+  - 退出方式： 先输入Ctrl+c，再输入 q或Q or Ctrl+d
 
 - 💻 **跨平台兼容**
   - 支持Linux、macOS、Windows操作系统
@@ -60,9 +61,10 @@ https://github.com/cnphpbb/mysshw/releases
 
 ### RunSSH todo
 - [x] 退出 SSH 会话, 返回主界面
-- [x] 支持 `Ctrl+d` 退出程序
-- [x] 支持 `q` 退出程序 （试验性）
-- [x] 支持 `Ctrl+c` 退出程序 （试验性，可能会有异常退出）
+  - [x] 支持 `Ctrl+d` 退出程序
+  - [x] 支持 `q | Q` 退出程序
+  - [x] 退出方式： 先输入Ctrl+c，再输入 q或Q or Ctrl+d
+- [x] 主界面支持搜索，支持主题
 
 ### Sync Actions Type List
 1. [x] SCP
@@ -70,6 +72,8 @@ https://github.com/cnphpbb/mysshw/releases
 3. [ ] Gitee - Gist
 4. [ ] API - HTTP(s)
 5. [ ] RPC
+
+
 
 ## 配置文件
 默认路径： ~/.mysshw.toml
@@ -141,10 +145,12 @@ MIT
 - github.com/spf13/cobra
 - github.com/BurntSushi/toml
 - github.com/spf13/viper
-- github.com/manifoldco/promptui
+- github.com/charmbracelet/huh
+- github.com/charmbracelet/lipgloss
 - github.com/pkg/sftp
 - golang.org/x/crypto/ssh
 
+详细的依赖说明请参考 [go.mod](go.mod) 文件
 
 ## 项目编译
 
