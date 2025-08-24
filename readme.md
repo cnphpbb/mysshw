@@ -60,7 +60,8 @@ ssh = [
 - github.com/spf13/cobra
 - github.com/BurntSushi/toml
 - github.com/spf13/viper
-- github.com/manifoldco/promptui
+- github.com/charmbracelet/huh
+- github.com/charmbracelet/lipgloss
 - github.com/pkg/sftp
 - golang.org/x/crypto/ssh
 
