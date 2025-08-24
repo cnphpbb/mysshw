@@ -33,11 +33,13 @@ import (
 
 // for local machine build
 func Build() error {
+	printPlatformWarning()
 	return buildTarget(runtime.GOOS, runtime.GOARCH, nil, false)
 }
 
 // build all platform
 func Pack() error {
+	printPlatformWarning()
 	buildTarget("darwin", "amd64", nil, true)
 	buildTarget("darwin", "arm64", nil, true)
 	buildTarget("freebsd", "amd64", nil, true)
@@ -171,6 +173,7 @@ func mod() string {
 
 // cleanup all build files
 func Clean() {
+	printPlatformWarning()
 	sh.Rm("dist")
 	sh.Rm(".cover.html")
 }
@@ -187,10 +190,10 @@ func genCheckSum() error {
 		return err
 	}
 	defer file.Close()
-	
+
 	// 根据操作系统类型决定要处理的文件类型
 	isWindows := runtime.GOOS == "windows"
-	
+
 	for _, f := range fs {
 		if f.IsDir() {
 			continue
@@ -203,7 +206,7 @@ func genCheckSum() error {
 		} else {
 			isTargetFile = strings.HasSuffix(f.Name(), ".tar.gz")
 		}
-		
+
 		if isTargetFile {
 			sum, _ := fileHash(fmt.Sprintf("dist/%s", f.Name()))
 			fmt.Println(sum, f.Name())
@@ -239,12 +242,23 @@ func versionStr() string {
 	return "v" + now.Format("06.01.02")
 }
 
+// printPlatformWarning 打印平台兼容性警告信息
+func printPlatformWarning() {
+	if runtime.GOOS == "windows" {
+		fmt.Println("========================================================")
+		fmt.Println("提示: 本工具尽量在Linux或类Unix环境下使用")
+		fmt.Println("      Windows系统兼容性可能不佳, 部分功能可能无法正常工作")
+		fmt.Println("      建议使用 PowerShell、Windows Terminal、Windows Subsystem for Linux (WSL) 或 Git Bash 等终端工具")
+		fmt.Println("========================================================")
+	}
+}
+
 // Version 打印版本信息
 func Version() {
 	hash := hash()
 	tag := tag()
 	gitBranchCommit := fmt.Sprintf("%s-%s", tag, hash)
-
+	printPlatformWarning()
 	fmt.Println("mysshw 版本信息")
 	fmt.Println("Go version:", runtime.Version())
 	fmt.Println("Git version:", gitBranchCommit)
@@ -254,6 +268,7 @@ func Version() {
 
 // Help 打印帮助信息
 func Help() {
+	printPlatformWarning()
 	fmt.Println("mysshw 构建工具使用说明")
 	fmt.Println("可用的构建目标:")
 	fmt.Println("  Build    - 为当前平台构建项目, 默认不创建压缩包")
