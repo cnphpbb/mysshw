@@ -174,3 +174,5 @@ mage pack   // 发布打包编译
 **支持 `.\mysshw.exe -c D:\mydata\mysshw\mysshw.toml` 启动程序, 指定配置文件**
 - 支持 `Ctrl+d` 退出程序
 - 支持 `q` 退出程序 （试验性）
+
+**支持 `D:\sbin\mysshw.exe -c D:\mydata\mysshw\mysshw.toml` 启动程序, 指定配置文件** by 2025-08-24
