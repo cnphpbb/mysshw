@@ -18,6 +18,7 @@ gist_id = ""  # gist_id
 [[nodes]]
 groups = "Groups01"
 ssh = [
-    # { name="no ssh conf", alias="", host="", user="", port=22, password="" },
-    { name="no ssh conf", alias="", host="", user="", port=22, password="" },
+    # All SSH client configuration parameters
+    # { name="no ssh conf", alias="", host="192.168.10.60", user="vm00", port=22, password="qwe123!@#qwe", keypath="~/.ssh/id_rsa", passphrase="abcdefghijklmn" },
+    { name="vm-test", alias="TestNode", host="127.0.0.1", user="root", port=22, password="test#Password" },
 ]

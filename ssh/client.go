@@ -17,7 +17,7 @@ import (
 	"mysshw/config"
 
 	"golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/terminal"
+	"golang.org/x/term"
 )
 
 var (
@@ -39,8 +39,10 @@ var (
 	}
 )
 
+// Client 定义SSH客户端接口
 type Client interface {
-	Login()
+	// Login 建立SSH连接并启动会话，sessionEndCallback在会话结束时被调用
+	Login(sessionEndCallback func())
 }
 
 type defaultClient struct {
@@ -62,7 +64,7 @@ func genSSHConfig(node *config.SSHNode) *defaultClient {
 
 	var pemBytes []byte
 	if node.KeyPath == "" {
-		pemBytes, err = os.ReadFile(path.Join(u.HomeDir, ".ssh/id_rsa"))
+		pemBytes, err = os.ReadFile(path.Join(u.HomeDir, ".ssh", "id_rsa"))
 	} else {
 		pemBytes, err = os.ReadFile(node.KeyPath)
 	}
@@ -87,6 +89,17 @@ func genSSHConfig(node *config.SSHNode) *defaultClient {
 
 	if password != nil {
 		authMethods = append(authMethods, password)
+	} else {
+		// 当密码为空时，提示用户输入密码
+		fmt.Print("请输入SSH密码: ")
+		var passwordStr string
+		fmt.Scanln(&passwordStr)
+		if passwordStr != "" {
+			password = ssh.Password(passwordStr)
+			authMethods = append(authMethods, password)
+		} else {
+			fmt.Println("警告: 密码认证方式不可用，将尝试其他认证方式")
+		}
 	}
 
 	authMethods = append(authMethods, ssh.KeyboardInteractive(func(user, instruction string, questions []string, echos []bool) ([]string, error) {
@@ -103,7 +116,7 @@ func genSSHConfig(node *config.SSHNode) *defaultClient {
 					return nil, err
 				}
 			} else {
-				b, err := terminal.ReadPassword(int(syscall.Stdin))
+				b, err := term.ReadPassword(int(syscall.Stdin))
 				if err != nil {
 					return nil, err
 				}
@@ -134,8 +147,12 @@ func NewClient(node *config.SSHNode) Client {
 	return genSSHConfig(node)
 }
 
-func (c *defaultClient) Login() {
+// Login 建立SSH连接并启动会话，sessionEndCallback在会话结束时被调用
+func (c *defaultClient) Login(sessionEndCallback func()) {
 	if c == nil {
+		if sessionEndCallback != nil {
+			sessionEndCallback()
+		}
 		return
 	}
 	host := c.node.Host
@@ -144,26 +161,6 @@ func (c *defaultClient) Login() {
 
 	var client *ssh.Client
 
-	//if len(jNodes) > 0 {
-	//	jNode := jNodes[0]
-	//	jc := genSSHConfig(jNode)
-	//	proxyClient, err := ssh.Dial("tcp", net.JoinHostPort(jNode.Host, strconv.Itoa(jNode.port())), jc.clientConfig)
-	//	if err != nil {
-	//		mysshw.l.Error(err)
-	//		return
-	//	}
-	//	conn, err := proxyClient.Dial("tcp", net.JoinHostPort(host, port))
-	//	if err != nil {
-	//		mysshw.l.Error(err)
-	//		return
-	//	}
-	//	ncc, chans, reqs, err := ssh.NewClientConn(conn, net.JoinHostPort(host, port), c.clientConfig)
-	//	if err != nil {
-	//		mysshw.l.Error(err)
-	//		return
-	//	}
-	//	client = ssh.NewClient(ncc, chans, reqs)
-	//} else {
 	client1, err := ssh.Dial("tcp", net.JoinHostPort(host, port), c.clientConfig)
 	client = client1
 	if err != nil {
@@ -172,19 +169,33 @@ func (c *defaultClient) Login() {
 		if strings.Contains(msg, "no supported methods remain") && !strings.Contains(msg, "password") {
 			fmt.Printf("%s@%s's password:", c.clientConfig.User, host)
 			var b []byte
-			b, err = terminal.ReadPassword(int(syscall.Stdin))
-			if err == nil {
+			var readPasswordErr error
+
+			b, readPasswordErr = term.ReadPassword(int(syscall.Stdin))
+			if readPasswordErr == nil {
+
 				p := string(b)
 				if p != "" {
 					c.clientConfig.Auth = append(c.clientConfig.Auth, ssh.Password(p))
 				}
 				fmt.Println()
-				client, err = ssh.Dial("tcp", net.JoinHostPort(host, port), c.clientConfig)
+				clientC, errclientC := ssh.Dial("tcp", net.JoinHostPort(host, port), c.clientConfig)
+				if errclientC != nil {
+					fmt.Println(errclientC)
+					if sessionEndCallback != nil {
+						sessionEndCallback()
+					}
+					return
+				}
+				client = clientC
 			}
 		}
 	}
 	if err != nil {
 		fmt.Println(err)
+		if sessionEndCallback != nil {
+			sessionEndCallback()
+		}
 		return
 	}
 	//}
@@ -195,23 +206,31 @@ func (c *defaultClient) Login() {
 	session, err := client.NewSession()
 	if err != nil {
 		fmt.Println(err)
+		if sessionEndCallback != nil {
+			sessionEndCallback()
+		}
 		return
 	}
 	defer session.Close()
+	defer func() {
+		if sessionEndCallback != nil {
+			sessionEndCallback()
+		}
+	}()
 
 	fd := int(os.Stdin.Fd())
-	state, err := terminal.MakeRaw(fd)
+	state, err := term.MakeRaw(fd)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	defer terminal.Restore(fd, state)
+	defer term.Restore(fd, state)
 
 	//OS:windows
 	if runtime.GOOS == "windows" {
 		fd = int(os.Stdout.Fd())
 	}
-	w, h, err := terminal.GetSize(fd)
+	w, h, err := term.GetSize(fd)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -242,13 +261,6 @@ func (c *defaultClient) Login() {
 		return
 	}
 
-	// then callback
-	//for i := range c.node.CallbackShells {
-	//	shell := c.node.CallbackShells[i]
-	//	time.Sleep(shell.Delay * time.Millisecond)
-	//	stdinPipe.Write([]byte(shell.Cmd + "\r"))
-	//}
-
 	// change stdin to user
 	go func() {
 		_, err = io.Copy(stdinPipe, os.Stdin)
@@ -264,7 +276,7 @@ func (c *defaultClient) Login() {
 			oh = h
 		)
 		for {
-			cw, ch, err := terminal.GetSize(fd)
+			cw, ch, err := term.GetSize(fd)
 			if err != nil {
 				break
 			}
