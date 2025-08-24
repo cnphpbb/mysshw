@@ -85,7 +85,6 @@ func Choose(trees *config.Configs) *config.SSHNode {
 					userHost += blueStyle.Render(node.User + "@")
 				}
 				userHost += blueStyle.Render(node.Host)
-				//userHost += node.Host
 				name += " " + userHost
 			}
 		}
@@ -99,12 +98,6 @@ func Choose(trees *config.Configs) *config.SSHNode {
 				Title(MsgSelectNode).
 				//Description(MsgSelectDesc).
 				Options(nodeOptions...).
-				// Value(&selectedNodeIndex).
-				// WithTheme(&huh.Theme{
-				// 	Group: huh.GroupStyles{
-				// 		Title: titleStyle,
-				// 	},
-				// }),
 				Value(&selectedNodeIndex),
 		),
 	)
