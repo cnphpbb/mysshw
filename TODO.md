@@ -61,7 +61,8 @@
 
 ### 用户界面
 - [x] 实现命令自动补全
-- [ ] 替换pkg "github.com/manifoldco/promptui" （此项目已经停止维护）
+- [x] 替换pkg "github.com/manifoldco/promptui" （此项目已经停止维护）
+- [x] 实现 "github.com/charmbracelet/huh" 替换 "github.com/manifoldco/promptui"
 
 ### 其他功能
 - [ ] 添加日志记录
