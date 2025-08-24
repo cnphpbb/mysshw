@@ -145,10 +145,12 @@ MIT
 - github.com/spf13/cobra
 - github.com/BurntSushi/toml
 - github.com/spf13/viper
-- github.com/manifoldco/promptui
+- github.com/charmbracelet/huh
+- github.com/charmbracelet/lipgloss
 - github.com/pkg/sftp
 - golang.org/x/crypto/ssh
 
+详细的依赖说明请参考 [go.mod](go.mod) 文件
 
 ## 项目编译
 
