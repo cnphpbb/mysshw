@@ -104,10 +104,14 @@ func LoadViperConfig(cfgPath string) error {
 		// 验证配置文件 提示错误并创建一个默认的配置文件
 		if err := ValidateConfigFile(_cfgPath); err != nil {
 			// 如果配置文件不存在，则创建一个默认的配置文件
+			// 不使用viper的WriteConfigAs方法，而是使用os.WriteFile,是因为
+			// WriteConfigAs方法会自动解析配置文件不使用注释，而我们希望保持原貌
+			// 所以我们使用os.WriteFile方法来写入配置文件
+			////
 			// viper.ReadConfig(strings.NewReader(DefaultConfig))
 			// viper.Set("cfg_dir", _cfgPath)
 			// viper.WriteConfigAs(_cfgPath)
-			if err := writeConfigFile(_cfgPath); err != nil {
+			if writeErr := writeConfigFile(_cfgPath); writeErr != nil {
 				return fmt.Errorf("mysshw:: Write Config Error:: %s", err)
 			}
 			// 提示使用者配置文件不存在，但是已经生成了一个默认的配置文件
