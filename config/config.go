@@ -115,11 +115,8 @@ func LoadViperConfig(cfgPath string) error {
 				return fmt.Errorf("mysshw:: Write Config Error:: %s", err)
 			}
 			// 提示使用者配置文件不存在，但是已经生成了一个默认的配置文件
-			fmt.Printf(`mysshw:: The configuration file '%s' was not detected,
-and a default configuration file '%s' was generated.
-vim %s -> Run mysshw again. 
-see https://github.com/cnphpbb/mysshw/blob/master/readme.md#config\n`, cfgPath, _cfgPath, _cfgPath)
-		
+			fmt.Printf(configReadInConfigPrintStr, cfgPath, _cfgPath, _cfgPath)
+
 			return fmt.Errorf("mysshw:: Configuration file validation failed: %v", err)
 		}
 	}
