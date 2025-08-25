@@ -34,3 +34,12 @@ port = 22  # 默认值:22, 不可以空, 如果是22端口, 可以忽略这个KE
 password = "" # 可以空, 可选; 如果有要自己填密码，可以空
 #keypath = "~/.ssh/id_rsa" # 可以空, 可选
 #passphrase = "abcdefghijklmn" # 可以空, 可选
+
+[[nodes]]
+groups = "Groups02"
+ssh = [
+    # 
+	# { name="no ssh conf", alias="", host="192.168.10.60", user="vm00", port=22, password="qwe123!@#qwe", keypath="~/.ssh/id_rsa", passphrase="abcdefghijklmn" },
+    { name="vm-test-1", alias="TestNode-1", host="127.0.0.1", user="root", port=22, password="test#Password" },
+	{ name="vm-test-2", alias="TestNode", host="127.0.0.1", user="root", port=22, password="test#Password" },
+]
