@@ -121,7 +121,7 @@ func (n *SSHNode) SetPassword() ssh.AuthMethod {
 }
 
 const configReadInConfigPrintStr = `mysshw:: The configuration file '%s' was not detected,
-and a default configuration file '%s' was generated.
-vim %s -> Run mysshw again. `
+    and a default configuration file '%s' was generated.
+    vim %s -> Run mysshw again. `
 
 
