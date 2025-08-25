@@ -55,6 +55,22 @@ func LoadConfig() error {
 	return nil
 }
 
+// unmarshalAndValidateConfig 解析并验证配置
+func unmarshalAndValidateConfig(c *Configs) error {
+	err := viper.Unmarshal(c)
+	if err != nil {
+		return fmt.Errorf("mysshw:: Failed to unmarshal configuration: %v", err)
+	}
+	CFG = c
+
+	// 验证配置
+	if err := ValidateConfig(c); err != nil {
+		return fmt.Errorf("mysshw:: Configuration validation failed: %v", err)
+	}
+
+	return nil
+}
+
 // LoadViperConfig 加载配置文件
 // 兼容Windows路径格式
 func LoadViperConfig(cfgPath string) error {
@@ -78,36 +94,35 @@ func LoadViperConfig(cfgPath string) error {
 	viper.SetConfigType(CFG_EXT_TYPE)
 
 	// 读取配置文件
-	// todo: 读取失败时，需要备份一份已经存在的配置文件, 如果有的话
-	// TODO: 需要先核验一下已经存在的配置文件。并且报出错误在那里。方便使用者快速修改问题
 	err := viper.ReadInConfig()
 	if err != nil {
 		// 先备份一份已经存在的配置文件, 如果有的话
-		backupConfigErr := BackupConfig()
-		if backupConfigErr != nil {
-			return fmt.Errorf("mysshw:: Backup Config Error:: %s", backupConfigErr)
+		if err := BackupConfig(); err != nil {
+			return fmt.Errorf("mysshw:: Backup Config Error:: %s", err)
 		}
-		// 如果配置文件不存在，则创建一个默认的配置文件
-		viper.ReadConfig(strings.NewReader(DefaultConfig))
-		viper.Set("cfg_dir", _cfgPath)
-		viper.WriteConfigAs(_cfgPath)
-		// todo： 这里需要提示一下使用者，配置文件不存在，但是已经生成了一个默认的配置文件
-		// TODO： 这里需要提示一下使用者，配置文件读取时出错了，备份了已经存在的配置文件，生成了一个默认的配置文件
-		// TODO： 需要增加核验已经存在的配置文件的功能，并提示核验错误
-		return fmt.Errorf(`mysshw:: The configuration file '%s' was not detected,
+
+		// 验证配置文件 提示错误并创建一个默认的配置文件
+		if err := ValidateConfigFile(_cfgPath); err != nil {
+			// 如果配置文件不存在，则创建一个默认的配置文件
+			// viper.ReadConfig(strings.NewReader(DefaultConfig))
+			// viper.Set("cfg_dir", _cfgPath)
+			// viper.WriteConfigAs(_cfgPath)
+			if err := writeConfigFile(_cfgPath); err != nil {
+				return fmt.Errorf("mysshw:: Write Config Error:: %s", err)
+			}
+			// 提示使用者配置文件不存在，但是已经生成了一个默认的配置文件
+			fmt.Printf(`mysshw:: The configuration file '%s' was not detected,
 and a default configuration file '%s' was generated.
 vim %s -> Run mysshw again. 
-see https://github.com/cnphpbb/mysshw/blob/master/readme.md#config`, cfgPath, _cfgPath, _cfgPath)
+see https://github.com/cnphpbb/mysshw/blob/master/readme.md#config\n`, cfgPath, _cfgPath, _cfgPath)
+		
+			return fmt.Errorf("mysshw:: Configuration file validation failed: %v", err)
+		}
 	}
-	err = viper.Unmarshal(c)
-	if err != nil {
-		return fmt.Errorf("mysshw:: Failed to unmarshal configuration: %v", err)
-	}
-	CFG = c
 
-	// 验证配置
-	if err := ValidateConfig(CFG); err != nil {
-		return fmt.Errorf("mysshw:: Configuration validation failed: %v", err)
+	// 解析并验证配置
+	if err := unmarshalAndValidateConfig(c); err != nil {
+		return err
 	}
 
 	return nil
