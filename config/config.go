@@ -97,9 +97,11 @@ func LoadViperConfig(cfgPath string) error {
 	err := viper.ReadInConfig()
 	if err != nil {
 		// 先备份一份已经存在的配置文件, 如果有的话
-		if err := BackupConfig(); err != nil {
+		backupPath, err := backupConfigFile()
+		if err != nil {
 			return fmt.Errorf("mysshw:: Backup Config Error:: %s", err)
 		}
+		fmt.Printf("mysshw:: Backup Config Success:: %s\n", backupPath)
 
 		// 验证配置文件 提示错误并创建一个默认的配置文件
 		if err := ValidateConfigFile(_cfgPath); err != nil {
@@ -116,7 +118,8 @@ func LoadViperConfig(cfgPath string) error {
 			}
 			// 提示使用者配置文件不存在，但是已经生成了一个默认的配置文件
 			fmt.Printf(configReadInConfigPrintStr, cfgPath, _cfgPath, _cfgPath)
-
+			fmt.Println("\nsee https://github.com/cnphpbb/mysshw/blob/master/readme.md#config")
+			fmt.Printf("mysshw:: Please check the backup config file:: %s\n", backupPath)
 			return fmt.Errorf("mysshw:: Configuration file validation failed: %v", err)
 		}
 	}
