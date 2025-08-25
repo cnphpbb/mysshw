@@ -34,7 +34,7 @@ func backupConfigFile() (string, error) {
 
 func writeConfigFile(cfgPath string) error {
 	// Write backup file
-	err := os.WriteFile(cfgPath, []byte(DefaultConfig), 0644)
+	err := os.WriteFile(cfgPath, []byte(DefaultTomlConfig), 0644)
 	if err != nil {
 		return fmt.Errorf("failed to write config file: %v", err)
 	}

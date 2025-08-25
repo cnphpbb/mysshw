@@ -91,6 +91,8 @@ func LoadViperConfig(cfgPath string) error {
 
 	viper.SetConfigName(_cfgFile)
 	viper.AddConfigPath(_cfgDir)
+	viper.AddConfigPath("$HOME/")
+	viper.AddConfigPath("./")
 	viper.SetConfigType(CFG_EXT_TYPE)
 
 	// 读取配置文件
@@ -106,13 +108,17 @@ func LoadViperConfig(cfgPath string) error {
 		// 验证配置文件 提示错误并创建一个默认的配置文件
 		if err := ValidateConfigFile(_cfgPath); err != nil {
 			// 如果配置文件不存在，则创建一个默认的配置文件
+			//
 			// 不使用viper的WriteConfigAs方法，而是使用os.WriteFile,是因为
-			// WriteConfigAs方法会自动解析配置文件不使用注释，而我们希望保持原貌
-			// 所以我们使用os.WriteFile方法来写入配置文件
-			////
-			// viper.ReadConfig(strings.NewReader(DefaultConfig))
+			// WriteConfigAs方法会自动解析配置文件不使用注释，而希望保持原貌
+			// 所以使用os.WriteFile方法来写入配置文件
+			//
+			// Viper 社区已讨论 v2 改进（如可选注释保留），可关注进展, 目前 viper v1 不支持
+			//
+			// viper.ReadConfig(strings.NewReader(DefaultTomlConfig))
 			// viper.Set("cfg_dir", _cfgPath)
-			// viper.WriteConfigAs(_cfgPath)
+			//viper.WriteConfigAs(_cfgPath)
+
 			if writeErr := writeConfigFile(_cfgPath); writeErr != nil {
 				return fmt.Errorf("mysshw:: Write Config Error:: %s", err)
 			}
