@@ -77,15 +77,23 @@ func LoadViperConfig(cfgPath string) error {
 	viper.AddConfigPath(_cfgDir)
 	viper.SetConfigType(CFG_EXT_TYPE)
 
+	// 读取配置文件
+	// todo: 读取失败时，需要备份一份已经存在的配置文件, 如果有的话
+	// TODO: 需要先核验一下已经存在的配置文件。并且报出错误在那里。方便使用者快速修改问题
 	err := viper.ReadInConfig()
 	if err != nil {
 		// 先备份一份已经存在的配置文件, 如果有的话
-		BackupConfig()
+		backupConfigErr := BackupConfig()
+		if backupConfigErr != nil {
+			return fmt.Errorf("mysshw:: Backup Config Error:: %s", backupConfigErr)
+		}
 		// 如果配置文件不存在，则创建一个默认的配置文件
 		viper.ReadConfig(strings.NewReader(DefaultConfig))
 		viper.Set("cfg_dir", _cfgPath)
 		viper.WriteConfigAs(_cfgPath)
-
+		// todo： 这里需要提示一下使用者，配置文件不存在，但是已经生成了一个默认的配置文件
+		// TODO： 这里需要提示一下使用者，配置文件读取时出错了，备份了已经存在的配置文件，生成了一个默认的配置文件
+		// TODO： 需要增加核验已经存在的配置文件的功能，并提示核验错误
 		return fmt.Errorf(`mysshw:: The configuration file '%s' was not detected,
 and a default configuration file '%s' was generated.
 vim %s -> Run mysshw again. 
