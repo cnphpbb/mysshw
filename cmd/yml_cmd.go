@@ -1,5 +1,6 @@
 package cmd
 
+// 专用库​：github.com/GuanceCloud/toml（BurntSushi/toml的分支，支持注释保留）
 // 计划把原来SSHW项目的.sshw.yml文件迁移到mysshw项目的.toml文件
 // 命令的格式
 // mysshw yml -f <yml文件路径>
