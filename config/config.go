@@ -14,7 +14,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/BurntSushi/toml"
+	"github.com/GuanceCloud/toml"
 	"github.com/spf13/viper"
 )
 
@@ -55,6 +55,22 @@ func LoadConfig() error {
 	return nil
 }
 
+// unmarshalAndValidateConfig 解析并验证配置
+func unmarshalAndValidateConfig(c *Configs) error {
+	err := viper.Unmarshal(c)
+	if err != nil {
+		return fmt.Errorf("mysshw:: Failed to unmarshal configuration: %v", err)
+	}
+	CFG = c
+
+	// 验证配置
+	if err := ValidateConfig(c); err != nil {
+		return fmt.Errorf("mysshw:: Configuration validation failed: %v", err)
+	}
+
+	return nil
+}
+
 // LoadViperConfig 加载配置文件
 // 兼容Windows路径格式
 func LoadViperConfig(cfgPath string) error {
@@ -75,31 +91,48 @@ func LoadViperConfig(cfgPath string) error {
 
 	viper.SetConfigName(_cfgFile)
 	viper.AddConfigPath(_cfgDir)
+	viper.AddConfigPath("$HOME/")
+	viper.AddConfigPath("./")
 	viper.SetConfigType(CFG_EXT_TYPE)
 
+	// 读取配置文件
 	err := viper.ReadInConfig()
 	if err != nil {
 		// 先备份一份已经存在的配置文件, 如果有的话
-		BackupConfig()
-		// 如果配置文件不存在，则创建一个默认的配置文件
-		viper.ReadConfig(strings.NewReader(DefaultConfig))
-		viper.Set("cfg_dir", _cfgPath)
-		viper.WriteConfigAs(_cfgPath)
+		backupPath, err := backupConfigFile()
+		if err != nil {
+			return fmt.Errorf("mysshw:: Backup Config Error:: %s", err)
+		}
+		fmt.Printf("mysshw:: Backup Config Success:: %s\n", backupPath)
 
-		return fmt.Errorf(`mysshw:: The configuration file '%s' was not detected,
-and a default configuration file '%s' was generated.
-vim %s -> Run mysshw again. 
-see https://github.com/cnphpbb/mysshw/blob/master/readme.md#config`, cfgPath, _cfgPath, _cfgPath)
-	}
-	err = viper.Unmarshal(c)
-	if err != nil {
-		return fmt.Errorf("mysshw:: Failed to unmarshal configuration: %v", err)
-	}
-	CFG = c
+		// 验证配置文件 提示错误并创建一个默认的配置文件
+		if err := ValidateConfigFile(_cfgPath); err != nil {
+			// 如果配置文件不存在，则创建一个默认的配置文件
+			//
+			// 不使用viper的WriteConfigAs方法，而是使用os.WriteFile,是因为
+			// WriteConfigAs方法会自动解析配置文件不使用注释，而希望保持原貌
+			// 所以使用os.WriteFile方法来写入配置文件
+			//
+			// Viper 社区已讨论 v2 改进（如可选注释保留），可关注进展, 目前 viper v1 不支持
+			//
+			// viper.ReadConfig(strings.NewReader(DefaultTomlConfig))
+			// viper.Set("cfg_dir", _cfgPath)
+			//viper.WriteConfigAs(_cfgPath)
 
-	// 验证配置
-	if err := ValidateConfig(CFG); err != nil {
-		return fmt.Errorf("mysshw:: Configuration validation failed: %v", err)
+			if writeErr := writeConfigFile(_cfgPath); writeErr != nil {
+				return fmt.Errorf("mysshw:: Write Config Error:: %s", err)
+			}
+			// 提示使用者配置文件不存在，但是已经生成了一个默认的配置文件
+			fmt.Printf(configReadInConfigPrintStr, cfgPath, _cfgPath, _cfgPath)
+			fmt.Println("\nsee https://github.com/cnphpbb/mysshw/blob/master/readme.md#config")
+			fmt.Printf("mysshw:: Please check the backup config file:: %s\n", backupPath)
+			return fmt.Errorf("mysshw:: Configuration file validation failed: %v", err)
+		}
+	}
+
+	// 解析并验证配置
+	if err := unmarshalAndValidateConfig(c); err != nil {
+		return err
 	}
 
 	return nil
