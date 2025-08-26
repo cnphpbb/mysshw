@@ -14,7 +14,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/BurntSushi/toml"
+	"github.com/GuanceCloud/toml"
 	"github.com/spf13/viper"
 )
 

@@ -143,7 +143,7 @@ MIT
 
 - github.com/magefile/mage
 - github.com/spf13/cobra
-- github.com/BurntSushi/toml
+- github.com/GuanceCloud/toml
 - github.com/spf13/viper
 - github.com/charmbracelet/huh
 - github.com/charmbracelet/lipgloss
