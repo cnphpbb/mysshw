@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/BurntSushi/toml"
+	"github.com/GuanceCloud/toml"
 )
 
 // ValidateConfig 验证配置的有效性
