@@ -71,7 +71,7 @@ Use "mysshw help" for more information about a specific command.`,
   or
   mysshw sync -c /path/to/custom/config.toml -u or -z
 
-  # Convert YAML config to TOML
+  # Migrate from sshw YAML config to mysshw TOML config file
   mysshw yml -f ~/.sshw.yml
   or
   mysshw yml --file ~/.sshw.yml
