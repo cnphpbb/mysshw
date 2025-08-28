@@ -110,8 +110,16 @@ mysshw sync --cfg /path/to/custom/config.toml --upload
 # Or mix short options
 mysshw sync -c /path/to/custom/config.toml -u
 
+# Migrate from old SSHW YAML config to mysshw TOML config
+mysshw yml -f ~/.sshw.yml
+# Or use long option
+mysshw yml --file ~/.sshw.yml
+
 # View sync command help
 mysshw sync --help | -h
+
+# View yml command help
+mysshw yml --help | -h
 ```
 
 ## Build
