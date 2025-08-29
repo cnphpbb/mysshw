@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/GuanceCloud/toml"
 )
 
 // ValidateConfig 验证配置的有效性
@@ -23,7 +25,6 @@ func ValidateConfig(cfg *Configs) error {
 			return err
 		}
 	}
-
 	return nil
 }
 
@@ -104,5 +105,15 @@ func validateSSHNode(node *SSHNode, group string, index int) error {
 		}
 	}
 
+	return nil
+}
+
+// ValidateConfigFile 验证配置文件TOML格式是否有错
+func ValidateConfigFile(cfgPath string) error {
+	var config interface{}
+	_, err := toml.DecodeFile(cfgPath, &config)
+	if err != nil {
+		return fmt.Errorf("TOML parsing error: %v", err)
+	}
 	return nil
 }
