@@ -63,8 +63,11 @@
 
 
 ### Sync Actions 功能
-- [x] SCP 同步功能
-- [ ] WebDAV 同步功能
+- [x] SCP, SFTP 同步功能
+- [ ] WebDAV 同步功能 (github.com/studio-b12/gowebdav),现在一些网盘也支持WebDAV协议
+- [ ] S3 同步功能 (github.com/minio/minio-go/v7) RustFS, MinIO 社区版， 云平台S3
+
+**以上的文件存储都是自用的，所以相对来说，安全系数比较高**
 
 **以下的备份方法, 感觉不是很安全, 所以没有进行开发**
 
