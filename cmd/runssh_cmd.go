@@ -42,7 +42,7 @@ func RunSSH(ctx context.Context) {
 		fmt.Print(GlobalScreenClearingStr)
 		fmt.Println(GlobalExitingDescStr)
 		node := ssh.Choose(config.CFG)
-
+		client := ssh.NewClient(node)
 		// 检查是否按下q键
 		select {
 		case <-time.After(100 * time.Millisecond):
@@ -63,7 +63,6 @@ func RunSSH(ctx context.Context) {
 			}
 		}
 
-		client := ssh.NewClient(node)
 		// 传递会话结束回调函数，在SSH会话结束后返回主界面
 		client.Login(func() {
 			fmt.Println(RunSSHClientLoginSessionEndCallbackStr)
