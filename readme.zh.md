@@ -68,12 +68,7 @@ https://github.com/cnphpbb/mysshw/releases
 
 ### Sync Actions Type List
 1. [x] SCP
-2. [ ] Github - Gist
-3. [ ] Gitee - Gist
-4. [ ] API - HTTP(s)
-5. [ ] RPC
-
-
+2. [ ] WebDAV
 
 ## 配置文件
 默认路径： ~/.mysshw.toml
