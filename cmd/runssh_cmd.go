@@ -88,6 +88,7 @@ func GetCtxConfigPath(ctx context.Context) string {
 	return path.Join(usr.HomeDir, ".mysshw.toml")
 }
 
+// fmtExitingDesc 兼容系统的退出描述
 func fmtExitingDesc() string {
 	if runtime.GOOS == "windows" {
 		return GlobalExitingDescWindowsStr
