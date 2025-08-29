@@ -323,7 +323,10 @@ func (c *defaultClient) Login(sessionEndCallback func()) {
 	// change stdin to user
 	go func() {
 		_, err = io.Copy(stdinPipe, os.Stdin)
-		fmt.Println(err)
+		// 忽略EOF错误，因为这是正常的会话结束情况
+		if err != nil && err != io.EOF {
+			fmt.Println(err)
+		}
 		session.Close()
 	}()
 
