@@ -53,6 +53,34 @@ ssh = [
     { name="server 1", user="root", host="192.168.10.2" },
     { name="server 2", host="192.168.10.3" },
 ]
+
+[[nodes]]
+groups = "Groups03"
+
+[[nodes.ssh]]
+alias = 'Test-1'
+host = "192.168.10.1"
+name="server 1"
+password ="qwe123!@#qwe"
+user = 'root'
+
+[[nodes.ssh]]
+alias = 'Test-2'
+host = "192.168.10.2"
+name="server 2"
+password ="qwe123!@#qwe"
+user = 'root'
+port = 65522
+
+[[nodes.ssh]]
+alias = 'Test-3'
+host = "192.168.10.3"
+name="server 3"
+password ="qwe123!@#qwe"
+user = 'root'
+port = 65522
+keypath="~/.ssh/id_rsa"
+passphrase = "cnphpbb#Yong"
 ```
 ## Go Packages
 
@@ -72,9 +100,9 @@ We use [testify](http://github.com/stretchr/testify) as our Go testing framework
 
 ### RunSSH todo
 - [x] Exit SSH session and return to main interface 
-- [x] Support `Ctrl+d` exit program
-- [x] Support `q` exit program （experimental）
-- [x] Support `Ctrl+c` exit program （experimental，may exit with exception）
+- [x] Support `Ctrl+d` to exit program, not supported on Windows system
+- [x] Support `q` exit program
+- [x] Support `Ctrl+c` exit program
 
 ### Sync Actions Type List
 1. [x] SCP
