@@ -61,9 +61,9 @@ https://github.com/cnphpbb/mysshw/releases
 
 ### RunSSH todo
 - [x] 退出 SSH 会话, 返回主界面
-  - [x] 支持 `Ctrl+d` 退出程序
+  - [x] 支持 `Ctrl+d` 退出程序, Windows 下不支持
   - [x] 支持 `q | Q` 退出程序
-  - [x] 退出方式： 先输入Ctrl+c，再输入 q或Q or Ctrl+d
+  - [x] 退出方式： 先输入Ctrl+c，再输入 q或Q or `Ctrl+d` 退出程序
 - [x] 主界面支持搜索，支持主题
 
 ### Sync Actions Type List
@@ -97,9 +97,13 @@ ssh = [
 
 [[nodes]]
 groups = "测试环境"
-ssh = [
-    { name="dev01", host="dev.example.com", password="test123" }
-]
+
+[[nodes.ssh]]
+host = 'dev.example.com'
+name = 'dev01'
+password = 'test123'
+user = 'root'
+port = 22
  ```
 
 ## 使用示例
@@ -200,7 +204,39 @@ mage pack   // 发布打包编译
 - 重启终端，使环境变量生效  
 
 **支持 `.\mysshw.exe -c D:\mydata\mysshw\mysshw.toml` 启动程序, 指定配置文件**
-- 支持 `Ctrl+d` 退出程序
-- 支持 `q` 退出程序 （试验性）
+- 支持 `Ctrl+d` 退出程序, Windows 下不支持
+- 支持 `q | Q` 退出程序
 
 **支持 `D:\sbin\mysshw.exe -c D:\mydata\mysshw\mysshw.toml` 启动程序, 指定配置文件** by 2025-08-24
+
+#### PowerShell 中设置别名
+- 打开 PowerShell 终端
+- 执行以下命令设置别名
+- 因 Set-Alias 不支持带参数的命令，所以不能直接设置别名 `mysshw="D:\sbin\mysshw.exe -c D:\mydata\mysshw\mysshw.toml"`
+
+  ```powershell
+  Set-Alias -Name mysshw -Value "D:\sbin\mysshw.exe"
+  ```
+- 执行以下命令查看别名是否设置成功
+
+  ```powershell
+  Get-Alias -Name mysshw | Format-List
+  ```
+
+- 执行以下命令创建带参数的PowerShell函数
+  > 打开 PowerShell 配置文件（路径通过 $profile获取），添加以下内容：
+  > 注意：如果没有配置文件，需要先创建一个
+  
+  - 执行以下命令打开配置文件
+  ```powershell
+  notepad $profile
+  ```
+  - 添加以下内容
+
+  ```powershell
+  function mysshw {
+    D:\sbin\mysshw.exe -c D:\mydata\mysshw\mysshw.toml $args
+  }
+  ```
+
+- 重启 PowerShell 终端，使别名生效
