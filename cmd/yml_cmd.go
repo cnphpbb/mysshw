@@ -40,6 +40,22 @@ Example usage:
   mysshw yml -f ~/.sshw.yml
 
 This command will read the specified YAML config file, convert it to TOML format, and append it to the current mysshw config file.`,
+
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) > 0 {
+			ymlFilePath = args[0]
+		}
+		return nil
+	},
+
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		// Check if ymlFilePath is set
+		if ymlFilePath == "" {
+			return fmt.Errorf("mysshw:: YAML file path is required")
+		}
+		return nil
+	},
+
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Process config file path
 		cfgPath, _ := cmd.Flags().GetString("cfg")
@@ -55,8 +71,8 @@ This command will read the specified YAML config file, convert it to TOML format
 
 		// Parse YAML content
 		var ymlGroups []YMLServerGroup
-		if err := yaml.Unmarshal(ymlContent, &ymlGroups); err != nil {
-			return fmt.Errorf("mysshw:: YAML parsing error: %v", err)
+		if unmarshalErr := yaml.Unmarshal(ymlContent, &ymlGroups); unmarshalErr != nil {
+			return fmt.Errorf("mysshw:: YAML parsing error: %v", unmarshalErr)
 		}
 
 		// Convert to TOML config
@@ -116,15 +132,9 @@ func convertYAMLToTOML(ymlGroups []YMLServerGroup) (string, error) {
 		result += fmt.Sprintf("[[nodes]]\ngroups = \"%s\"\n\n", group.Name)
 
 		// Iterate through each server in the group
-		for i, server := range group.Children {
-			// Handle the first server
-			if i == 0 {
-				result += "[[nodes.ssh]]\n"
-			} else {
-				result += "[[nodes.ssh]]\n"
-			}
-
+		for _, server := range group.Children {
 			// Add server configuration
+			result += "[[nodes.ssh]]\n"
 			result += fmt.Sprintf("alias = '%s'\n", escapeTomlString(server.Alias))
 			result += fmt.Sprintf("host = '%s'\n", escapeTomlString(server.Host))
 			result += fmt.Sprintf("name = '%s'\n", escapeTomlString(server.Name))
@@ -136,7 +146,7 @@ func convertYAMLToTOML(ymlGroups []YMLServerGroup) (string, error) {
 
 			if server.Port > 0 {
 				result += fmt.Sprintf("port = %d\n", server.Port)
-			} else if server.Port == 0 {
+			} else {
 				// Default port 22
 				result += "port = 22\n"
 			}
@@ -174,7 +184,7 @@ func escapeTomlString(s string) string {
 // appendToConfigFile appends content to the config file
 func appendToConfigFile(content string) error {
 	// Get full config file path
-	cfgPath, err := config.GetCfgPath(config.CFG_PATH)
+	cfgPath, err := config.GetCfgPath("")
 	if err != nil {
 		return err
 	}
