@@ -31,7 +31,7 @@ func backupConfigFile() (string, error) {
 
 	return backupPath, nil
 }
-
+// writeConfigFile writes the configuration file to the specified path
 func writeConfigFile(cfgPath string) error {
 	// Write backup file
 	err := os.WriteFile(cfgPath, []byte(DefaultTomlConfig), 0644)
