@@ -7,7 +7,9 @@
 - [x] fix: EOF 错误
 - [x] 支持 `Ctrl+d` 退出程序, windows系统下失效
 - [x] 支持 `q` 退出程序 
-- [x] 支持 `Ctrl+c` 退出程序 
+- [x] 支持 `Ctrl+c` 退出程序
+- [x] 主界面支持搜索  
+- [ ] 主界面支持主题  
 
 已成功在 ssh/client.go 和 cmd/cobra_cmd.go 文件中实现退出 SSH 会话并返回主界面功能，并更新了 TODO.md 文件标记任务完成。具体实现包括：
 退出 SSH 会话并返回主界面, 修复了 EOF 错误。 
