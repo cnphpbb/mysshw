@@ -7,7 +7,7 @@ import (
 	"net"
 	"os"
 	"os/user"
-	"path"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -52,6 +52,31 @@ type defaultClient struct {
 	node         *config.SSHNode
 }
 
+// expandHomeDir 解析路径中的波浪号，将 ~ 替换为用户主目录
+func expandHomeDir(path string) (string, error) {
+	if !strings.HasPrefix(path, "~") {
+		return path, nil
+	}
+
+	// 获取当前用户信息
+	u, err := user.Current()
+	if err != nil {
+		return "", err
+	}
+
+	// 替换 ~ 为用户主目录
+	if path == "~" {
+		return u.HomeDir, nil
+	} else if strings.HasPrefix(path, "~") && len(path) > 1 {
+		// 兼容不同操作系统的路径分隔符
+		if path[1] == '/' || path[1] == '\\' {
+			return filepath.Join(u.HomeDir, path[2:]), nil
+		}
+	}
+
+	return path, nil
+}
+
 // genSSHConfig 生成SSH客户端配置
 func genSSHConfig(node *config.SSHNode) *defaultClient {
 	if node == nil {
@@ -67,9 +92,17 @@ func genSSHConfig(node *config.SSHNode) *defaultClient {
 
 	var pemBytes []byte
 	if node.KeyPath == "" {
-		pemBytes, err = os.ReadFile(path.Join(u.HomeDir, ".ssh", "id_rsa"))
+		pemBytes, err = os.ReadFile(filepath.Join(u.HomeDir, ".ssh", "id_rsa"))
 	} else {
-		pemBytes, err = os.ReadFile(node.KeyPath)
+		// 处理波浪号路径, 将 ~ 替换为用户主目录;
+		// 兼容不同操作系统的路径分隔符,
+		// 主要是在Mac系统的配置文件，在Windows系统中使用不需要替换
+		keyPath, expandErr := expandHomeDir(node.KeyPath)
+		if expandErr != nil {
+			fmt.Printf("路径解析错误: %v\n", expandErr)
+		} else {
+			pemBytes, err = os.ReadFile(keyPath)
+		}
 	}
 
 	if err != nil {
