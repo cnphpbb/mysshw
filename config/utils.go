@@ -8,6 +8,7 @@ import (
 	"strings"
 )
 
+// isCfgPath checks if the given path is a valid configuration path
 func isCfgPath(cfgPath string) (dir, file, ext string) {
 	// 兼容Windows路径格式，将反斜杠替换为正斜杠
 	cfgPath = strings.ReplaceAll(cfgPath, "\\", "/")
