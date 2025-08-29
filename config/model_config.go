@@ -10,15 +10,28 @@ const DefaultTomlConfig = `# config example.
 cfg_dir = "./.mysshw.toml"   # default:  $HOME/.mysshw.toml
 
 [sync]
-type = "scp" # type: ( scp || github || gitee || Api-http || rpc ) default: scp
+type = "scp" # type: ( scp || webdav || s3 ) default: scp
 remote_uri = "127.0.0.1:22"
+remote_path = "/data/backup/mysshw/mysshw.toml" # remote file path
+
+[sync.scp]
 username = "root"
 password = "$ZK7M@~1RY"
 keyPath = ""
 passphrase = ""
-remote_path = "/data/backup/mysshw/mysshw.toml" # remote file path
-access_token = "" # gitee_access_token
-gist_id = ""  # gist_id
+
+[sync.webdav]
+Auth = "Basic" # Basic || Digest
+username = "root"
+password = "$ZK7M@~1RY"
+
+[sync.s3]
+access_key = "" # 访问密钥
+secret_key = "" # 密钥
+bucket_name = "" # 桶名
+region = "" # 区域
+endpoint = "" # 终端节点 这个值为空，按 remote_uri 的值
+
 
 # config example.
 # see URL: https://github.com/cnphpbb/mysshw/blob/master/readme.md#config
