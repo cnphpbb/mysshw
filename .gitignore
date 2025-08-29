@@ -26,3 +26,4 @@ sshw.toml
 .mysshw.toml
 mysshw.toml
 mysshw
+/vendor/*

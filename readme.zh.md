@@ -129,8 +129,16 @@ mysshw sync --cfg /path/to/custom/config.toml --upload | --down
 # 或混合使用短选项
 mysshw sync -c /path/to/custom/config.toml -u | -z
 
+# 从 sshw 的 YAML 配置迁移到 mysshw TOML 配置
+mysshw yml -f ~/.sshw.yml
+# 或使用长选项
+mysshw yml --file ~/.sshw.yml
+
 # 查看同步命令帮助
 mysshw sync --help | -h
+
+# 查看 yml 命令帮助
+mysshw yml --help | -h
 ```
 
 ## 贡献指南
@@ -143,7 +151,7 @@ MIT
 
 - github.com/magefile/mage
 - github.com/spf13/cobra
-- github.com/BurntSushi/toml
+- github.com/GuanceCloud/toml
 - github.com/spf13/viper
 - github.com/charmbracelet/huh
 - github.com/charmbracelet/lipgloss

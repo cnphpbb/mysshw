@@ -10,9 +10,19 @@ import (
 
 var (
 	// 定义样式
-	yellowStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("226"))
-	faintStyle  = lipgloss.NewStyle().Faint(true)
-	parentStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Italic(true)
+	// 标题样式 #71BEF2
+	//titleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#71BEF2")).Bold(true)
+	// greenStyle #A8CC8C
+	//greenStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#A8CC8C"))
+	// 黄色样式 #DBAB79
+	yellowStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#DBAB79"))
+	// 灰色样式
+	//faintStyle = lipgloss.NewStyle().Faint(true)
+	// 蓝色样式 #71BEF2
+	blueStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#71BEF2"))
+	// 父节点样式 #585858
+	//parentStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Italic(true)
+	parentStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#585858")).Italic(true)
 )
 
 // Choose 交互式选择SSH节点
@@ -36,7 +46,7 @@ func Choose(trees *config.Configs) *config.SSHNode {
 		huh.NewGroup(
 			huh.NewSelect[int]().
 				Title(MsgSelectNodeGroup).
-				Description(MsgSelectDesc).
+				//Description(MsgSelectDesc).
 				Options(groupOptions...).
 				Value(&selectedGroupIndex),
 		),
@@ -72,9 +82,9 @@ func Choose(trees *config.Configs) *config.SSHNode {
 			if node.Host != "" {
 				userHost := ""
 				if node.User != "" {
-					userHost += faintStyle.Render(node.User + "@")
+					userHost += blueStyle.Render(node.User + "@")
 				}
-				userHost += faintStyle.Render(node.Host)
+				userHost += blueStyle.Render(node.Host)
 				name += " " + userHost
 			}
 		}
@@ -86,7 +96,7 @@ func Choose(trees *config.Configs) *config.SSHNode {
 		huh.NewGroup(
 			huh.NewSelect[int]().
 				Title(MsgSelectNode).
-				Description(MsgSelectDesc).
+				//Description(MsgSelectDesc).
 				Options(nodeOptions...).
 				Value(&selectedNodeIndex),
 		),

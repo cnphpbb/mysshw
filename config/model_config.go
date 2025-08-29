@@ -5,7 +5,7 @@ import "golang.org/x/crypto/ssh"
 const CFGPATH string = "~/.mysshw.toml"
 
 // DefaultConfig 包含默认配置的字符串
-const DefaultConfig = `# config example.
+const DefaultTomlConfig = `# config example.
 # see URL: https://github.com/cnphpbb/mysshw/blob/master/readme.md#config
 cfg_dir = "./.mysshw.toml"   # default:  $HOME/.mysshw.toml
 
@@ -24,11 +24,33 @@ gist_id = ""  # gist_id
 # see URL: https://github.com/cnphpbb/mysshw/blob/master/readme.md#config
 [[nodes]]
 groups = "Groups01"
+
+[[nodes.ssh]]
+alias = 'Test'
+host = '127.0.0.1'
+name = 'vm-test-1'
+password = 'test#Password'
+user = 'root'
+
+[[nodes.ssh]]
+alias = "AllKey"  # 可以空, 可选
+name = "全部Key"
+host = "192.168.10.60" # 不可以空，必须
+user ="vm00" # 不可以空，必须
+port = 22  # 默认值:22, 不可以空, 如果是22端口, 可以忽略这个KEY
+password = "" # 可以空, 可选; 如果有要自己填密码，可以空
+#keypath="~/.ssh/id_rsa" # 可以空, 可选
+#passphrase="abcdefghijklmn" # 可以空, 可选
+
+[[nodes]]
+groups = "Groups02"
 ssh = [
     # 
 	# { name="no ssh conf", alias="", host="192.168.10.60", user="vm00", port=22, password="qwe123!@#qwe", keypath="~/.ssh/id_rsa", passphrase="abcdefghijklmn" },
-    { name="vm-test", alias="TestNode", host="127.0.0.1", user="root", port=22, password="test#Password" },
-]`
+    { name="vm-test-1", alias="TestNode-1", host="127.0.0.1", user="root", port=22, password="test#Password" },
+	{ name="vm-test-2", alias="TestNode", host="127.0.0.1", user="root", port=22, password="test#Password" },
+]
+`
 
 type (
 	Configs struct {
@@ -119,3 +141,7 @@ func (n *SSHNode) SetPassword() ssh.AuthMethod {
 	}
 	return ssh.Password(n.Password)
 }
+
+const configReadInConfigPrintStr = `mysshw:: The configuration file '%s' was not detected,
+    and a default configuration file '%s' was generated.
+    vim %s -> Run mysshw again. `
