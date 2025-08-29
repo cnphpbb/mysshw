@@ -63,11 +63,13 @@
 ### Sync Actions 功能
 - [x] SCP 同步功能
 - [ ] WebDAV 同步功能
+
 **以下的备份方法, 感觉不是很安全, 所以没有进行开发**
-- [ ] Github - Gist 同步集成
-- [ ] Gitee - Gist 同步集成
-- [ ] API - HTTP(s) 同步接口
-- [ ] RPC 同步功能
+
+- Github - Gist 同步集成
+- Gitee - Gist 同步集成, 此功能
+- API - HTTP(s) 同步接口
+- RPC 同步功能
 
 ### 用户界面
 - [x] 实现命令自动补全
@@ -86,6 +88,7 @@
 **支持 `D:\sbin\mysshw.exe -c D:\mydata\mysshw\mysshw.toml` 启动程序, 指定配置文件** by 2025-08-24
 
 ## 发布计划
+- [x] 发布到 GitHub Releases
 - [ ] 制作 Docker 镜像
 - [ ] 自动化构建与测试流程
-- [x] 发布到 GitHub Releases
+
