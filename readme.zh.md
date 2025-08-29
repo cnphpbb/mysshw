@@ -59,16 +59,40 @@ https://github.com/cnphpbb/mysshw/releases
 
 ## TODO
 
-### RunSSH todo
-- [x] 退出 SSH 会话, 返回主界面
-  - [x] 支持 `Ctrl+d` 退出程序, Windows 下不支持
-  - [x] 支持 `q | Q` 退出程序
-  - [x] 退出方式： 先输入Ctrl+c，再输入 q或Q or `Ctrl+d` 退出程序
-- [x] 主界面支持搜索，支持主题
+### 功能开发
 
-### Sync Actions Type List
-1. [x] SCP
-2. [ ] WebDAV
+- RunSSH功能
+  - [ ] 主界面支持主题
+- 配置管理
+  - [ ] 添加配置文件加密选项
+- 同步功能
+  - [x] SCP/SFTP
+  - [ ] WebDAV
+  - [ ] S3 (RustFS, MinIO社区版, 云平台S3)
+- 发布计划
+  - [ ] 制作Docker镜像
+  - [ ] 自动化构建与测试流程
+- 代码优化
+  - [ ] 添加集成测试
+
+### 已完成功能
+
+- RunSSH
+  - 退出会话返回主界面
+  - 支持多种退出方式(Ctrl+d/Ctrl+c/q)
+  - 主界面支持搜索
+- 配置管理
+  - 文件校验功能
+  - 自定义配置文件路径
+  - 跨平台路径支持(Windows/Linux/MacOS)
+  - sshw配置导入
+  - 配置的远程备份与恢复
+  - 配置文件的自动备份
+- 用户界面
+  - 命令自动补全
+  - 替换promptui为charmbracelet/huh
+- 发布
+  - GitHub Releases
 
 ## 配置文件
 默认路径： ~/.mysshw.toml
