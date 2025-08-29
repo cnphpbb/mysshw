@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"os/user"
 	"path"
+	"runtime"
 	"syscall"
 	"time"
 )
@@ -40,7 +41,8 @@ func RunSSH(ctx context.Context) {
 	for {
 		// huh 中 Ctrl+d & /{string} 被占用了
 		fmt.Print(GlobalScreenClearingStr)
-		fmt.Println(GlobalExitingDescStr)
+		// 检查操作系统类型
+		fmt.Println(fmtExitingDesc())
 		node := ssh.Choose(config.CFG)
 		client := ssh.NewClient(node)
 		// 检查是否按下q键
@@ -84,4 +86,12 @@ func GetCtxConfigPath(ctx context.Context) string {
 		return config.CFGPATH
 	}
 	return path.Join(usr.HomeDir, ".mysshw.toml")
+}
+
+// fmtExitingDesc 兼容系统的退出描述
+func fmtExitingDesc() string {
+	if runtime.GOOS == "windows" {
+		return GlobalExitingDescWindowsStr
+	}
+	return GlobalExitingDescUnixStr
 }
