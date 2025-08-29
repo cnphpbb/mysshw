@@ -52,25 +52,47 @@ type defaultClient struct {
 	node         *config.SSHNode
 }
 
-// expandHomeDir 解析路径中的波浪号，将 ~ 替换为用户主目录
+// expandHomeDir 解析路径中的波浪号和$HOME环境变量，将它们替换为用户主目录
 func expandHomeDir(path string) (string, error) {
-	if !strings.HasPrefix(path, "~") {
-		return path, nil
-	}
+	// 处理波浪号路径
+	if strings.HasPrefix(path, "~") {
+		// 获取当前用户信息
+		u, err := user.Current()
+		if err != nil {
+			return "", err
+		}
 
-	// 获取当前用户信息
-	u, err := user.Current()
-	if err != nil {
-		return "", err
-	}
+		// 替换 ~ 为用户主目录
+		if path == "~" {
+			return u.HomeDir, nil
+		} else if len(path) > 1 {
+			// 兼容不同操作系统的路径分隔符
+			if path[1] == '/' || path[1] == '\\' {
+				// 规范化路径分隔符，确保在任何操作系统上都能正确工作
+				relativePath := path[2:]
+				// 将反斜杠替换为正斜杠，然后让 filepath.Join 处理系统特定的分隔符
+				relativePath = strings.ReplaceAll(relativePath, "\\", "/")
+				return filepath.Join(u.HomeDir, relativePath), nil
+			}
+		}
+	} else if strings.HasPrefix(path, "$HOME") {
+		// 获取当前用户信息
+		u, err := user.Current()
+		if err != nil {
+			return "", err
+		}
 
-	// 替换 ~ 为用户主目录
-	if path == "~" {
-		return u.HomeDir, nil
-	} else if strings.HasPrefix(path, "~") && len(path) > 1 {
-		// 兼容不同操作系统的路径分隔符
-		if path[1] == '/' || path[1] == '\\' {
-			return filepath.Join(u.HomeDir, path[2:]), nil
+		if path == "$HOME" {
+			return u.HomeDir, nil
+		} else if len(path) > 5 {
+			// 处理$HOME/或$HOME\开头的路径
+			if path[5] == '/' || path[5] == '\\' {
+				// 规范化路径分隔符，确保在任何操作系统上都能正确工作
+				relativePath := path[6:]
+				// 将反斜杠替换为正斜杠，然后让 filepath.Join 处理系统特定的分隔符
+				relativePath = strings.ReplaceAll(relativePath, "\\", "/")
+				return filepath.Join(u.HomeDir, relativePath), nil
+			}
 		}
 	}
 
