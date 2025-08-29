@@ -4,21 +4,31 @@
 
 ### RunSSH 功能
 - [x] 退出 SSH 会话并返回主界面
-- [x] 支持 `Ctrl+d` 退出程序
-- [x] 支持 `q` 退出程序 （试验性）
-- [x] 支持 `Ctrl+c` 退出程序 （试验性，）
+- [x] fix: EOF 错误
+- [x] 支持 `Ctrl+d` 退出程序, windows系统下失效
+- [x] 支持 `q` 退出程序 
+- [x] 支持 `Ctrl+c` 退出程序
+- [x] 主界面支持搜索  
+- [ ] 主界面支持主题  
 
 已成功在 ssh/client.go 和 cmd/cobra_cmd.go 文件中实现退出 SSH 会话并返回主界面功能，并更新了 TODO.md 文件标记任务完成。具体实现包括：
+退出 SSH 会话并返回主界面, 修复了 EOF 错误。 
+如果按键无响应, 请尝试按 `Ctrl+c`, 再按 方向键 。
 
 #### 退出功能实现
 1. 添加了清屏功能，使用 `fmt.Print("\033[H\033[2J")` 命令清除终端屏幕内容
 2. 优化了主界面显示，在返回主界面时重新显示节点列表
 3. 实现了多种退出方式：`Ctrl+d`， `Ctrl+c` 或者 输入 `q` 退出
+   - Ctrl+d 在Windows系统下失效, 请使用 `Ctrl+c` 退出
+   - 输入 `q` 退出时, 会提示确认退出
 
 #### 功能亮点
 - 支持多种退出方式：先按 `Ctrl+c`，再按 `Ctrl+d`  或  `Ctrl+c`  或 输入 `q | Q` 退出
 - 清屏功能提升了用户体验，使界面更加整洁
 - 改进了配置路径获取逻辑，确保默认配置路径在不同操作系统上正确工作
+- Ctrl+d 在Windows系统下失效
+- MacOS 系统下的配置文件，无须修改，就可以直接在其他系统中使用
+- 配置文件中`sshkey`的路径, 支持 `~` 展开路径, 如: `~/.ssh/id_rsa`
 
 
 ### 配置管理
@@ -30,9 +40,9 @@
 - [x] 对配置文件路径的校验
 - [x] 对配置文件内容的校验
 - [x] 支持sshw项目的配置文件的导入
-- [ ] 添加配置文件加密选项
 - [x] 实现配置的远程备份与恢复
 - [x] 实现配置文件的自动备份
+- [ ] 添加配置文件加密选项
 
 已成功在 config/config.go 文件中实现配置校验功能，并更新了 TODO.md 文件标记任务完成。具体实现包括：
 
@@ -53,32 +63,37 @@
 
 
 ### Sync Actions 功能
-- [x] SCP 同步功能 (已实现)
-- [ ] Github - Gist 同步集成
-- [ ] Gitee - Gist 同步集成
-- [ ] API - HTTP(s) 同步接口
-- [ ] RPC 同步功能
+- [x] SCP, SFTP 同步功能
+- [ ] WebDAV 同步功能 (github.com/studio-b12/gowebdav),现在一些网盘也支持WebDAV协议
+- [ ] S3 同步功能 (github.com/minio/minio-go/v7) RustFS, MinIO 社区版， 云平台S3
+
+**以上的文件存储都是自用的，所以相对来说，安全系数比较高**
+
+**以下的备份方法, 感觉不是很安全, 所以没有进行开发**
+
+- Github - Gist 同步集成
+- Gitee - Gist 同步集成
+- API - HTTP(s) 同步接口
+- RPC 同步功能
 
 ### 用户界面
 - [x] 实现命令自动补全
 - [x] 替换pkg "github.com/manifoldco/promptui" （此项目已经停止维护）
 - [x] 实现 "github.com/charmbracelet/huh" 替换 "github.com/manifoldco/promptui"
 
-### 其他功能
-- [ ] 添加日志记录
-- [ ] 实现命令历史记录
-
 
 ## 代码优化
 - [x] 重构重复代码
 - [x] 完善单元测试
-- [ ] 添加集成测试
 - [x] 优化代码性能
 - [x] 改进代码注释
 - [x] 优化平台兼容性
+- [ ] 添加集成测试
 
 **支持 `D:\sbin\mysshw.exe -c D:\mydata\mysshw\mysshw.toml` 启动程序, 指定配置文件** by 2025-08-24
 
 ## 发布计划
+- [x] 发布到 GitHub Releases
 - [ ] 制作 Docker 镜像
 - [ ] 自动化构建与测试流程
+
