@@ -71,6 +71,11 @@ Use "mysshw help" for more information about a specific command.`,
   or
   mysshw sync -c /path/to/custom/config.toml -u or -z
 
+  # Migrate from sshw YAML config to mysshw TOML config file
+  mysshw yml -f ~/.sshw.yml
+  or
+  mysshw yml --file ~/.sshw.yml
+
   # Display version information
   mysshw version | -v | --version
 
@@ -89,6 +94,7 @@ func init() {
 	// 添加子命令
 	rootCmd.AddCommand(syncCmd)
 	rootCmd.AddCommand(VersionCmd)
+	rootCmd.AddCommand(YMLCmd)
 
 	// 为 sync 命令添加标志
 	syncCmd.Flags().BoolP("upload", "u", false, "Upload local config to remote server")

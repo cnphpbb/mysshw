@@ -19,9 +19,9 @@ import (
 // 修复初始化循环问题，将 context 作为参数传入
 func RunSSH(ctx context.Context) {
 	cfgPath := GetCtxConfigPath(ctx)
-	fmt.Println("Config path changed to:", cfgPath)
+	fmt.Println("mysshw:: Config path changed to:", cfgPath)
 	if err := config.LoadViperConfig(cfgPath); err != nil {
-		fmt.Println(err)
+		fmt.Println("mysshw:: Load Config Error::", err)
 		os.Exit(1)
 	}
 
@@ -42,7 +42,7 @@ func RunSSH(ctx context.Context) {
 		fmt.Print(GlobalScreenClearingStr)
 		fmt.Println(GlobalExitingDescStr)
 		node := ssh.Choose(config.CFG)
-
+		client := ssh.NewClient(node)
 		// 检查是否按下q键
 		select {
 		case <-time.After(100 * time.Millisecond):
@@ -63,7 +63,6 @@ func RunSSH(ctx context.Context) {
 			}
 		}
 
-		client := ssh.NewClient(node)
 		// 传递会话结束回调函数，在SSH会话结束后返回主界面
 		client.Login(func() {
 			fmt.Println(RunSSHClientLoginSessionEndCallbackStr)
