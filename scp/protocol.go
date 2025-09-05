@@ -24,7 +24,7 @@ const (
 	Error   ResponseType = 2
 )
 
-const buffSize = 1024 * 256
+// const buffSize = 1024 * 256
 
 // There are tree types of responses that the remote can send back:
 // ok, warning and error
@@ -97,7 +97,7 @@ func (r *Response) ParseFileInfos() (*FileInfos, error) {
 	message := strings.ReplaceAll(r.Message, "\n", "")
 	parts := strings.Split(message, " ")
 	if len(parts) < 3 {
-		return nil, errors.New("Unable to parse message as file infos")
+		return nil, errors.New("unable to parse message as file infos")
 	}
 
 	size, err := strconv.Atoi(parts[1])
@@ -122,7 +122,7 @@ func Ack(writer io.Writer) error {
 		return err
 	}
 	if n < len(msg) {
-		return errors.New("Failed to write ack buffer")
+		return errors.New("failed to write ack buffer")
 	}
 	return nil
 }

@@ -33,7 +33,7 @@ func NewClient(cfg *config.SyncInfo) (*Client, error) {
 	}
 
 	// 检查远程路径是否存在
-	_, err = client.Stat(cfg.RemotePath)
+	_, err := client.Stat(cfg.RemotePath)
 	if os.IsNotExist(err) {
 		// 如果路径不存在，则创建
 		if err := client.MkdirAll(cfg.RemotePath, 0755); err != nil {

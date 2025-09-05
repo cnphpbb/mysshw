@@ -65,6 +65,15 @@ ssh = [
 ]
 `
 
+// S3Config S3配置结构体
+type S3Config struct {
+	AccessKey  string `toml:"access_key" mapstructure:"access_key"`
+	SecretKey  string `toml:"secret_key" mapstructure:"secret_key"`
+	BucketName string `toml:"bucket_name" mapstructure:"bucket_name"`
+	Region     string `toml:"region" mapstructure:"region"`
+	Endpoint   string `toml:"endpoint" mapstructure:"endpoint"`
+}
+
 type (
 	Configs struct {
 		CfgDir  string   `toml:"cfg_dir" mapstructure:"cfg_dir"`
@@ -73,15 +82,16 @@ type (
 	}
 
 	SyncInfo struct {
-		Type        string `toml:"type" mapstructure:"type"`
-		RemoteUri   string `toml:"remote_uri" mapstructure:"remote_uri"`
-		UserName    string `toml:"username" mapstructure:"username"`
-		Password    string `toml:"password" mapstructure:"password"`
-		KeyPath     string `toml:"keyPath" mapstructure:"keyPath"`
-		Passphrase  string `toml:"passphrase" mapstructure:"passphrase"`
-		RemotePath  string `toml:"remote_path" mapstructure:"remote_path"`
-		AccessToken string `toml:"access_token" mapstructure:"access_token"`
-		GistID      string `toml:"gist_id" mapstructure:"gist_id"`
+		Type        string   `toml:"type" mapstructure:"type"`
+		RemoteUri   string   `toml:"remote_uri" mapstructure:"remote_uri"`
+		UserName    string   `toml:"username" mapstructure:"username"`
+		Password    string   `toml:"password" mapstructure:"password"`
+		KeyPath     string   `toml:"keyPath" mapstructure:"keyPath"`
+		Passphrase  string   `toml:"passphrase" mapstructure:"passphrase"`
+		RemotePath  string   `toml:"remote_path" mapstructure:"remote_path"`
+		AccessToken string   `toml:"access_token" mapstructure:"access_token"`
+		GistID      string   `toml:"gist_id" mapstructure:"gist_id"`
+		S3Config    S3Config `toml:"s3" mapstructure:"s3"`
 	}
 	Nodes struct {
 		Groups   string     `toml:"groups"`
