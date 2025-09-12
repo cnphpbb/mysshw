@@ -9,21 +9,21 @@ remote_path = "/data/backup/mysshw/mysshw.toml" # remote file path
 
 [sync.scp]
 username = "root"
-password = "$ZK7M@~1RY"
+password = "$ZK7M@~1RY#Scp"
 keyPath = "~/.ssh/id_rsa"
 passphrase = ""
 
 [sync.webdav]
 auth = "Basic" # Basic || Digest
 username = "root"
-password = "$ZK7M@~1RY"
+password = "$ZK7M@~1RY#WebDav"
 
 [sync.s3]
-access_key = "" # 访问密钥
-secret_key = "" # 密钥
-bucket_name = "" # 桶名
-region = "" # 区域
-endpoint = "" # 终端节点 这个值为空，按 remote_uri 的值
+access_key = "*******" # 访问密钥
+secret_key = "********" # 密钥
+bucket_name = "*******" # 桶名
+region = "********" # 区域
+endpoint = "********" # 终端节点 这个值为空，按 remote_uri 的值
 
 
 # config example.
