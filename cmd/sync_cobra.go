@@ -131,9 +131,9 @@ func loadConfig() error {
 // createSSHConfig 创建 SSH 客户端配置
 func createSSHConfig(syncCfg config.SyncInfo) *crypto_ssh.ClientConfig {
 	return &crypto_ssh.ClientConfig{
-		User: syncCfg.UserName,
+		User: syncCfg.SCPConfig.Username,
 		Auth: []crypto_ssh.AuthMethod{
-			auth.PasswordKey(syncCfg.UserName, syncCfg.Password),
+			auth.PasswordKey(syncCfg.SCPConfig.Username, syncCfg.SCPConfig.Password),
 		},
 		HostKeyCallback: crypto_ssh.InsecureIgnoreHostKey(),
 	}
@@ -191,6 +191,14 @@ func uploadWebDAVConfig(client *webdav.Client, localCfgPath, remotePath string) 
 	// 获取配置文件名
 	_, filename := filepath.Split(localCfgPath)
 
+	// 如果提供了远程路径，则使用该路径中的文件名
+	if remotePath != "" {
+		_, remoteFilename := filepath.Split(remotePath)
+		if remoteFilename != "" {
+			filename = remoteFilename
+		}
+	}
+
 	// 上传配置文件
 	if err := client.UploadFile(localCfgPath, filename); err != nil {
 		return fmt.Errorf("upload failed: %w", err)
@@ -206,6 +214,14 @@ func downloadWebDAVConfig(client *webdav.Client, localCfgPath, remotePath string
 
 	// 获取配置文件名
 	_, filename := filepath.Split(localCfgPath)
+
+	// 如果提供了远程路径，则使用该路径中的文件名
+	if remotePath != "" {
+		_, remoteFilename := filepath.Split(remotePath)
+		if remoteFilename != "" {
+			filename = remoteFilename
+		}
+	}
 
 	// 获取本地配置文件路径
 	localPath, _ := config.GetCfgPath(localCfgPath)
@@ -226,6 +242,14 @@ func uploadS3Config(client *s3.Client, localCfgPath, remotePath string) error {
 	// 获取配置文件名
 	_, filename := filepath.Split(localCfgPath)
 
+	// 如果提供了远程路径，则使用该路径中的文件名
+	if remotePath != "" {
+		_, remoteFilename := filepath.Split(remotePath)
+		if remoteFilename != "" {
+			filename = remoteFilename
+		}
+	}
+
 	// 上传配置文件
 	if err := client.UploadFile(localCfgPath, filename); err != nil {
 		return fmt.Errorf("upload failed: %w", err)
@@ -241,6 +265,14 @@ func downloadS3Config(client *s3.Client, localCfgPath, remotePath string) error 
 
 	// 获取配置文件名
 	_, filename := filepath.Split(localCfgPath)
+
+	// 如果提供了远程路径，则使用该路径中的文件名
+	if remotePath != "" {
+		_, remoteFilename := filepath.Split(remotePath)
+		if remoteFilename != "" {
+			filename = remoteFilename
+		}
+	}
 
 	// 获取本地配置文件路径
 	localPath, _ := config.GetCfgPath(localCfgPath)

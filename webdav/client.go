@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"mysshw/config"
+
 	"github.com/studio-b12/gowebdav"
 )
 
@@ -25,7 +26,7 @@ func NewClient(cfg *config.SyncInfo) (*Client, error) {
 	}
 
 	// 创建WebDAV客户端
-	client := gowebdav.NewClient(baseURL, cfg.UserName, cfg.Password)
+	client := gowebdav.NewClient(baseURL, cfg.WebDAVConfig.Username, cfg.WebDAVConfig.Password)
 
 	// 测试连接
 	if err := client.Connect(); err != nil {
