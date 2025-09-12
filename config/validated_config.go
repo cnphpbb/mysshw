@@ -32,9 +32,9 @@ func ValidateConfig(cfg *Configs) error {
 func validateSyncConfig(sync *SyncInfo) error {
 	// 验证同步类型
 	supportedTypes := map[string]bool{
-		"scp": true,
+		"scp":    true,
 		"webdav": true,
-		"s3": true,
+		"s3":     true,
 	}
 
 	if sync.Type != "" && !supportedTypes[strings.ToLower(sync.Type)] {
@@ -50,8 +50,8 @@ func validateSyncConfig(sync *SyncInfo) error {
 			return fmt.Errorf("remote_path is required for scp sync type")
 		}
 		// SCP需要至少一种认证方式
-		if sync.Password == "" && sync.KeyPath == "" {
-			return fmt.Errorf("either password or keyPath is required for scp sync type")
+		if sync.SCPConfig.Username == "" && sync.SCPConfig.Password == "" && sync.SCPConfig.KeyPath == "" {
+			return fmt.Errorf("either password, username or keyPath is required for scp sync type")
 		}
 	} else if strings.ToLower(sync.Type) == "s3" {
 		if sync.S3Config.AccessKey == "" {
@@ -69,6 +69,10 @@ func validateSyncConfig(sync *SyncInfo) error {
 		// 如果endpoint为空，则使用remote_uri作为endpoint
 		if sync.S3Config.Endpoint == "" && sync.RemoteUri == "" {
 			return fmt.Errorf("either endpoint or remote_uri is required for s3 sync type")
+		}
+	} else if strings.ToLower(sync.Type) == "webdav" {
+		if sync.WebDAVConfig.Username == "" && sync.WebDAVConfig.Password == "" {
+			return fmt.Errorf("either username or password is required for webdav sync type")
 		}
 	}
 

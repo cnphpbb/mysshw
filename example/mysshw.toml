@@ -10,11 +10,11 @@ remote_path = "/data/backup/mysshw/mysshw.toml" # remote file path
 [sync.scp]
 username = "root"
 password = "$ZK7M@~1RY"
-keyPath = ""
+keyPath = "~/.ssh/id_rsa"
 passphrase = ""
 
 [sync.webdav]
-Auth = "Basic" # Basic || Digest
+auth = "Basic" # Basic || Digest
 username = "root"
 password = "$ZK7M@~1RY"
 
