@@ -51,6 +51,8 @@ func validateSyncConfig(sync *SyncInfo) error {
 		}
 		// SCP需要至少一种认证方式
 		if sync.SCPConfig.Username == "" && sync.SCPConfig.Password == "" && sync.SCPConfig.KeyPath == "" {
+			fmt.Println("The configuration file has changed, please modify it to the new mode.")
+			fmt.Println("see: https://github.com/cnphpbb/mysshw/blob/main/example/mysshw.toml")
 			return fmt.Errorf("either password, username or keyPath is required for scp sync type")
 		}
 	} else if strings.ToLower(sync.Type) == "s3" {
