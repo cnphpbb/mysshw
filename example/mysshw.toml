@@ -3,13 +3,27 @@
 cfg_dir = "./.mysshw.toml"   # default:  $HOME/.mysshw.toml
 
 [sync]
-type = "scp" # type: ( scp || webdav ) default: scp
+type = "scp" # type: ( scp || webdav || s3 ) default: scp
 remote_uri = "127.0.0.1:22"
-username = "root"
-password = "$ZK7M@~1RY"
-keyPath = ""
-passphrase = ""
 remote_path = "/data/backup/mysshw/mysshw.toml" # remote file path
+
+[sync.scp]
+username = "root"
+password = "$ZK7M@~1RY#Scp"
+keyPath = "~/.ssh/id_rsa"
+passphrase = ""
+
+[sync.webdav]
+auth = "Basic" # Basic || Digest
+username = "root"
+password = "$ZK7M@~1RY#WebDav"
+
+[sync.s3]
+access_key = "*******" # 访问密钥
+secret_key = "********" # 密钥
+bucket_name = "*******" # 桶名
+region = "********" # 区域
+endpoint = "********" # 终端节点 这个值为空，按 remote_uri 的值
 
 
 # config example.
@@ -18,21 +32,21 @@ remote_path = "/data/backup/mysshw/mysshw.toml" # remote file path
 groups = "Groups01"
 
 [[nodes.ssh]]
-alias = '🚻 Test'
+alias = 'Test'
 host = '127.0.0.1'
-name = '🚻 vm-test-1'
+name = 'vm-test-1'
 password = 'test#Password'
 user = 'root'
 
 [[nodes.ssh]]
-alias = "all Key"  # 可以空, 可选
-name = "👌 全部 Key"
+alias = "AllKey"  # 可以空, 可选
+name = "全部Key"
 host = "192.168.10.60" # 不可以空，必须
 user ="vm00" # 不可以空，必须
 port = 22  # 默认值:22, 不可以空, 如果是22端口, 可以忽略这个KEY
 password = "" # 可以空, 可选; 如果有要自己填密码，可以空
-#keypath = "~/.ssh/id_rsa" # 可以空, 可选
-#passphrase = "abcdefghijklmn" # 可以空, 可选
+#keypath="~/.ssh/id_rsa" # 可以空, 可选
+#passphrase="abcdefghijklmn" # 可以空, 可选
 
 [[nodes]]
 groups = "Groups02"
