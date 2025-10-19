@@ -32,12 +32,13 @@ func ValidateConfig(cfg *Configs) error {
 func validateSyncConfig(sync *SyncInfo) error {
 	// 验证同步类型
 	supportedTypes := map[string]bool{
-		"scp": true,
-		// 可以根据实际支持的同步类型添加更多
+		"scp":    true,
+		"webdav": true,
+		"s3":     true,
 	}
 
 	if sync.Type != "" && !supportedTypes[strings.ToLower(sync.Type)] {
-		return fmt.Errorf("unsupported sync type: %s. Supported types: scp", sync.Type)
+		return fmt.Errorf("unsupported sync type: %s. Supported types: scp, webdav, s3", sync.Type)
 	}
 
 	// 根据同步类型验证必要字段
@@ -49,8 +50,31 @@ func validateSyncConfig(sync *SyncInfo) error {
 			return fmt.Errorf("remote_path is required for scp sync type")
 		}
 		// SCP需要至少一种认证方式
-		if sync.Password == "" && sync.KeyPath == "" {
-			return fmt.Errorf("either password or keyPath is required for scp sync type")
+		if sync.SCPConfig.Username == "" && sync.SCPConfig.Password == "" && sync.SCPConfig.KeyPath == "" {
+			fmt.Println("The configuration file has changed, please modify it to the new mode.")
+			fmt.Println("see: https://github.com/cnphpbb/mysshw/blob/main/example/mysshw.toml")
+			return fmt.Errorf("either password, username or keyPath is required for scp sync type")
+		}
+	} else if strings.ToLower(sync.Type) == "s3" {
+		if sync.S3Config.AccessKey == "" {
+			return fmt.Errorf("access_key is required for s3 sync type")
+		}
+		if sync.S3Config.SecretKey == "" {
+			return fmt.Errorf("secret_key is required for s3 sync type")
+		}
+		if sync.S3Config.BucketName == "" {
+			return fmt.Errorf("bucket_name is required for s3 sync type")
+		}
+		if sync.RemotePath == "" {
+			return fmt.Errorf("remote_path is required for s3 sync type")
+		}
+		// 如果endpoint为空，则使用remote_uri作为endpoint
+		if sync.S3Config.Endpoint == "" && sync.RemoteUri == "" {
+			return fmt.Errorf("either endpoint or remote_uri is required for s3 sync type")
+		}
+	} else if strings.ToLower(sync.Type) == "webdav" {
+		if sync.WebDAVConfig.Username == "" && sync.WebDAVConfig.Password == "" {
+			return fmt.Errorf("either username or password is required for webdav sync type")
 		}
 	}
 
