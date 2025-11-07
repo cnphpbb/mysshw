@@ -67,8 +67,8 @@ https://github.com/cnphpbb/mysshw/releases
   - [ ] 添加配置文件加密选项
 - 同步功能
   - [x] SCP/SFTP
-  - [ ] WebDAV
-  - [ ] S3 (RustFS, MinIO社区版, 云平台S3)
+  - [x] WebDAV
+  - [x] S3 (RustFS, MinIO社区版, 云平台S3)
 - 发布计划
   - [ ] 制作Docker镜像
   - [ ] 自动化构建与测试流程
@@ -103,9 +103,12 @@ cfg_dir = "~/.mysshw.toml"
 [sync]
 type = "scp"
 remote_uri = "127.0.0.1:22"
-username = "root"
-password = "your_password"
 remote_path = "/path/to/backup"
+[sync.scp]
+username = "root"
+password = "$ZK7M@~1RY#Scp"
+keyPath = "~/.ssh/id_rsa"
+passphrase = ""
 
 [[nodes]]
 groups = "生产服务器"
