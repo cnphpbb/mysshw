@@ -1,88 +1,96 @@
 # mysshw
 
-**mysshw - A free and open source SSH command line client software.**  
+**Open source free SSH command line client tool**  
 **Go 1.23.0 and above**  
-**Supports Linux, macOS, and Windows platforms**  
+**Supports Linux, macOS, Windows platforms**  
 
 [中文文档](readme.zh.md)
 
-### Binary Release
-Download the latest binary from [releases](https://github.com/cnphpbb/mysshw/releases).
+## Installation Guide
 
-## Configuration
+### Install from source
+```bash
+git clone https://github.com/cnphpbb/mysshw.git mysshw
+cd mysshw
+go mod tidy
+go install github.com/magefile/mage@latest
+mage build
+```
+### Download binary
+Visit the Release page to download the version for your platform
+https://github.com/cnphpbb/mysshw/releases
 
-The configuration file can be placed in one of the following locations:
-- `~/.mysshw`
-- `~/.mysshw.tml`
-- `~/.mysshw.toml`
-- `./.mysshw`
-- `./.mysshw.tml`
-- `./.mysshw.toml`
+## Features
 
-Default configuration path: `$HOME/.mysshw.toml`
+- 🚀 **Multi-protocol support**
+  - Full SSH 2.0 protocol implementation
+  - SCP file transfer protocol support
+  - Terminal session management
+  
+- 🔑 **Flexible authentication methods**
+  - Password authentication
+  - Key authentication
+  - Key with passphrase support
+  - Interactive keyboard authentication
 
-### Configuration Example:
+- 🛠 **Configuration management**
+  - TOML format configuration file
+  - Support for node group management
+  - Configuration sync function (SCP implemented, GitHub/Gitee in development)
+  - Auto-generate default configuration
+  - Comprehensive configuration file validation
+  - Support for custom configuration file paths
+  - Cross-platform path format support (Windows/Linux/MacOS)
+  - Remote backup and restore of configurations
+  - Automatic configuration file backup
+
+- 🖥 **Terminal experience**
+  - Adaptive window size
+  - KeepAlive support
+  - Color highlighting
+  - Command history (in development)
+  - Multiple exit methods (Ctrl+d, Ctrl+c, input q)
+  - Automatically return to main interface after exiting SSH session
+  - Exit method: First input Ctrl+c, then input q or Q or Ctrl+d
+
+- 💻 **Cross-platform compatibility**
+  - Support for Linux, macOS, Windows operating systems
+  - Path handling optimization for different platforms
+
+## Configuration file
+Default path: ~/.mysshw.toml
 
 ```toml
-cfg_dir = "~/.mysshw.toml"   # default:  $HOME/.sshw.toml
+cfg_dir = "~/.mysshw.toml"
 
 [sync]
-type = "scp" # type: ( scp || github || gitee || Api-http || rpc ) default: scp
+type = "scp"
 remote_uri = "127.0.0.1:22"
+remote_path = "/path/to/backup"
+[sync.scp]
 username = "root"
-password = "qweqwe123"
-keyPath = ""
+password = "$ZK7M@~1RY#Scp"
+keyPath = "~/.ssh/id_rsa"
 passphrase = ""
-remote_path = "/data/backup/mysshw/mysshw.toml"
-access_token = "" # gitee_access_token
-gist_id = ""  #gist_id
 
 [[nodes]]
-groups = "Groups01"
+groups = "Production Servers"
 ssh = [
-    { name="vm-00", host="192.168.10.100", user="vm00", port=62922, password="qwe123!@#qwe" },
-    { name="vm-01", host="192.168.10.101", user="vm00", port=22, password="qwe123!@#qwe", keypath="~/.ssh/id_rsa" },
-    { name="vm-02", host="192.168.10.102", user="vm00", port=22, password="qwe123!@#qwe", keypath="~/.ssh/id_rsa", passphrase="abcdefghijklmn" },
-    { name="vm-00", alias="vm-03", host="192.168.10.100", user="vm00", port=62922, password="qwe123!@#qwe" },
+    { name="web01", host="192.168.1.101", user="admin", port=22 },
+    { name="db01", host="192.168.1.102", keypath="~/.ssh/id_rsa" }
 ]
 
 [[nodes]]
-groups = "Groups02"
-ssh = [
-    { name="server 1", user="root", host="192.168.10.1", password="qwe123!@#qwe" },
-    { name="server 1", user="root", host="192.168.10.2" },
-    { name="server 2", host="192.168.10.3" },
-]
-
-[[nodes]]
-groups = "Groups03"
+groups = "Test Environment"
 
 [[nodes.ssh]]
-alias = 'Test-1'
-host = "192.168.10.1"
-name="server 1"
-password ="qwe123!@#qwe"
+host = 'dev.example.com'
+name = 'dev01'
+password = 'test123'
 user = 'root'
-
-[[nodes.ssh]]
-alias = 'Test-2'
-host = "192.168.10.2"
-name="server 2"
-password ="qwe123!@#qwe"
-user = 'root'
-port = 65522
-
-[[nodes.ssh]]
-alias = 'Test-3'
-host = "192.168.10.3"
-name="server 3"
-password ="qwe123!@#qwe"
-user = 'root'
-port = 65522
-keypath="~/.ssh/id_rsa"
-passphrase = "cnphpbb#Yong"
-```
-## Go Packages
+port = 22
+ ```
+## Go Packages dependencies
 
 - github.com/magefile/mage
 - github.com/spf13/cobra
@@ -93,25 +101,46 @@ passphrase = "cnphpbb#Yong"
 - github.com/pkg/sftp
 - golang.org/x/crypto/ssh
 
-## Testing
-We use [testify](http://github.com/stretchr/testify) as our Go testing framework.
+Detailed dependency information can be found in the [go.mod](go.mod) file
 
 ## TODO
 
-### RunSSH todo
-- [x] Exit SSH session and return to main interface 
-- [x] Support `Ctrl+d` to exit program, not supported on Windows system
-- [x] Support `q` exit program
-- [x] Support `Ctrl+c` exit program
+### Feature development
 
-### Sync Actions Type List
-1. [x] SCP
-2. [ ] Github - Gist
-3. [ ] Gitee - Gist
-4. [ ] API - HTTP(s)
-5. [ ] RPC
+- RunSSH feature
+  - [ ] Main interface supports themes
+- Configuration management
+  - [ ] Add configuration file encryption option
+- Sync function
+  - [x] SCP/SFTP
+  - [x] WebDAV
+  - [x] S3 (RustFS, MinIO community edition, cloud platform S3)
+- Release plan
+  - [ ] Create Docker image
+  - [ ] Automated build and test process
+- Code optimization
+  - [ ] Add integration tests
 
-## Usage Examples
+### Completed features
+
+- RunSSH
+  - Exit session and return to main interface
+  - Support multiple exit methods(Ctrl+d/Ctrl+c/q)
+  - Main interface supports search
+- Configuration management
+  - File validation feature
+  - Custom configuration file path
+  - Cross-platform path support(Windows/Linux/MacOS)
+  - sshw configuration import
+  - Remote backup and restore of configurations
+  - Automatic configuration file backup
+- User interface
+  - Command auto-completion
+  - Replace promptui with charmbracelet/huh
+- Release
+  - GitHub Releases
+
+## Usage examples
 ```bash
 # View help information
 mysshw --help | -h
@@ -131,14 +160,14 @@ mysshw version | --version | -v
 mysshw sync --upload | -u
 
 # Download configuration file from remote server
-mysshw sync --down |-z
+mysshw sync --down | -z
 
 # Sync with custom configuration file path
-mysshw sync --cfg /path/to/custom/config.toml --upload
+mysshw sync --cfg /path/to/custom/config.toml --upload | --down
 # Or mix short options
-mysshw sync -c /path/to/custom/config.toml -u
+mysshw sync -c /path/to/custom/config.toml -u | -z
 
-# Migrate from old SSHW YAML config to mysshw TOML config
+# Migrate from sshw's YAML configuration to mysshw TOML configuration
 mysshw yml -f ~/.sshw.yml
 # Or use long option
 mysshw yml --file ~/.sshw.yml
@@ -150,22 +179,85 @@ mysshw sync --help | -h
 mysshw yml --help | -h
 ```
 
-## Build
+## Contribution guide
+Welcome to submit Issues and PRs! The project follows the MIT open source license.
+
+## License
+MIT
+
+## Project compilation
+
 ```bash
 # Optional: Use Docker to build
 docker compose -p base -f ./docker-compose.yml up -d
 docker exec -it build_go bash
+# Optional: Add safe directory
 git config --global --add safe.directory /app
-# Must be in project root directory
+# The following must be executed in the project root directory
 go mod tidy
 go install github.com/magefile/mage@latest
 mage clean  // Clean build directory dist
-mage build  // Development build (without tar package)
-mage pack   // Release build (with tar package)
+mage build  // Development build, without tar package
+mage pack   // Release packaging build
 ./mysshw -h   // View help information
-./mysshw -c ./mysshw.toml   // Run with config file
-
-# Create an alias for convenience
+./mysshw -c ./mysshw.toml   // Start program, specify configuration file and create an alias
+# Reference:
+# alias mysshw='./mysshw -c ./mysshw.toml'
+# Or
 # echo "alias mysshw='./mysshw -c ./mysshw.toml'" >> ~/.bashrc
 # source ~/.bashrc
+# You can use the mysshw command directly
+./mysshw // Find default configuration file, location ~/.mysshw.toml. If there is no default configuration file, it will report an error and automatically generate a default configuration file for the first time
 ```
+### Windows platform
+- On Windows platform, it is recommended to use PowerShell, Windows Terminal, Windows Subsystem for Linux (WSL) or Git Bash and other terminal tools for the best experience.
+- Ensure OpenSSH client, git, mingw64 and other tools are installed
+- Configure environment variables
+  - Ensure `C:\Windows\System32\OpenSSH` directory has been added to the system environment variable `PATH`
+  - Ensure `C:\Program Files\Git\usr\bin` directory has been added to the system environment variable `PATH`
+  - Ensure `C:\Program Files\Git\mingw64\bin` directory has been added to the system environment variable `PATH`
+  - Ensure `C:\Program Files\Git\usr\sbin` directory has been added to the system environment variable `PATH`
+  - Ensure `C:\Program Files\Git\usr\libexec\git-core` directory has been added to the system environment variable `PATH`
+  - Ensure `C:\Program Files\Git\mingw64\libexec\git-core` directory has been added to the system environment variable `PATH`
+  - Ensure `C:\Program Files\Git\mingw64\bin` directory has been added to the system environment variable `PATH`
+  - Ensure `C:\Program Files\Git\usr\libexec\git-core` directory has been added to the system environment variable `PATH`
+
+- Restart the terminal to make the environment variables take effect  
+
+**Support `\.\mysshw.exe -c D:\mydata\mysshw\mysshw.toml` to start the program, specify configuration file**
+- Support `Ctrl+d` to exit the program, not supported on Windows
+- Support `q | Q` to exit the program
+
+**Support `D:\sbin\mysshw.exe -c D:\mydata\mysshw\mysshw.toml` to start the program, specify configuration file** by 2025-08-24
+
+#### Set alias in PowerShell
+- Open PowerShell terminal
+- Execute the following command to set alias
+- Since Set-Alias does not support commands with parameters, you cannot directly set alias `mysshw="D:\sbin\mysshw.exe -c D:\mydata\mysshw\mysshw.toml"`
+
+  ```powershell
+  Set-Alias -Name mysshw -Value "D:\sbin\mysshw.exe"
+  ```
+- Execute the following command to check if the alias is set successfully
+
+  ```powershell
+  Get-Alias -Name mysshw | Format-List
+  ```
+
+- Execute the following command to create a PowerShell function with parameters
+  > Open PowerShell configuration file (path obtained via $profile), add the following content:
+  > Note: If there is no configuration file, you need to create one first
+  
+  - Execute the following command to open the configuration file
+  ```powershell
+  notepad $profile
+  ```
+  - Add the following content
+
+  ```powershell
+  function mysshw {
+    D:\sbin\mysshw.exe -c D:\mydata\mysshw\mysshw.toml $args
+  }
+  ```
+
+- Restart PowerShell terminal to make the alias take effect
