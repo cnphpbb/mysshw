@@ -187,28 +187,6 @@ MIT
 
 ## Project compilation
 
-```bash
-# Optional: Use Docker to build
-docker compose -p base -f ./docker-compose.yml up -d
-docker exec -it build_go bash
-# Optional: Add safe directory
-git config --global --add safe.directory /app
-# The following must be executed in the project root directory
-go mod tidy
-go install github.com/magefile/mage@latest
-mage clean  // Clean build directory dist
-mage build  // Development build, without tar package
-mage pack   // Release packaging build
-./mysshw -h   // View help information
-./mysshw -c ./mysshw.toml   // Start program, specify configuration file and create an alias
-# Reference:
-# alias mysshw='./mysshw -c ./mysshw.toml'
-# Or
-# echo "alias mysshw='./mysshw -c ./mysshw.toml'" >> ~/.bashrc
-# source ~/.bashrc
-# You can use the mysshw command directly
-./mysshw // Find default configuration file, location ~/.mysshw.toml. If there is no default configuration file, it will report an error and automatically generate a default configuration file for the first time
-```
 ### Windows platform
 - On Windows platform, it is recommended to use PowerShell, Windows Terminal, Windows Subsystem for Linux (WSL) or Git Bash and other terminal tools for the best experience.
 - Ensure OpenSSH client, git, mingw64 and other tools are installed
