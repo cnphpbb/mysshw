@@ -5,6 +5,7 @@ import "golang.org/x/crypto/ssh"
 const CFGPATH string = "~/.mysshw.toml"
 
 // DefaultConfig 包含默认配置的字符串
+// 注意: 默认配置不含明文密码, 鼓励使用 ${MYSSHW_PWD_xxx} 环境变量引用
 const DefaultTomlConfig = `# config example.
 # see URL: https://github.com/cnphpbb/mysshw/blob/master/readme.md#config
 cfg_dir = "./.mysshw.toml"   # default:  $HOME/.mysshw.toml
@@ -16,14 +17,14 @@ remote_path = "/data/backup/mysshw/mysshw.toml" # remote file path
 
 [sync.scp]
 username = "root"
-password = "$ZK7M@~1RY"
+password = "${MYSSHW_PWD_sync}"  # 支持 ${VAR} 或 ${VAR:-default} 引用环境变量
 keyPath = ""
 passphrase = ""
 
 [sync.webdav]
-Auth = "Basic" # Basic || Digest
+auth = "Basic" # Basic || Digest
 username = "root"
-password = "$ZK7M@~1RY"
+password = "${MYSSHW_PWD_webdav}"
 
 [sync.s3]
 access_key = "" # 访问密钥
@@ -42,26 +43,25 @@ groups = "Groups01"
 alias = 'Test'
 host = '127.0.0.1'
 name = 'vm-test-1'
-password = 'test#Password'
+password = "${MYSSHW_PWD_vm_test_1}"
 user = 'root'
 
 [[nodes.ssh]]
 alias = "AllKey"  # 可以空, 可选
-name = "全部Key"
+name = "AllKey"
 host = "192.168.10.60" # 不可以空，必须
 user ="vm00" # 不可以空，必须
 port = 22  # 默认值:22, 不可以空, 如果是22端口, 可以忽略这个KEY
-password = "" # 可以空, 可选; 如果有要自己填密码，可以空
+password = "${MYSSHW_PWD_allkey:-}" # :- 空默认值, 留空走交互输入
 #keypath="~/.ssh/id_rsa" # 可以空, 可选
-#passphrase="abcdefghijklmn" # 可以空, 可选
+#passphrase="${MYSSHW_KEY_PASSPHRASE}" # 密钥口令也支持 env 引用
 
 [[nodes]]
 groups = "Groups02"
 ssh = [
-    #
-	# { name="no ssh conf", alias="", host="192.168.10.60", user="vm00", port=22, password="qwe123!@#qwe", keypath="~/.ssh/id_rsa", passphrase="abcdefghijklmn" },
-    { name="vm-test-1", alias="TestNode-1", host="127.0.0.1", user="root", port=22, password="test#Password" },
-	{ name="vm-test-2", alias="TestNode", host="127.0.0.1", user="root", port=22, password="test#Password" },
+	# { name="no ssh conf", alias="", host="192.168.10.60", user="vm00", port=22, password="${MYSSHW_PWD_test}", keypath="~/.ssh/id_rsa", passphrase="${MYSSHW_KEY_PASSPHRASE}" },
+    { name="vm-test-1", alias="TestNode-1", host="127.0.0.1", user="root", port=22, password="${MYSSHW_PWD_vm_test_1}" },
+	{ name="vm-test-2", alias="TestNode", host="127.0.0.1", user="root", port=22, password="${MYSSHW_PWD_vm_test_2}" },
 ]
 `
 

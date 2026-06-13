@@ -68,6 +68,10 @@ func unmarshalAndValidateConfig(c *Configs) error {
 		return fmt.Errorf("mysshw:: Configuration validation failed: %v", err)
 	}
 
+	// 安全加固: 加载成功后强制配置文件权限为 0600
+	// 配置文件可能含密码/keypath 等敏感信息
+	secureConfigFile(CFG_PATH)
+
 	return nil
 }
 
