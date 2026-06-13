@@ -115,6 +115,57 @@ ssh = [
 
 > ⚠️ 配置文件可能含密码/密钥引用, mysshw 加载后会自动收紧到 `0600` (Windows 由 NTFS ACL 控制)。
 
+## Architecture
+
+```mermaid
+graph TB
+    subgraph User["User Layer"]
+        UI[huh Interactive Menu<br/>2-level picker]
+        CLI[CLI<br/>sync / yml / version]
+    end
+
+    subgraph Core["Core Layer"]
+        Config[config package<br/>TOML load + validate<br/>chmod 0600]
+        Env[env resolver<br/>${MYSSHW_PWD_*}<br/>MYSSHW_SKIP_HOST_KEY_CHECK]
+        TOFU[TOFU Host Verification<br/>~/.ssh/known_hosts<br/>per-node StrictHostKeyChecking]
+    end
+
+    subgraph Protocols["Protocol Layer"]
+        SSH[SSH Client<br/>xterm + Resize<br/>KeepAlive 10s]
+        SCP[SCP Client<br/>self-implemented]
+        S3[S3 Client<br/>MinIO SDK]
+        WebDAV[WebDAV Client<br/>gowebdav]
+    end
+
+    subgraph External["External"]
+        Server[SSH/SFTP Server]
+        S3Store[MinIO / RustFS<br/>AWS S3]
+        DAV[WebDAV Service<br/>Nutstore etc.]
+    end
+
+    UI --> Config
+    CLI --> Config
+    Config --> Env
+    Config --> UI
+    UI -->|Login| SSH
+    Env -->|password/passphrase| SSH
+    SSH --> TOFU
+    SSH --> Server
+    CLI -->|sync --upload/--down| SCP
+    CLI -->|sync --upload/--down| S3
+    CLI -->|sync --upload/--down| WebDAV
+    SCP --> Server
+    S3 --> S3Store
+    WebDAV --> DAV
+```
+
+**Key design decisions:**
+
+- **Config is the single source of truth**: All flows start from `config.LoadViperConfig` → `ValidateConfig` → `chmod 0600`.
+- **Environment variables are resolved at runtime**: `${MYSSHW_PWD_*}` references in `password` / `passphrase` fields are substituted from env at SSH/SFTP connection time, not at config-load time.
+- **TOFU is opt-out, not opt-in**: `SSHNode.StrictHostKeyChecking = false` disables per-node; `MYSSHW_SKIP_HOST_KEY_CHECK=true` disables globally.
+- **Sync is the only path to remote**: There is no implicit remote write. `mysshw sync -u` / `-z` is the explicit user action.
+
 ## Environment Variables
 
 mysshw supports the following environment variables for non-interactive scenarios (CI / scripts / containers).

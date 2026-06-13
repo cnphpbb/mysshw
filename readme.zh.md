@@ -117,6 +117,57 @@ ssh = [
 
 > ⚠️ 配置文件可能含密码/密钥引用, mysshw 加载后会自动收紧到 `0600` (Windows 由 NTFS ACL 控制)。
 
+## 架构
+
+```mermaid
+graph TB
+    subgraph User["用户层"]
+        UI[huh 交互菜单<br/>两级选择]
+        CLI[命令行<br/>sync / yml / version]
+    end
+
+    subgraph Core["核心层"]
+        Config[config 包<br/>TOML 加载 + 校验<br/>chmod 0600]
+        Env[env 解析<br/>${MYSSHW_PWD_*}<br/>MYSSHW_SKIP_HOST_KEY_CHECK]
+        TOFU[TOFU 主机指纹<br/>~/.ssh/known_hosts<br/>per-node StrictHostKeyChecking]
+    end
+
+    subgraph Protocols["协议层"]
+        SSH[SSH 客户端<br/>xterm + Resize<br/>KeepAlive 10s]
+        SCP[SCP 客户端<br/>自实现协议]
+        S3[S3 客户端<br/>MinIO SDK]
+        WebDAV[WebDAV 客户端<br/>gowebdav]
+    end
+
+    subgraph External["外部"]
+        Server[SSH/SFTP 服务器]
+        S3Store[MinIO / RustFS<br/>AWS S3]
+        DAV[WebDAV 服务<br/>坚果云等]
+    end
+
+    UI --> Config
+    CLI --> Config
+    Config --> Env
+    Config --> UI
+    UI -->|Login| SSH
+    Env -->|password/passphrase| SSH
+    SSH --> TOFU
+    SSH --> Server
+    CLI -->|sync --upload/--down| SCP
+    CLI -->|sync --upload/--down| S3
+    CLI -->|sync --upload/--down| WebDAV
+    SCP --> Server
+    S3 --> S3Store
+    WebDAV --> DAV
+```
+
+**关键设计决策：**
+
+- **config 是唯一真相源**：所有流程都从 `config.LoadViperConfig` → `ValidateConfig` → `chmod 0600` 开始
+- **环境变量在运行时解析**：`password` / `passphrase` 中的 `${MYSSHW_PWD_*}` 在 SSH/SFTP 连接时（而非加载配置时）替换
+- **TOFU 默认开启，opt-out 关闭**：`SSHNode.StrictHostKeyChecking = false` 关闭单节点；`MYSSHW_SKIP_HOST_KEY_CHECK=true` 全局关闭
+- **远程写入只能通过 sync**：没有隐式远程写，`mysshw sync -u` / `-z` 是用户显式动作
+
 ## 环境变量 (Environment Variables)
 
 mysshw 支持以下环境变量，用于非交互式场景（CI/脚本/容器）。
