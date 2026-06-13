@@ -12,6 +12,7 @@
 | ✅ | 添加 `.gitattributes` 强制 LF 行尾 | 覆盖 `*.go` `*.md` `*.toml` `*.yml` `Dockerfile` `LICENSE` 等 | 2026-06-13 |
 | ✅ | 文档统一行尾为 LF | `sed -i 's/\r$//'` + .gitattributes 自动保护 | 2026-06-13 |
 | ✅ | `analysis.md` 加入 `.gitignore` + 从索引 untrack | 本地 AI 文档不入库, 历史记录保留 | 2026-06-13 |
+| ✅ | `analysis.md` 解除 `.gitignore` + 入库 + 加 AI 辅助说明 | 改为正式项目文档 (opencode + MiniMax-M3) | 2026-06-13 |
 | ✅ | `git filter-repo` 清理已提交的二进制 (`mysshw` / `sshw/sshw`) | 11.9 MB + 7 MB, 178 commits 全重写 | 2026-06-13 |
 | ✅ | AGENTS.md 新增「Tag 与 Changelog 流程」规则 | tag 必生成 `changelog.${tag}.md` 并先 commit 后 push | 2026-06-13 |
 | ✅ | AGENTS.md 新增「分支与 Tag 分类」规则 | **只有 main 分支 tag 才是版本发布**, 其他分支 tag 自由命名 | 2026-06-13 |
@@ -165,7 +166,7 @@
 | ✅ | `readme.md` (英文) | 2026-06-13 |
 | ✅ | `readme.zh.md` (中文) | 2026-06-13 |
 | ✅ | `AGENTS.md` (AI 代理开发指南) | 2026-06-13 (含 tag + changelog + 分支分类 规范) |
-| ✅ | `analysis.md` (项目深度分析) | 2026-06-13 (已加入 .gitignore, 仅本地) |
+| ✅ | `analysis.md` (项目深度分析) | 2026-06-13 (v26.06.13.4 起已入库, 含 AI 辅助说明) |
 | ✅ | `readme.md` 与 `readme.zh.md` 大纲结构统一 (15 主章节对应) | 2026-06-13 |
 | ✅ | 移除文档中过时的 `pkg/sftp` 引用 + 弱密码示例 | 2026-06-13 |
 | ✅ | 新增「环境变量」章节到中英文 readme | 2026-06-13 |
