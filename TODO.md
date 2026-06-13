@@ -1,27 +1,18 @@
 # TODO List
 
 > 按优先级组织。✅ = 已完成，🔄 = 进行中，❌ = 未开始。
-> 最后更新：2026-06-13
+> 最后更新：2026-06-13 (readme 结构同步 + 仓库健康收尾)
 
 ---
 
 ## 0. 仓库健康 (P0 — 立即处理)
 
-| 状态 | 任务 | 说明 |
-|------|------|------|
-| ❌ | 添加 `.gitattributes` 强制 LF 行尾 | 工作区 `analysis.md`、`hostkey.go`、`hostkey_test.go`、`model_config_test.go` 被改成 CRLF，导致 834 行虚假 diff |
-| ❌ | 文档统一行尾为 LF | `git checkout -- <file>` 还原，或 `dos2unix` 批量转换 |
-
-建议的 `.gitattributes`：
-
-```ini
-* text=auto eol=lf
-*.go   text eol=lf
-*.md   text eol=lf
-*.toml text eol=lf
-*.yml  text eol=lf
-*.yaml text eol=lf
-```
+| 状态 | 任务 | 说明 | 完成日期 |
+|------|------|------|---------|
+| ✅ | 添加 `.gitattributes` 强制 LF 行尾 | 覆盖 `*.go` `*.md` `*.toml` `*.yml` `Dockerfile` `LICENSE` 等 | 2026-06-13 |
+| ✅ | 文档统一行尾为 LF | `sed -i 's/\r$//'` + .gitattributes 自动保护 | 2026-06-13 |
+| ✅ | `analysis.md` 加入 `.gitignore` + 从索引 untrack | 本地 AI 文档不入库, 历史记录保留 | 2026-06-13 |
+| ✅ | `git filter-repo` 清理已提交的二进制 (`mysshw` / `sshw/sshw`) | 11.9 MB + 7 MB, 178 commits 全重写 | 2026-06-13 |
 
 ---
 
@@ -44,8 +35,8 @@
 
 | 状态 | 任务 | 涉及文件 | 完成日期 |
 |------|------|---------|---------|
-| ✅ | 修复 `scp/client.go::CopyFromRemotePassThru` 双重发送 panic | `scp/client.go:240-242` | 已修复 |
-| ✅ | 修复 `ssh/client.go::Login` 多个错误路径未调 callback | `ssh/client.go:230,262,275,294,301` | 已修复 |
+| ✅ | 修复 `scp/client.go::CopyFromRemotePassThru` 双重发送 panic | `scp/client.go:240-242` | 已修复 (2026-06-13) |
+| ✅ | 修复 `ssh/client.go::Login` 多个错误路径未调 callback | `ssh/client.go:230,262,275,294,301` | 已修复 (2026-06-13) |
 
 ---
 
@@ -119,18 +110,21 @@
 
 ## 8. 测试 (P2)
 
-| 状态 | 任务 | 涉及包 |
-|------|------|-------|
-| ✅ | 单元测试：`getConfigPath` 路径解析 | `config/config_test.go` |
-| ✅ | 单元测试：`SSHNode.IsStrictHostKeyChecking` | `config/model_config_test.go` |
-| ✅ | 单元测试：`expandHomeDir` 9 个子用例 | `ssh/client_test.go` |
-| ✅ | 单元测试：TOFU 主机指纹 8 个用例 | `ssh/hostkey_test.go` |
-| ❌ | 集成测试：SCP 协议 (`ParseResponse` / `CopyN`) | `scp/` |
-| ❌ | 集成测试：SCP 传输 (`CopyFile` / `CopyFromRemote`) | `scp/` |
-| ❌ | 集成测试：S3 / WebDAV 客户端 | `s3/`、`webdav/` |
-| ❌ | 集成测试：YML 迁移 | `cmd/` |
-| ❌ | 集成测试：配置校验 (`ValidateConfig`) | `config/` |
-| ❌ | 端到端测试：模拟 SSH 服务器 (go-stdlib test helpers) | 新建 |
+| 状态 | 任务 | 涉及包 | 完成日期 |
+|------|------|-------|---------|
+| ✅ | 单元测试：`getConfigPath` 路径解析 | `config/config_test.go` | 已有 |
+| ✅ | 单元测试：`SSHNode.IsStrictHostKeyChecking` | `config/model_config_test.go` | 已有 |
+| ✅ | 单元测试：`expandHomeDir` 9 个子用例 | `ssh/client_test.go` | 已有 |
+| ✅ | 单元测试：TOFU 主机指纹 8 个用例 | `ssh/hostkey_test.go` | 已有 |
+| ✅ | 单元测试：`isEnvTrue` + env 路径解析 + callback 策略 7 个用例 | `ssh/hostkey_test.go` | 2026-06-13 |
+| ✅ | 单元测试：`resolveEnvRef` 8 个用例 | `ssh/env_test.go` | 2026-06-13 |
+| ✅ | 单元测试：`secureConfigFile` 4 个用例 | `config/backup_config_test.go` | 2026-06-13 |
+| ❌ | 集成测试：SCP 协议 (`ParseResponse` / `CopyN`) | `scp/` | — |
+| ❌ | 集成测试：SCP 传输 (`CopyFile` / `CopyFromRemote`) | `scp/` | — |
+| ❌ | 集成测试：S3 / WebDAV 客户端 | `s3/`、`webdav/` | — |
+| ❌ | 集成测试：YML 迁移 | `cmd/` | — |
+| ❌ | 集成测试：配置校验 (`ValidateConfig`) | `config/` | — |
+| ❌ | 端到端测试：模拟 SSH 服务器 (go-stdlib test helpers) | 新建 | — |
 
 ---
 
@@ -141,6 +135,7 @@
 | ✅ | Mage 构建任务 (Build / Pack / Test / Clean) | `magefile.go` |
 | ✅ | 8 平台交叉编译 + 打包 | `magefile.go::Pack` |
 | ✅ | GitHub Releases 发布 | 历史记录 |
+| ✅ | `v26.06.13` tag 创建并推送 | annotated tag, 包含完整 changelog |
 | ❌ | 自动化 CI/CD (`.github/workflows/`) | 新建 |
 | ❌ | Docker 镜像 (`Dockerfile` + `docker-compose.yml` 发布版) | 新建（当前 `docker-compose.yml` 仅开发环境）|
 | ❌ | Homebrew tap (macOS) | 外部仓库 |
@@ -151,26 +146,42 @@
 
 ## 10. 文档 (P3)
 
-| 状态 | 任务 |
-|------|------|
-| ✅ | `readme.md` (英文) |
-| ✅ | `readme.zh.md` (中文) |
-| ✅ | `AGENTS.md` (AI 代理开发指南) |
-| ✅ | `analysis.md` (项目深度分析) |
-| ❌ | `readme.md` 与 `readme.zh.md` 功能描述与代码同步（已知 `readme.md:93` 仍提 `pkg/sftp` 但未使用）|
-| ❌ | 添加架构图 (mermaid) 到 readme |
-| ❌ | 添加 changelog 链接到 readme |
+| 状态 | 任务 | 完成日期 |
+|------|------|---------|
+| ✅ | `readme.md` (英文) | 2026-06-13 |
+| ✅ | `readme.zh.md` (中文) | 2026-06-13 |
+| ✅ | `AGENTS.md` (AI 代理开发指南) | 已有 |
+| ✅ | `analysis.md` (项目深度分析) | 2026-06-13 (已加入 .gitignore, 仅本地) |
+| ✅ | `readme.md` 与 `readme.zh.md` 大纲结构统一 (14 主章节对应) | 2026-06-13 |
+| ✅ | 移除文档中过时的 `pkg/sftp` 引用 + 弱密码示例 | 2026-06-13 |
+| ✅ | 新增「环境变量」章节到中英文 readme | 2026-06-13 |
+| ❌ | 添加架构图 (mermaid) 到 readme | — |
+| ❌ | 添加 changelog 链接到 readme | — |
 
 ---
 
 ## 优先级总览
 
-| 优先级 | 类别 | 任务数 |
-|--------|------|--------|
-| P0 | 仓库健康 (CRLF)、关键 Bug | 2 + 1 |
-| P1 | 安全 (密码/非交互) | 5 ✅ 全部完成 2026-06-13 |
-| P2 | 代码质量 + RunSSH + 配置 + Sync + UI + 测试 | 15+ |
-| P3 | 发布 + 文档 | 7 |
+| 优先级 | 类别 | 任务数 | 状态 |
+|--------|------|--------|------|
+| P0 | 仓库健康 (CRLF) + 关键 Bug | 4 + 2 | ✅ 全部完成 2026-06-13 |
+| P1 | 安全 (密码/非交互) | 8 | ✅ 全部完成 2026-06-13 |
+| P2 | 代码质量 + RunSSH + 配置 + Sync + UI + 测试 | 7 + 1 + 1 + 0 + 1 + 6 | 🔄 部分 (7 个代码质量 + 1 UI 未做) |
+| P3 | 发布 + 文档 | 4 + 2 | 🔄 部分 (Docker/CI/Homebrew/Scoop/架构图 未做) |
+
+---
+
+## v26.06.13 发布总结
+
+✅ **P0/P1 全部完成** (4 项 P0 + 8 项 P1 + 2 项关键 Bug)
+🟡 **P2 部分完成** (15/30 项, 集中在代码质量与测试)
+🔴 **P3 多数待做** (6/9 项, Docker/CI/包管理器生态)
+
+下次发布可考虑:
+- 完成 P2 代码质量 7 项 (auth 死代码、tag 不一致、context 传播等)
+- 添加集成测试 (SCP / S3 / WebDAV / YML)
+- 建立 CI/CD (`.github/workflows/`)
+- 发布 Docker 镜像
 
 ---
 
