@@ -74,8 +74,8 @@ func Test() error {
 // build to target (cross build)
 // createTar is an optional parameter (default: false) that controls whether to create a tar archive
 func buildTarget(OS, arch string, envs map[string]string, createTar bool) error {
-	tag := tag()
-	name := fmt.Sprintf("mysshw-%s-%s-%s", OS, arch, tag)
+	branchName := branch()
+	name := fmt.Sprintf("mysshw-%s-%s-%s", OS, arch, branchName)
 	dir := fmt.Sprintf("dist/%s", name)
 	target_unix := fmt.Sprintf("%s/mysshw", dir)
 	target_win := fmt.Sprintf("%s/mysshw.exe", dir)
@@ -138,17 +138,17 @@ func buildTarget(OS, arch string, envs map[string]string, createTar bool) error 
 
 func flags() string {
 	hash := hash()
-	tag := tag()
-	gitBranchCommit := fmt.Sprintf("%s-%s", tag, hash)
+	branchName := branch()
+	gitBranchCommit := fmt.Sprintf("%s-%s", branchName, hash)
 	buildTime := buildTime()
 	verStr := versionStr()
 	return fmt.Sprintf(`-s -w -X "main.Version=%s" -X "main.Build=%s" -X "main.BuildTime=%s" -extldflags "-static"`, verStr, gitBranchCommit, buildTime)
 }
 
-// tag returns the git tag for the current branch or "" if none.
-func tag() string {
+// branch returns the current git branch name, or "" if detached HEAD / not a git repo.
+func branch() string {
 	s, _ := sh.Output("git", "branch", "--show-current")
-	// fmt.Println("tag: ", s)
+	// fmt.Println("branch: ", s)
 	// if s == "" {
 	// 	return "main"
 	// }
@@ -256,8 +256,8 @@ func printPlatformWarning() {
 // Version 打印版本信息
 func Version() {
 	hash := hash()
-	tag := tag()
-	gitBranchCommit := fmt.Sprintf("%s-%s", tag, hash)
+	branchName := branch()
+	gitBranchCommit := fmt.Sprintf("%s-%s", branchName, hash)
 	printPlatformWarning()
 	fmt.Println("mysshw 版本信息")
 	fmt.Println("Go version:", runtime.Version())
