@@ -132,17 +132,19 @@
 
 ## 9. 发布与运维 (P3)
 
-| 状态 | 任务 | 涉及文件 |
-|------|------|---------|
-| ✅ | Mage 构建任务 (Build / Pack / Test / Clean) | `magefile.go` |
-| ✅ | 8 平台交叉编译 + 打包 | `magefile.go::Pack` |
-| ✅ | GitHub Releases 发布 | 历史记录 |
-| ✅ | `v26.06.13` tag 创建并推送 | annotated tag, 包含完整 changelog |
-| ❌ | 自动化 CI/CD (`.github/workflows/`) | 新建 |
-| ❌ | Docker 镜像 (`Dockerfile` + `docker-compose.yml` 发布版) | 新建（当前 `docker-compose.yml` 仅开发环境）|
-| ❌ | Homebrew tap (macOS) | 外部仓库 |
-| ❌ | Scoop bucket (Windows) | 外部仓库 |
-| ❌ | `go install github.com/cnphpbb/mysshw@latest` 文档化 | `readme.md` |
+| 状态 | 任务 | 涉及文件 | 完成日期 |
+|------|------|---------|---------|
+| ✅ | Mage 构建任务 (Build / Pack / Test / Clean) | `magefile.go` | 已有 |
+| ✅ | 8 平台交叉编译 + 打包 | `magefile.go::Pack` | 已有 |
+| ✅ | GitHub Releases 发布 | 历史记录 | 已有 |
+| ✅ | `v26.06.13` tag 创建并推送 | annotated tag, 包含完整 changelog | 2026-06-13 |
+| ✅ | `v26.06.13.1` tag 创建并推送 (P2 收尾) | annotated tag | 2026-06-13 |
+| ✅ | `Dockerfile` (多阶段: golang → alpine) | `Dockerfile`、`Dockerfile` 镜像 20.9 MB | 2026-06-13 |
+| ✅ | `.dockerignore` 排除无关文件 | `.dockerignore` | 2026-06-13 |
+| ⏸️ | 自动化 CI/CD (`.github/workflows/`) | — | 搁置 (非生产环境工具) |
+| ⏸️ | Homebrew tap (macOS) | — | 搁置 (作者不想推) |
+| ⏸️ | Scoop bucket (Windows) | — | 搁置 (作者不想推) |
+| ❌ | `go install github.com/cnphpbb/mysshw@latest` 文档化 | `readme.md` | — |
 
 ---
 
@@ -153,11 +155,12 @@
 | ✅ | `readme.md` (英文) | 2026-06-13 |
 | ✅ | `readme.zh.md` (中文) | 2026-06-13 |
 | ✅ | `AGENTS.md` (AI 代理开发指南) | 已有 |
+| ✅ | `AGENTS.md` 新增「Tag 与 Changelog 流程」规则 | 2026-06-13 |
 | ✅ | `analysis.md` (项目深度分析) | 2026-06-13 (已加入 .gitignore, 仅本地) |
-| ✅ | `readme.md` 与 `readme.zh.md` 大纲结构统一 (14 主章节对应) | 2026-06-13 |
+| ✅ | `readme.md` 与 `readme.zh.md` 大纲结构统一 (15 主章节对应) | 2026-06-13 |
 | ✅ | 移除文档中过时的 `pkg/sftp` 引用 + 弱密码示例 | 2026-06-13 |
 | ✅ | 新增「环境变量」章节到中英文 readme | 2026-06-13 |
-| ❌ | 添加架构图 (mermaid) 到 readme | — |
+| ✅ | 新增「架构」章节 (mermaid 图 + 设计决策) 到中英文 readme | 2026-06-13 |
 | ❌ | 添加 changelog 链接到 readme | — |
 
 ---
@@ -169,17 +172,38 @@
 | P0 | 仓库健康 (CRLF) + 关键 Bug | 4 + 2 | ✅ 全部完成 2026-06-13 |
 | P1 | 安全 (密码/非交互) | 8 | ✅ 全部完成 2026-06-13 |
 | P2 | 代码质量 + RunSSH + 配置 + Sync + UI + 测试 | 7 + 1 + 1 + 0 + 1 + 6 | 🟡 主要完成 (剩 UI 主题 + S3/WebDAV 集成测试 + 端到端 SSH) |
-| P3 | 发布 + 文档 | 4 + 2 | 🔄 部分 (Docker/CI/Homebrew/Scoop/架构图 未做) |
+| P3 | 发布 + 文档 | 4 + 2 | 🟡 大部分完成 (Docker ✅, 架构图 ✅, 4 项搁置/未做) |
 
 ---
 
-## v26.06.13.1 发布总结 (P2 收尾)
+## v26.06.13.2 发布总结 (P3 收尾 + Changelog 规则)
 
 ✅ **P0/P1 全部完成** (4 项 P0 + 8 项 P1 + 2 项关键 Bug)
-✅ **P2 代码质量全部完成** (7/7 项: auth 删除、tag 统一、magefile 重命名、SyncConfig 删除、path 校验修正、context 传播、webdav tag)
+✅ **P2 代码质量全部完成** (7/7 项)
 ✅ **P2 测试大幅推进** (5/7 项: SCP 协议 11 + SCP 传输 4 + 配置校验 27 + YML 12 + s3/webdav/cmd 杂项)
 🟡 **P2 未完成**: UI 主题、s3/webdav 集成测试 (需 mock server)、端到端 SSH 客户端测试
-🔴 **P3 多数待做** (6/9 项)
+🟡 **P3 大部分完成** (Docker 镜像 + 架构图 + changelog 规则)
+⏸️ **P3 搁置** (CI/CD + Homebrew + Scoop - 都不是目标)
+❌ **P3 未做** (`go install` 文档化 + changelog 链接到 readme)
+
+代码质量改进统计 (P2 期间累计):
+- 删除死代码: ~230 行 (auth 包 + s3/webdav SyncConfig/GetConfig)
+- API 增强: s3/webdav 接受 context.Context
+- API 一致性: SCPConfig.KeyPath tag 统一
+- 测试覆盖: +78 个测试用例 (P2)
+
+P3 新增产物:
+- `Dockerfile` + `.dockerignore` (镜像 20.9 MB, alpine 基础)
+- readme 中英文新增「架构」章节 (mermaid 图)
+- `AGENTS.md` 新增 changelog 规则 (强制流程)
+- 本次 tag 前会生成 `changelog.v26.06.13.2.md`
+
+下次发布可考虑:
+- s3/webdav 集成测试 (需 mock S3/MinIO server, 类似 scp 的 mock SSH server)
+- 端到端 SSH 客户端测试 (含键盘交互认证)
+- Huh 主题切换 (如需要)
+
+---
 
 代码质量改进统计:
 - 删除死代码: ~150 行 (auth 包 + s3/webdav SyncConfig/GetConfig)
