@@ -32,11 +32,11 @@
 | ✅ | 主机指纹校验 (Trust On First Use) | `ssh/hostkey.go` | 2025-06-13 |
 | ✅ | per-node `strict_host_key_checking` 配置 | `config/model_config.go` | 2025-06-13 |
 | ✅ | 自定义 `known_hosts_path` 配置 (与 OpenSSH 隔离) | `config/model_config.go` | 2025-06-13 |
-| ❌ | 非交互场景 (CI/脚本) 支持 — 环境变量跳过校验 | `ssh/hostkey.go` | — |
-| ❌ | 密码安全：明文 → 环境变量 + 统一 `term.ReadPassword` | `ssh/client.go`、`config/model_config.go` | — |
-| ❌ | 默认模板删除弱密码占位 `$ZK7M@~1RY` | `config/model_config.go` | — |
-| ❌ | 配置文件落盘后 `chmod 600` | `config/backup_config.go` | — |
-| ❌ | `MYSSHW_SKIP_HOST_KEY_CHECK` 等安全相关环境变量文档化 | `readme.md`、`readme.zh.md` | — |
+| ✅ | 非交互场景 (CI/脚本) 支持 — `MYSSHW_SKIP_HOST_KEY_CHECK` / `MYSSHW_KNOWN_HOSTS` | `ssh/env.go`、`ssh/hostkey.go` | 2026-06-13 |
+| ✅ | 密码安全：明文 → `${ENV_VAR}` 引用 | `ssh/env.go`、`ssh/client.go` | 2026-06-13 |
+| ✅ | 默认模板删除弱密码占位 `$ZK7M@~1RY` | `config/model_config.go` | 2026-06-13 |
+| ✅ | 配置文件落盘后 `chmod 0600` | `config/backup_config.go` | 2026-06-13 |
+| ✅ | `MYSSHW_SKIP_HOST_KEY_CHECK` 等安全相关环境变量文档化 | `readme.md`、`readme.zh.md` | 2026-06-13 |
 
 ---
 
@@ -168,7 +168,7 @@
 | 优先级 | 类别 | 任务数 |
 |--------|------|--------|
 | P0 | 仓库健康 (CRLF)、关键 Bug | 2 + 1 |
-| P1 | 安全 (密码/非交互) | 5 |
+| P1 | 安全 (密码/非交互) | 5 ✅ 全部完成 2026-06-13 |
 | P2 | 代码质量 + RunSSH + 配置 + Sync + UI + 测试 | 15+ |
 | P3 | 发布 + 文档 | 7 |
 
