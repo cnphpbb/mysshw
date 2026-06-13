@@ -206,50 +206,6 @@ func (c *Client) DeleteFile(remoteName string) error {
 	return nil
 }
 
-// SyncConfig 同步配置文件到S3服务器
-func SyncConfig(cfg *config.Configs) error {
-	// 只有当sync类型为s3时才执行同步
-	if cfg.SyncCfg.Type != "s3" {
-		return nil
-	}
-
-	// 创建S3客户端
-	client, err := NewClient(&cfg.SyncCfg)
-	if err != nil {
-		return fmt.Errorf("创建S3客户端失败: %w", err)
-	}
-
-	// 同步配置文件
-	fileName := filepath.Base(cfg.CfgDir)
-	if err := client.UploadFile(cfg.CfgDir, fileName); err != nil {
-		return fmt.Errorf("同步配置文件失败: %w", err)
-	}
-
-	return nil
-}
-
-// GetConfig 从S3服务器获取配置文件
-func GetConfig(cfg *config.SyncInfo, localPath string) error {
-	// 只有当sync类型为s3时才执行获取
-	if cfg.Type != "s3" {
-		return nil
-	}
-
-	// 创建S3客户端
-	client, err := NewClient(cfg)
-	if err != nil {
-		return fmt.Errorf("创建S3客户端失败: %w", err)
-	}
-
-	// 获取配置文件
-	fileName := filepath.Base(localPath)
-	if err := client.DownloadFile(fileName, localPath); err != nil {
-		return fmt.Errorf("获取配置文件失败: %w", err)
-	}
-
-	return nil
-}
-
 // minioFileInfo 模拟os.FileInfo接口的结构体
 // 用于ListFiles函数返回的结果
 
