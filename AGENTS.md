@@ -345,3 +345,26 @@ feat: 新增 S3 配置文件同步功能
 7. **changelog 文件永久入库**，作为发布历史档案（不放入 `.gitignore`）
 
 反面例子：直接 `git tag && git push --tags`，不写 changelog — **禁止**。
+
+#### 分支与 Tag 分类
+
+**只有 `main` 分支上的 tag 才是「版本发布」**。其他分支的 tag 允许但**不是**版本发布。
+
+| 分支 | 允许打 tag? | 视为版本发布? | 必须 changelog? | 格式要求 |
+|------|:-----------:|:--------------:|:---------------:|---------|
+| `main` | ✅ | ✅ 是 | ✅ 必须 | 语义化版本 (e.g. `v26.06.13.2`) |
+| `gh-dev` / 其他 | ✅ | ❌ 否 | ❌ 不需要 | 自由 (e.g. `snapshot-2026-06-13`, `rc-1`, `feature-x-v0.1`) |
+
+**非 main 分支 tag 的用途示例**：
+- 标记开发进度：`gh-dev` 上 `git tag snapshot-2026-06-13` 用于回溯
+- 预发布：`feature-x` 上 `git tag rc-1` 给测试团队用
+- 内部里程碑：`git tag milestone-M3` 标记阶段完成
+
+**禁止**：
+- ❌ 在 `gh-dev` 等非主分支打 `vX.Y.Z` 格式的 tag — 会误导用户以为是正式发布
+- ❌ 把非主分支 tag 推到公开远端并写 changelog — 浪费审计精力
+- ❌ 删除 main 分支的 tag 后重新打（应使用新版本号）
+
+**反面例子**：
+- `git checkout gh-dev && git tag v26.07.0 && git push --tags` — 错误，v 格式是 main 专用
+- 正确做法：合并到 main → 在 main 上打 `v26.07.0` → 写 changelog
