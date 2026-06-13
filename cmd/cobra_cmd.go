@@ -8,7 +8,13 @@ import (
 	"mysshw/config"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
+
+// isTerminalStdout 检查 stdout 是否关联到 terminal (用于向导向导只在交互式 shell 触发)
+func isTerminalStdout() bool {
+	return term.IsTerminal(int(os.Stdout.Fd()))
+}
 
 // 版本信息变量，将由 main 包设置
 var (
@@ -47,6 +53,24 @@ Use "mysshw help" for more information about a specific command.`,
 			// 更新上下文中的配置路径
 			cmd.SetContext(context.WithValue(cmd.Context(),
 				cfgKey, cfgPath))
+		}
+
+		// 首次运行检测 (用户决定 4: 显示本次更新 + 走向导)
+		// 仅在 stdout 是 terminal 时触发, 避免 CI/管道噪音
+		if IsFirstRun() && isTerminalStdout() {
+			// 无 TOML → 显示 What's New + 自动跳 initCmd
+			showWhatsNew()
+			if err := runInitWizard(false); err != nil {
+				fmt.Fprintf(os.Stderr, "mysshw:: init wizard failed: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Println("Re-run `mysshw` to load the new config.")
+			return
+		}
+		// 升级检测 (TOML 存在但 lastseen 旧版本) → 仅显示 What's New
+		if IsUpgradedFromOlder() && isTerminalStdout() {
+			showWhatsNew()
+			_ = markVersionSeen()
 		}
 
 		// 当没有子命令时执行 RunSSH
