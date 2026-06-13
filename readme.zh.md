@@ -120,42 +120,65 @@ ssh = [
 
 ```mermaid
 graph TB
-    subgraph User["用户层"]
-        UI[huh 交互菜单<br/>两级选择]
-        CLI[命令行<br/>sync / yml / version]
+    subgraph Cmd["cmd 包 (Cobra 命令层)"]
+        Root[Root / RunSSH<br/>主交互循环]
+        Sync[sync -u/-z]
+        Init[init 向导<br/>v26.06.13.3+]
+        Yml[yml -f 迁移]
     end
 
-    subgraph Core["核心层"]
-        Config[config 包<br/>TOML 加载 + 校验<br/>chmod 0600]
-        Env[env 解析<br/>${MYSSHW_PWD_*}<br/>MYSSHW_SKIP_HOST_KEY_CHECK]
-        TOFU[TOFU 主机指纹<br/>~/.ssh/known_hosts<br/>per-node StrictHostKeyChecking]
+    subgraph Ssh["ssh 包 (SSH 连接 + UI)"]
+        Choose[huh.Choose<br/>2 级菜单]
+        Login[client.Login<br/>SSH 连接 + 终端]
+        TOFU[trustOnFirstUseCallback<br/>~/.ssh/known_hosts]
+        Env[ResolveEnvRef<br/>+ IsEnvTrue]
+        Auth[resolvePasswordForSSH<br/>bcrypt 验证 + 交互输入]
+    end
+
+    subgraph Cfg["config 包 (TOML 加载 + 备份)"]
+        Load[LoadViperConfig<br/>TOML 解析 + 校验]
+        Backup[WriteTomlWithBackup<br/>自动备份 + chmod 0600]
+        Validate[ValidateConfig]
+        Pwd[password.go<br/>bcrypt 自动检测]
     end
 
     subgraph Protocols["协议层"]
-        SSH[SSH 客户端<br/>xterm + Resize<br/>KeepAlive 10s]
-        SCP[SCP 客户端<br/>自实现协议]
-        S3[S3 客户端<br/>MinIO SDK]
-        WebDAV[WebDAV 客户端<br/>gowebdav]
+        SCP[scp 客户端]
+        S3[s3 客户端<br/>MinIO SDK]
+        WebDAV[webdav 客户端<br/>gowebdav]
     end
 
-    subgraph External["外部"]
-        Server[SSH/SFTP 服务器]
+    subgraph External["外部服务"]
+        SSHSrv[SSH/SFTP 服务器]
         S3Store[MinIO / RustFS<br/>AWS S3]
-        DAV[WebDAV 服务<br/>坚果云等]
+        DAV[WebDAV 服务]
     end
 
-    UI --> Config
-    CLI --> Config
-    Config --> Env
-    Config --> UI
-    UI -->|Login| SSH
-    Env -->|password/passphrase| SSH
-    SSH --> TOFU
-    SSH --> Server
-    CLI -->|sync --upload/--down| SCP
-    CLI -->|sync --upload/--down| S3
-    CLI -->|sync --upload/--down| WebDAV
-    SCP --> Server
+    Root --> Load
+    Init --> Load
+    Init --> Backup
+    Sync --> Load
+    Yml --> Backup
+
+    Load --> Validate
+    Load -->|TOML 数据| Root
+    Load -->|TOML 数据| Init
+    Load -->|TOML 数据| Sync
+
+    Root --> Choose
+    Choose -->|节点选择| Root
+    Root --> Login
+
+    Login --> Auth
+    Auth --> Env
+    Login --> TOFU
+    Login --> SSHSrv
+
+    Sync -->|scp 类型| SCP
+    Sync -->|s3 类型| S3
+    Sync -->|webdav 类型| WebDAV
+
+    SCP --> SSHSrv
     S3 --> S3Store
     WebDAV --> DAV
 ```
@@ -163,9 +186,10 @@ graph TB
 **关键设计决策**：
 
 - **config 是唯一真相源**：所有流程都从 `LoadViperConfig` → `ValidateConfig` → `chmod 0600` 开始
-- **环境变量在运行时解析**：`password` / `passphrase` 中的 `${MYSSHW_PWD_*}` 在 SSH/SFTP 连接时（而非加载配置时）替换
+- **Env 属于 ssh 包内部**：`ssh.ResolveEnvRef` 位于 ssh 包而非 config，由 `resolvePasswordForSSH` 在 SSH 登录路径调用
 - **TOFU 默认开启，opt-out 关闭**：`SSHNode.StrictHostKeyChecking = false` 关闭单节点；`MYSSHW_SKIP_HOST_KEY_CHECK=true` 全局关闭
 - **远程写入只能通过 sync**：没有隐式远程写，`mysshw sync -u` / `-z` 是用户显式动作
+- **备份机制统一**：`init`（向导）和 `yml`（迁移）路径都走 `config.WriteTomlWithBackup`，`backup_keep`（默认 5）控制保留数量
 
 ## 环境变量 (Environment Variables)
 
