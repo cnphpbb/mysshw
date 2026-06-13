@@ -18,7 +18,7 @@ remote_path = "/data/backup/mysshw/mysshw.toml" # remote file path
 [sync.scp]
 username = "root"
 password = "${MYSSHW_PWD_sync}"  # 支持 ${VAR} 或 ${VAR:-default} 引用环境变量
-keyPath = ""
+keypath = ""
 passphrase = ""
 
 [sync.webdav]
@@ -91,8 +91,8 @@ type (
 	SCPConfig struct {
 		Username   string `toml:"username" mapstructure:"username"`
 		Password   string `toml:"password" mapstructure:"password"`
-		KeyPath    string `toml:"keyPath" mapstructure:"keyPath"`
-		Passphrase string `toml:"passphrase" mapstructure:"passphrase"`
+		KeyPath    string `toml:"keypath,omitempty" mapstructure:"keypath"`
+		Passphrase string `toml:"passphrase,omitempty" mapstructure:"passphrase"`
 	}
 	S3Config struct {
 		AccessKey  string `toml:"access_key" mapstructure:"access_key"`
@@ -129,8 +129,8 @@ type (
 //		RemoteURI   string `toml:"remote_uri"`
 //		Username    string `toml:"username"`
 //		Password    string `toml:"password"`
-//		KeyPath     string `toml:"keyPath"`
-//		Passphrase  string `toml:"passphrase"`
+//		KeyPath     string `toml:"keypath,omitempty"`
+//		Passphrase  string `toml:"passphrase,omitempty"`
 //		RemotePath  string `toml:"remote_path"`
 //		AccessToken string `toml:"access_token"`
 //		GistID      string `toml:"gist_id"`

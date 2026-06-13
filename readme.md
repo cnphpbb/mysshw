@@ -77,7 +77,7 @@ remote_path = "/data/backup/mysshw/mysshw.toml"
 [sync.scp]
 username = "root"
 password = "${MYSSHW_PWD_sync}"
-keyPath = ""
+keypath = ""
 passphrase = ""
 
 [sync.webdav]

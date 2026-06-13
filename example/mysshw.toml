@@ -14,7 +14,7 @@ remote_path = "/data/backup/mysshw/mysshw.toml" # remote file path
 [sync.scp]
 username = "root"
 password = "${MYSSHW_PWD_sync}"  # 支持 ${VAR} / ${VAR:-default} 引用环境变量
-keyPath = "~/.ssh/id_rsa"
+keypath = "~/.ssh/id_rsa"
 passphrase = ""
 
 [sync.webdav]
