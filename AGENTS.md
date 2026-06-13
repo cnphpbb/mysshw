@@ -310,3 +310,38 @@ feat: 新增 S3 配置文件同步功能
 - 禁止提交包含敏感信息（密码、密钥、token 等）的文件
 - 禁止提交 IDE/编辑器配置文件（`.idea/`, `*.swp`, `.vscode/` 等）
 - 禁止提交大型二进制文件到仓库中
+
+#### Tag 与 Changelog 流程
+
+每次发布新 tag 时 **必须** 生成对应的 `changelog.${tag}.md` 文档并提交：
+
+1. **生成时机**：`git tag -a ${tag}` 之后立即生成，**先 commit changelog 再 push tag**
+2. **文件名**：严格使用 `changelog.${tag}.md` 格式（如 `changelog.v26.06.13.2.md`）
+3. **内容来源**：`git log ${prev_tag}..${new_tag} --oneline` 列出所有提交
+4. **格式建议**：
+   ```markdown
+   # Changelog ${tag} (YYYY-MM-DD)
+
+   > 简述本次发布的核心变化（1-2 句）
+
+   ## ✨ 新功能
+   - feat: ... (#PR)
+
+   ## 🐛 修复
+   - fix: ...
+
+   ## 🔧 重构 / 🧪 测试 / 📝 文档 / 🏠 构建
+   - ...
+
+   ## 📊 统计
+   - N 个 commit, +X / -Y 行
+   - 新增 N 个测试用例
+   ```
+5. **commit 规范**：
+   ```
+   docs: 添加 ${tag} changelog
+   ```
+6. **推送顺序**：先 `git push origin gh-dev`，再 `git push origin ${tag}`
+7. **changelog 文件永久入库**，作为发布历史档案（不放入 `.gitignore`）
+
+反面例子：直接 `git tag && git push --tags`，不写 changelog — **禁止**。
