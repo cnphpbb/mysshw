@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"log"
 	"mysshw/config"
@@ -75,38 +76,40 @@ var syncCmd = &cobra.Command{
 			}
 		case "webdav":
 			// 创建 WebDAV 客户端并连接
-			client, err := webdav.NewClient(&syncCfg)
+			ctx := context.Background()
+			client, err := webdav.NewClient(ctx, &syncCfg)
 			if err != nil {
 				fmt.Printf("Failed to create WebDAV client: %s\n", err)
 				os.Exit(1)
 			}
 
 			if upload {
-				if err := uploadWebDAVConfig(client, config.CFG_PATH, syncCfg.RemotePath); err != nil {
+				if err := uploadWebDAVConfig(ctx, client, config.CFG_PATH, syncCfg.RemotePath); err != nil {
 					fmt.Printf("Upload failed: %s\n", err)
 					os.Exit(1)
 				}
 			} else {
-				if err := downloadWebDAVConfig(client, config.CFG_PATH, syncCfg.RemotePath); err != nil {
+				if err := downloadWebDAVConfig(ctx, client, config.CFG_PATH, syncCfg.RemotePath); err != nil {
 					fmt.Printf("Download failed: %s\n", err)
 					os.Exit(1)
 				}
 			}
 		case "s3":
 			// 创建 S3 客户端并连接
-			client, err := s3.NewClient(&syncCfg)
+			ctx := context.Background()
+			client, err := s3.NewClient(ctx, &syncCfg)
 			if err != nil {
 				fmt.Printf("Failed to create S3 client: %s\n", err)
 				os.Exit(1)
 			}
 
 			if upload {
-				if err := uploadS3Config(client, config.CFG_PATH, syncCfg.RemotePath); err != nil {
+				if err := uploadS3Config(ctx, client, config.CFG_PATH, syncCfg.RemotePath); err != nil {
 					fmt.Printf("Upload failed: %s\n", err)
 					os.Exit(1)
 				}
 			} else {
-				if err := downloadS3Config(client, config.CFG_PATH, syncCfg.RemotePath); err != nil {
+				if err := downloadS3Config(ctx, client, config.CFG_PATH, syncCfg.RemotePath); err != nil {
 					fmt.Printf("Download failed: %s\n", err)
 					os.Exit(1)
 				}
@@ -189,7 +192,7 @@ func downloadConfig(client scp.Client, localCfgPath, remotePath string) error {
 }
 
 // uploadWebDAVConfig 上传本地配置到WebDAV服务器
-func uploadWebDAVConfig(client *webdav.Client, localCfgPath, remotePath string) error {
+func uploadWebDAVConfig(ctx context.Context, client *webdav.Client, localCfgPath, remotePath string) error {
 	fmt.Println("Starting to upload local config to WebDAV server...")
 
 	// 获取配置文件名
@@ -204,7 +207,7 @@ func uploadWebDAVConfig(client *webdav.Client, localCfgPath, remotePath string) 
 	}
 
 	// 上传配置文件
-	if err := client.UploadFile(localCfgPath, filename); err != nil {
+	if err := client.UploadFile(ctx, localCfgPath, filename); err != nil {
 		return fmt.Errorf("upload failed: %w", err)
 	}
 
@@ -213,7 +216,7 @@ func uploadWebDAVConfig(client *webdav.Client, localCfgPath, remotePath string) 
 }
 
 // downloadWebDAVConfig 从WebDAV服务器下载配置到本地
-func downloadWebDAVConfig(client *webdav.Client, localCfgPath, remotePath string) error {
+func downloadWebDAVConfig(ctx context.Context, client *webdav.Client, localCfgPath, remotePath string) error {
 	fmt.Println("Starting to download config from WebDAV server...")
 
 	// 获取配置文件名
@@ -231,7 +234,7 @@ func downloadWebDAVConfig(client *webdav.Client, localCfgPath, remotePath string
 	localPath, _ := config.GetCfgPath(localCfgPath)
 
 	// 下载配置文件
-	if err := client.DownloadFile(filename, localPath); err != nil {
+	if err := client.DownloadFile(ctx, filename, localPath); err != nil {
 		return fmt.Errorf("download failed: %w", err)
 	}
 
@@ -240,7 +243,7 @@ func downloadWebDAVConfig(client *webdav.Client, localCfgPath, remotePath string
 }
 
 // uploadS3Config 上传本地配置到S3服务器
-func uploadS3Config(client *s3.Client, localCfgPath, remotePath string) error {
+func uploadS3Config(ctx context.Context, client *s3.Client, localCfgPath, remotePath string) error {
 	fmt.Println("Starting to upload local config to S3 server...")
 
 	// 获取配置文件名
@@ -255,7 +258,7 @@ func uploadS3Config(client *s3.Client, localCfgPath, remotePath string) error {
 	}
 
 	// 上传配置文件
-	if err := client.UploadFile(localCfgPath, filename); err != nil {
+	if err := client.UploadFile(ctx, localCfgPath, filename); err != nil {
 		return fmt.Errorf("upload failed: %w", err)
 	}
 
@@ -264,7 +267,7 @@ func uploadS3Config(client *s3.Client, localCfgPath, remotePath string) error {
 }
 
 // downloadS3Config 从S3服务器下载配置到本地
-func downloadS3Config(client *s3.Client, localCfgPath, remotePath string) error {
+func downloadS3Config(ctx context.Context, client *s3.Client, localCfgPath, remotePath string) error {
 	fmt.Println("Starting to download config from S3 server...")
 
 	// 获取配置文件名
@@ -282,7 +285,7 @@ func downloadS3Config(client *s3.Client, localCfgPath, remotePath string) error 
 	localPath, _ := config.GetCfgPath(localCfgPath)
 
 	// 下载配置文件
-	if err := client.DownloadFile(filename, localPath); err != nil {
+	if err := client.DownloadFile(ctx, filename, localPath); err != nil {
 		return fmt.Errorf("download failed: %w", err)
 	}
 

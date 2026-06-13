@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"mysshw/config"
+
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
@@ -20,10 +21,8 @@ type Client struct {
 }
 
 // NewClient 创建S3客户端
-func NewClient(cfg *config.SyncInfo) (*Client, error) {
-	// 使用context
-	ctx := context.Background()
-
+// 校验 remote_path 不以 '/' 开头 (S3 key 不应带前导 /, 避免与 ListObjects 前缀语义混淆)
+func NewClient(ctx context.Context, cfg *config.SyncInfo) (*Client, error) {
 	// 获取endpoint，如果为空则使用remote_uri
 	endpoint := cfg.S3Config.Endpoint
 	if endpoint == "" {
@@ -65,9 +64,10 @@ func NewClient(cfg *config.SyncInfo) (*Client, error) {
 		}
 	}
 
-	// 检查远程路径是否存在（S3是对象存储，这里只是验证格式）
-	if !filepath.IsAbs(cfg.RemotePath) {
-		return nil, fmt.Errorf("S3远程路径必须是绝对路径: %s", cfg.RemotePath)
+	// 校验 remote_path 不以 '/' 开头
+	// 原因: S3 key 不应带前导斜杠, ListObjects 的 Prefix 参数会原样匹配
+	if strings.HasPrefix(cfg.RemotePath, "/") {
+		return nil, fmt.Errorf("S3 远程路径不应以 '/' 开头: %s", cfg.RemotePath)
 	}
 
 	return &Client{
@@ -77,12 +77,9 @@ func NewClient(cfg *config.SyncInfo) (*Client, error) {
 }
 
 // UploadFile 上传文件到S3服务器
-func (c *Client) UploadFile(localPath string, remoteName string) error {
-	// 使用context
-	ctx := context.Background()
-
+func (c *Client) UploadFile(ctx context.Context, localPath string, remoteName string) error {
 	// 构建远程文件路径
-	remotePath := filepath.Join(c.config.RemotePath, remoteName)
+	remotePath := joinRemotePath(c.config.RemotePath, remoteName)
 
 	// 获取文件大小
 	fileInfo, err := os.Stat(localPath)
@@ -107,12 +104,9 @@ func (c *Client) UploadFile(localPath string, remoteName string) error {
 }
 
 // DownloadFile 从S3服务器下载文件
-func (c *Client) DownloadFile(remoteName string, localPath string) error {
-	// 使用context
-	ctx := context.Background()
-
+func (c *Client) DownloadFile(ctx context.Context, remoteName string, localPath string) error {
 	// 构建远程文件路径
-	remotePath := filepath.Join(c.config.RemotePath, remoteName)
+	remotePath := joinRemotePath(c.config.RemotePath, remoteName)
 
 	// 检查文件是否存在
 	_, err := c.client.StatObject(ctx, c.config.S3Config.BucketName, remotePath, minio.StatObjectOptions{})
@@ -124,8 +118,7 @@ func (c *Client) DownloadFile(remoteName string, localPath string) error {
 	}
 
 	// 确保本地目录存在
-	localDir := filepath.Dir(localPath)
-	if err := os.MkdirAll(localDir, 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(localPath), 0755); err != nil {
 		return fmt.Errorf("创建本地目录失败: %w", err)
 	}
 
@@ -138,20 +131,9 @@ func (c *Client) DownloadFile(remoteName string, localPath string) error {
 }
 
 // ListFiles 列出S3服务器上的文件
-func (c *Client) ListFiles() ([]os.FileInfo, error) {
-	// 使用context
-	ctx := context.Background()
-
-	// 构建前缀
-	prefix := c.config.RemotePath
-	if !filepath.IsAbs(prefix) {
-		return nil, fmt.Errorf("S3远程路径必须是绝对路径: %s", prefix)
-	}
-
-	// 去除路径前面的斜杠
-	if len(prefix) > 0 && prefix[0] == '/' {
-		prefix = prefix[1:]
-	}
+func (c *Client) ListFiles(ctx context.Context) ([]os.FileInfo, error) {
+	// 构建前缀 (去除前导 '/', 保持与 UploadFile/DownloadFile 一致)
+	prefix := strings.TrimPrefix(c.config.RemotePath, "/")
 
 	// 初始化结果列表
 	var fileInfos []os.FileInfo
@@ -182,12 +164,9 @@ func (c *Client) ListFiles() ([]os.FileInfo, error) {
 }
 
 // DeleteFile 删除S3服务器上的文件
-func (c *Client) DeleteFile(remoteName string) error {
-	// 使用context
-	ctx := context.Background()
-
+func (c *Client) DeleteFile(ctx context.Context, remoteName string) error {
 	// 构建远程文件路径
-	remotePath := filepath.Join(c.config.RemotePath, remoteName)
+	remotePath := joinRemotePath(c.config.RemotePath, remoteName)
 
 	// 检查文件是否存在
 	_, err := c.client.StatObject(ctx, c.config.S3Config.BucketName, remotePath, minio.StatObjectOptions{})
@@ -204,6 +183,14 @@ func (c *Client) DeleteFile(remoteName string) error {
 	}
 
 	return nil
+}
+
+// joinRemotePath 用 '/' 拼接 prefix + name (S3 key 始终用正斜杠, 跨平台一致)
+func joinRemotePath(prefix, name string) string {
+	if prefix == "" {
+		return name
+	}
+	return prefix + "/" + name
 }
 
 // minioFileInfo 模拟os.FileInfo接口的结构体

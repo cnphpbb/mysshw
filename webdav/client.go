@@ -1,6 +1,7 @@
 package webdav
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -18,11 +19,12 @@ type Client struct {
 }
 
 // NewClient 创建WebDAV客户端
-func NewClient(cfg *config.SyncInfo) (*Client, error) {
+// 校验 remote_path 不以 '/' 开头 (WebDAV 路径是 server-relative, 前导 / 在某些服务器上会丢失)
+func NewClient(ctx context.Context, cfg *config.SyncInfo) (*Client, error) {
 	// 构建WebDAV服务器URL
 	baseURL := fmt.Sprintf("http://%s", cfg.RemoteUri)
-	if !filepath.IsAbs(cfg.RemotePath) {
-		return nil, fmt.Errorf("WebDAV远程路径必须是绝对路径: %s", cfg.RemotePath)
+	if cfg.RemotePath != "" && cfg.RemotePath[0] == '/' {
+		return nil, fmt.Errorf("WebDAV 远程路径不应以 '/' 开头: %s", cfg.RemotePath)
 	}
 
 	// 创建WebDAV客户端
@@ -49,7 +51,7 @@ func NewClient(cfg *config.SyncInfo) (*Client, error) {
 }
 
 // UploadFile 上传文件到WebDAV服务器
-func (c *Client) UploadFile(localPath string, remoteName string) error {
+func (c *Client) UploadFile(ctx context.Context, localPath string, remoteName string) error {
 	// 打开本地文件
 	file, err := os.Open(localPath)
 	if err != nil {
@@ -64,7 +66,7 @@ func (c *Client) UploadFile(localPath string, remoteName string) error {
 	}
 
 	// 构建远程文件路径
-	remotePath := filepath.Join(c.config.RemotePath, remoteName)
+	remotePath := joinRemotePath(c.config.RemotePath, remoteName)
 
 	// 上传文件
 	if err := c.client.Write(remotePath, content, 0644); err != nil {
@@ -75,9 +77,9 @@ func (c *Client) UploadFile(localPath string, remoteName string) error {
 }
 
 // DownloadFile 从WebDAV服务器下载文件
-func (c *Client) DownloadFile(remoteName string, localPath string) error {
+func (c *Client) DownloadFile(ctx context.Context, remoteName string, localPath string) error {
 	// 构建远程文件路径
-	remotePath := filepath.Join(c.config.RemotePath, remoteName)
+	remotePath := joinRemotePath(c.config.RemotePath, remoteName)
 
 	// 检查文件是否存在
 	_, err := c.client.Stat(remotePath)
@@ -95,8 +97,7 @@ func (c *Client) DownloadFile(remoteName string, localPath string) error {
 	}
 
 	// 确保本地目录存在
-	localDir := filepath.Dir(localPath)
-	if err := os.MkdirAll(localDir, 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(localPath), 0755); err != nil {
 		return fmt.Errorf("创建本地目录失败: %w", err)
 	}
 
@@ -109,7 +110,7 @@ func (c *Client) DownloadFile(remoteName string, localPath string) error {
 }
 
 // ListFiles 列出WebDAV服务器上的文件
-func (c *Client) ListFiles() ([]os.FileInfo, error) {
+func (c *Client) ListFiles(ctx context.Context) ([]os.FileInfo, error) {
 	files, err := c.client.ReadDir(c.config.RemotePath)
 	if err != nil {
 		return nil, fmt.Errorf("列出远程文件失败: %w", err)
@@ -119,9 +120,9 @@ func (c *Client) ListFiles() ([]os.FileInfo, error) {
 }
 
 // DeleteFile 删除WebDAV服务器上的文件
-func (c *Client) DeleteFile(remoteName string) error {
+func (c *Client) DeleteFile(ctx context.Context, remoteName string) error {
 	// 构建远程文件路径
-	remotePath := filepath.Join(c.config.RemotePath, remoteName)
+	remotePath := joinRemotePath(c.config.RemotePath, remoteName)
 
 	// 检查文件是否存在
 	_, err := c.client.Stat(remotePath)
@@ -138,4 +139,12 @@ func (c *Client) DeleteFile(remoteName string) error {
 	}
 
 	return nil
+}
+
+// joinRemotePath 用 '/' 拼接 prefix + name (WebDAV 路径始终用正斜杠)
+func joinRemotePath(prefix, name string) string {
+	if prefix == "" {
+		return name
+	}
+	return prefix + "/" + name
 }
