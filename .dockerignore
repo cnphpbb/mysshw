@@ -1,0 +1,55 @@
+# Docker build context exclusion
+# Keep image build fast and reproducible
+
+# VCS
+.git
+.gitignore
+.gitattributes
+
+# CI/CD (未来添加)
+.github
+
+# 构建产物
+dist/
+build/
+*.exe
+*.test
+*.out
+
+# 临时文件
+*.bak
+*.tmp
+*.swp
+*.swo
+
+# 编辑器
+.idea/
+.vscode/
+*.iml
+
+# 开发工具
+magefile.go
+mage.go
+docker-compose.yml
+
+# 文档 (Dockerfile 用户通常不需要)
+README.md
+readme.md
+readme.zh.md
+TODO.md
+AGENTS.md
+analysis.md
+changelog.*.md
+LICENSE
+
+# 示例配置 (运行时由 builder 单独 cp, **不要排除**)
+# example/
+
+# Go 测试覆盖
+coverage.html
+.cover.out
+.cover.html
+
+# OS
+.DS_Store
+Thumbs.db
