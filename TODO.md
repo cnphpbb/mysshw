@@ -1,107 +1,181 @@
 # TODO List
 
-## 项目待办事项
+> 按优先级组织。✅ = 已完成，🔄 = 进行中，❌ = 未开始。
+> 最后更新：2026-06-13
 
-### RunSSH 功能
-- [x] 退出 SSH 会话并返回主界面
-- [x] fix: EOF 错误
-- [x] 支持 `Ctrl+d` 退出程序, windows系统下失效
-- [x] 支持 `q` 退出程序 
-- [x] 支持 `Ctrl+c` 退出程序
-- [x] 主界面支持搜索  
-- [ ] 主界面支持主题  
+---
 
-已成功在 ssh/client.go 和 cmd/cobra_cmd.go 文件中实现退出 SSH 会话并返回主界面功能，并更新了 TODO.md 文件标记任务完成。具体实现包括：
-退出 SSH 会话并返回主界面, 修复了 EOF 错误。 
-如果按键无响应, 请尝试按 `Ctrl+c`, 再按 方向键 。
+## 0. 仓库健康 (P0 — 立即处理)
 
-#### 退出功能实现
-1. 添加了清屏功能，使用 `fmt.Print("\033[H\033[2J")` 命令清除终端屏幕内容
-2. 优化了主界面显示，在返回主界面时重新显示节点列表
-3. 实现了多种退出方式：`Ctrl+d`， `Ctrl+c` 或者 输入 `q` 退出
-   - Ctrl+d 在Windows系统下失效, 请使用 `Ctrl+c` 退出
-   - 输入 `q` 退出时, 会提示确认退出
+| 状态 | 任务 | 说明 |
+|------|------|------|
+| ❌ | 添加 `.gitattributes` 强制 LF 行尾 | 工作区 `analysis.md`、`hostkey.go`、`hostkey_test.go`、`model_config_test.go` 被改成 CRLF，导致 834 行虚假 diff |
+| ❌ | 文档统一行尾为 LF | `git checkout -- <file>` 还原，或 `dos2unix` 批量转换 |
 
-#### 功能亮点
-- 支持多种退出方式：先按 `Ctrl+c`，再按 `Ctrl+d`  或  `Ctrl+c`  或 输入 `q | Q` 退出
-- 清屏功能提升了用户体验，使界面更加整洁
-- 改进了配置路径获取逻辑，确保默认配置路径在不同操作系统上正确工作
-- Ctrl+d 在Windows系统下失效
-- MacOS 系统下的配置文件，无须修改，就可以直接在其他系统中使用
-- 配置文件中`sshkey`的路径, 支持 `~` 展开路径, 如: `~/.ssh/id_rsa`
+建议的 `.gitattributes`：
 
+```ini
+* text=auto eol=lf
+*.go   text eol=lf
+*.md   text eol=lf
+*.toml text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+```
 
-### 配置管理
-- [x] 完善配置文件校验功能
-- [x] 支持自定义配置文件路径
-- [x] 对Windows路径格式的支持
-- [x] 对Linux路径格式的支持
-- [x] 对MacOS路径格式的支持
-- [x] 对配置文件路径的校验
-- [x] 对配置文件内容的校验
-- [x] 支持sshw项目的配置文件的导入
-- [x] 实现配置的远程备份与恢复
-- [x] 实现配置文件的自动备份
-- [ ] 添加配置文件加密选项
+---
 
-已成功在 config/config.go 文件中实现配置校验功能，并更新了 TODO.md 文件标记任务完成。具体实现包括：
+## 1. 安全 (Security) — P1
 
-#### 配置校验功能实现
-1. 添加了 ValidateConfig 主函数，对整个配置进行全面验证
-2. 实现了四个专用校验函数：
-   - validateSyncConfig : 验证同步配置的类型和必要字段
-   - validateNodeGroup : 验证节点组的有效性
-   - validateSSHNode : 验证SSH节点的配置、主机、端口和认证方式
-3. 在 LoadViperConfig 函数中调用校验函数，确保配置加载后立即进行验证
+| 状态 | 任务 | 涉及文件 | 完成日期 |
+|------|------|---------|---------|
+| ✅ | 主机指纹校验 (Trust On First Use) | `ssh/hostkey.go` | 2025-06-13 |
+| ✅ | per-node `strict_host_key_checking` 配置 | `config/model_config.go` | 2025-06-13 |
+| ✅ | 自定义 `known_hosts_path` 配置 (与 OpenSSH 隔离) | `config/model_config.go` | 2025-06-13 |
+| ❌ | 非交互场景 (CI/脚本) 支持 — 环境变量跳过校验 | `ssh/hostkey.go` | — |
+| ❌ | 密码安全：明文 → 环境变量 + 统一 `term.ReadPassword` | `ssh/client.go`、`config/model_config.go` | — |
+| ❌ | 默认模板删除弱密码占位 `$ZK7M@~1RY` | `config/model_config.go` | — |
+| ❌ | 配置文件落盘后 `chmod 600` | `config/backup_config.go` | — |
+| ❌ | `MYSSHW_SKIP_HOST_KEY_CHECK` 等安全相关环境变量文档化 | `readme.md`、`readme.zh.md` | — |
 
-#### 校验功能亮点
-- 支持验证同步类型的合法性和必要参数
-- 检查SSH节点的主机、端口范围和认证方式
-- 验证密钥文件路径的存在性
-- 提供清晰具体的错误信息，方便用户定位问题
-- 兼容Windows路径格式
+---
 
+## 2. 关键 Bug 修复 (P0/P1)
 
-### Sync Actions 功能
-- [x] SCP, SFTP 同步功能
-- [x] WebDAV 同步功能 (github.com/studio-b12/gowebdav),现在一些网盘也支持WebDAV协议
-- [x] S3 同步功能 (github.com/minio/minio-go/v7) RustFS, MinIO 社区版， 云平台S3
-    - 完成日期：2025-09-24
-    - 功能描述：已实现通过WebDAV和S3协议进行文件同步的功能
+| 状态 | 任务 | 涉及文件 | 完成日期 |
+|------|------|---------|---------|
+| ✅ | 修复 `scp/client.go::CopyFromRemotePassThru` 双重发送 panic | `scp/client.go:240-242` | 已修复 |
+| ✅ | 修复 `ssh/client.go::Login` 多个错误路径未调 callback | `ssh/client.go:230,262,275,294,301` | 已修复 |
 
-**以上的文件存储都是自用的，所以相对来说，安全系数比较高**
+---
 
-**以下的备份方法, 感觉不是很安全, 所以没有进行开发**
+## 3. 代码质量 (P2)
 
-- Github - Gist 同步集成
-- Gitee - Gist 同步集成
-- API - HTTP(s) 同步接口
-- RPC 同步功能
+| 状态 | 任务 | 涉及文件 | 说明 |
+|------|------|---------|------|
+| ❌ | `auth` 包清理：`PrivateKey`/`PrivateKeyWithPassphrase`/`SshAgent` 三个函数全无调用方 | `auth/auth.go` | 要么删除 `auth` 包，要么重构 `ssh/client.go::genSSHConfig` 使用它 |
+| ❌ | `SCPConfig.KeyPath` tag `keyPath` 与 `SSHNode.KeyPath` tag `keypath` 大小写不一致 | `config/model_config.go:91-96` | 统一为 `keypath` |
+| ❌ | `magefile.go::tag()` 注释说返回 git tag，实际返回 branch | `magefile.go` | 修注释或改实现 |
+| ❌ | `s3/client.go` 和 `webdav/client.go` 的 `SyncConfig`/`GetConfig` 未被引用 | `s3/client.go`、`webdav/client.go`、`cmd/sync_cobra.go` | 删除或整合到 sync 命令 |
+| ❌ | `S3.NewClient` / `WebDAV.NewClient` 用 `filepath.IsAbs` 校验远程路径不合理 | `s3/client.go`、`webdav/client.go` | S3 key / WebDAV 路径无"绝对"概念，改为非 `/` 开头 |
+| ❌ | S3 / WebDAV 客户端硬编码 `context.Background()`，无法取消/超时 | `s3/client.go`、`webdav/client.go` | 接受外部 `context.Context` |
+| ❌ | 默认 TOML 模板中 `[sync.webdav]` 用 `Auth` (大写) 与 struct tag `auth` 不一致 | `config/model_config.go:8-66` | 改为 `auth`（依赖 TOML 库大小写不敏感暂未出错）|
 
-### 用户界面
-- [x] 实现命令自动补全
-- [x] 替换pkg "github.com/manifoldco/promptui" （此项目已经停止维护）
-- [x] 实现 "github.com/charmbracelet/huh" 替换 "github.com/manifoldco/promptui"
+---
 
+## 4. RunSSH 功能 (P2)
 
-## 代码优化
-- [x] 重构重复代码
-- [x] 完善单元测试
-- [x] 优化代码性能
-- [x] 改进代码注释
-- [x] 优化平台兼容性
-- [ ] 添加集成测试
+| 状态 | 任务 | 涉及文件 |
+|------|------|---------|
+| ✅ | 退出 SSH 会话并返回主界面 | `cmd/runssh_cmd.go` |
+| ✅ | 修复 EOF 错误 | `ssh/client.go` |
+| ✅ | 支持 `Ctrl+d` 退出 (Windows 下失效) | `cmd/runssh_cmd.go` |
+| ✅ | 支持 `q` / `Q` 退出 | `cmd/runssh_cmd.go` |
+| ✅ | 支持 `Ctrl+c` 退出 | `cmd/runssh_cmd.go` |
+| ✅ | 主界面支持搜索 | `ssh/cmd.go` (huh Filter) |
+| ❌ | 主界面支持主题 | `ssh/cmd.go` (lipgloss theme) |
 
-**支持 `D:\sbin\mysshw.exe -c D:\mydata\mysshw\mysshw.toml` 启动程序, 指定配置文件** by 2025-08-24
+---
 
-## 安全 (Security)
-- [x] 主机指纹校验 (Trust On First Use) by 2025-06-13
-- [x] per-node `strict_host_key_checking` 配置 by 2025-06-13
-- [x] 自定义 `known_hosts_path` 配置 (与 OpenSSH 隔离) by 2025-06-13
-- [ ] 非交互场景 (CI/脚本) 支持 (环境变量跳过校验)
+## 5. 配置管理 (P2)
 
-## 发布计划
-- [x] 发布到 GitHub Releases
-- [ ] 制作 Docker 镜像
-- [ ] 自动化构建与测试流程
+| 状态 | 任务 | 涉及文件 |
+|------|------|---------|
+| ✅ | 完善配置文件校验功能 | `config/validated_config.go` |
+| ✅ | 支持自定义配置文件路径 (`-c` / `--cfg`) | `cmd/cobra_cmd.go` |
+| ✅ | 跨平台路径支持 (Windows / Linux / macOS) | `config/utils.go` |
+| ✅ | 配置文件路径校验 + 内容校验 | `config/config.go` |
+| ✅ | sshw YAML 配置导入 | `cmd/yml_cmd.go` |
+| ✅ | 远程备份与恢复 (SCP / WebDAV / S3) | `cmd/sync_cobra.go` |
+| ✅ | 配置文件自动备份 | `config/backup_config.go` |
+| ❌ | 配置文件加密选项 | `config/` (新功能) |
 
+---
+
+## 6. Sync Actions (P2)
+
+| 状态 | 任务 | 完成日期 |
+|------|------|---------|
+| ✅ | SCP 同步 | 2025-08 |
+| ✅ | WebDAV 同步 (RustFS / MinIO / 云平台) | 2025-09-24 |
+| ✅ | S3 同步 (RustFS / MinIO / 云平台 S3) | 2025-09-24 |
+
+> **设计决定**：以下协议作者明确放弃（安全顾虑）：
+> - GitHub / Gitee Gist 同步
+> - API-HTTP(s) 同步接口
+> - RPC 同步功能
+
+---
+
+## 7. 用户界面 (P2)
+
+| 状态 | 任务 |
+|------|------|
+| ✅ | 实现命令自动补全 (cobra 默认) |
+| ✅ | 用 `charmbracelet/huh` 替换 `manifoldco/promptui`（后者已停止维护）|
+| ❌ | huh 主题定制（huh 自带 `huh.Theme*()`，可暴露配置） |
+
+---
+
+## 8. 测试 (P2)
+
+| 状态 | 任务 | 涉及包 |
+|------|------|-------|
+| ✅ | 单元测试：`getConfigPath` 路径解析 | `config/config_test.go` |
+| ✅ | 单元测试：`SSHNode.IsStrictHostKeyChecking` | `config/model_config_test.go` |
+| ✅ | 单元测试：`expandHomeDir` 9 个子用例 | `ssh/client_test.go` |
+| ✅ | 单元测试：TOFU 主机指纹 8 个用例 | `ssh/hostkey_test.go` |
+| ❌ | 集成测试：SCP 协议 (`ParseResponse` / `CopyN`) | `scp/` |
+| ❌ | 集成测试：SCP 传输 (`CopyFile` / `CopyFromRemote`) | `scp/` |
+| ❌ | 集成测试：S3 / WebDAV 客户端 | `s3/`、`webdav/` |
+| ❌ | 集成测试：YML 迁移 | `cmd/` |
+| ❌ | 集成测试：配置校验 (`ValidateConfig`) | `config/` |
+| ❌ | 端到端测试：模拟 SSH 服务器 (go-stdlib test helpers) | 新建 |
+
+---
+
+## 9. 发布与运维 (P3)
+
+| 状态 | 任务 | 涉及文件 |
+|------|------|---------|
+| ✅ | Mage 构建任务 (Build / Pack / Test / Clean) | `magefile.go` |
+| ✅ | 8 平台交叉编译 + 打包 | `magefile.go::Pack` |
+| ✅ | GitHub Releases 发布 | 历史记录 |
+| ❌ | 自动化 CI/CD (`.github/workflows/`) | 新建 |
+| ❌ | Docker 镜像 (`Dockerfile` + `docker-compose.yml` 发布版) | 新建（当前 `docker-compose.yml` 仅开发环境）|
+| ❌ | Homebrew tap (macOS) | 外部仓库 |
+| ❌ | Scoop bucket (Windows) | 外部仓库 |
+| ❌ | `go install github.com/cnphpbb/mysshw@latest` 文档化 | `readme.md` |
+
+---
+
+## 10. 文档 (P3)
+
+| 状态 | 任务 |
+|------|------|
+| ✅ | `readme.md` (英文) |
+| ✅ | `readme.zh.md` (中文) |
+| ✅ | `AGENTS.md` (AI 代理开发指南) |
+| ✅ | `analysis.md` (项目深度分析) |
+| ❌ | `readme.md` 与 `readme.zh.md` 功能描述与代码同步（已知 `readme.md:93` 仍提 `pkg/sftp` 但未使用）|
+| ❌ | 添加架构图 (mermaid) 到 readme |
+| ❌ | 添加 changelog 链接到 readme |
+
+---
+
+## 优先级总览
+
+| 优先级 | 类别 | 任务数 |
+|--------|------|--------|
+| P0 | 仓库健康 (CRLF)、关键 Bug | 2 + 1 |
+| P1 | 安全 (密码/非交互) | 5 |
+| P2 | 代码质量 + RunSSH + 配置 + Sync + UI + 测试 | 15+ |
+| P3 | 发布 + 文档 | 7 |
+
+---
+
+## 备注
+
+- "完成" 的定义：代码已提交到 HEAD，文档已同步。
+- "进行中" 仅用于有 WIP 分支或工作区修改未提交的情况。
+- 安全相关任务即使排 P1，也应在下一次发布前完成。
