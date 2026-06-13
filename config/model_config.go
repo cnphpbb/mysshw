@@ -71,8 +71,12 @@ type (
 		// KnownHostsPath 自定义主机指纹存储路径, 留空时使用 ~/.ssh/known_hosts
 		// 支持 ~ 和 $HOME 展开, 父目录不存在时会自动创建
 		KnownHostsPath string   `toml:"known_hosts_path,omitempty" mapstructure:"known_hosts_path"`
-		SyncCfg        SyncInfo `toml:"sync" mapstructure:"sync"`
-		Nodes          []Nodes  `toml:"nodes" mapstructure:"nodes"`
+		// BackupKeep 写 TOML 时保留的本地备份数量 (默认 5)
+		// 备份命名: <name>.<YYYYMMDD_HHMMSS>.bak
+		// 0 或负数 → 使用 DefaultBackupKeep
+		BackupKeep int      `toml:"backup_keep,omitempty" mapstructure:"backup_keep"`
+		SyncCfg     SyncInfo `toml:"sync" mapstructure:"sync"`
+		Nodes       []Nodes  `toml:"nodes" mapstructure:"nodes"`
 	}
 
 	SyncInfo struct {

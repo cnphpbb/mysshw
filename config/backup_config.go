@@ -3,8 +3,13 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"sort"
 	"time"
 )
+
+// DefaultBackupKeep 写 TOML 时保留的本地备份数量 (用户可在 TOML 中 backup_keep 字段覆盖)
+const DefaultBackupKeep = 5
 
 // backupConfigFile creates a timestamped backup of the configuration file
 func backupConfigFile() (string, error) {
@@ -31,7 +36,67 @@ func backupConfigFile() (string, error) {
 	return backupPath, nil
 }
 
+// effectiveBackupKeep 根据全局 CFG 和默认值计算实际保留的备份数
+// 规则: 0 或负数 → DefaultBackupKeep (5)
+func effectiveBackupKeep() int {
+	if CFG != nil && CFG.BackupKeep > 0 {
+		return CFG.BackupKeep
+	}
+	return DefaultBackupKeep
+}
+
+// WriteTomlWithBackup 原子地写入 TOML: 先备份已存在文件 (再按 keep 数量裁剪),
+// 然后写新内容。已存在文件不存在时直接写。
+// 用途: 所有"修改已有 TOML"的场景 (yml 命令、未来的设置编辑等)
+// 首次创建 (wizard) 不走此函数, 直接 writeSecureFile 即可。
+func WriteTomlWithBackup(path string, data []byte) error {
+	if _, err := os.Stat(path); err == nil {
+		// 1. 备份现有文件 (原子重命名, 不占双倍空间)
+		ts := time.Now().Format("20060102_150405")
+		backupPath := path + "." + ts + ".bak"
+		if err := os.Rename(path, backupPath); err != nil {
+			return fmt.Errorf("failed to backup existing config: %v", err)
+		}
+
+		// 2. 裁剪旧备份 (按字母序 = 时间序, 保留最新 keep 个)
+		if err := pruneBackups(path, effectiveBackupKeep()); err != nil {
+			// 非致命: 仅打印警告
+			fmt.Fprintf(os.Stderr, "mysshw:: warning: failed to prune old backups: %v\n", err)
+		}
+	}
+
+	// 3. 写新文件 (0600)
+	return writeSecureFile(path, data)
+}
+
+// pruneBackups 保留 path 最新 keep 个备份, 删除其余。
+// 备份命名: <path>.<YYYYMMDD_HHMMSS>.bak
+// keep <= 0 时直接返回 (不裁剪)
+func pruneBackups(path string, keep int) error {
+	if keep <= 0 {
+		return nil
+	}
+	pattern := path + ".*.bak"
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return err
+	}
+	if len(matches) <= keep {
+		return nil
+	}
+	// 字母序 = 时间序 (YYYYMMDD_HHMMSS 可字典序排序)
+	sort.Strings(matches)
+	// 删除最旧的 (前 len-keep 个)
+	for _, m := range matches[:len(matches)-keep] {
+		if err := os.Remove(m); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // writeConfigFile writes the configuration file to the specified path
+// 首次生成 (TOML 损坏 / 不存在) 时使用, 不做备份 (无原文件可备)
 func writeConfigFile(cfgPath string) error {
 	// 0600: 配置文件可能含密码/密钥引用, 仅所有者可读写
 	if err := writeSecureFile(cfgPath, []byte(DefaultTomlConfig)); err != nil {

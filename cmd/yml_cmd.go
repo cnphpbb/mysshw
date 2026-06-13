@@ -182,6 +182,8 @@ func escapeTomlString(s string) string {
 }
 
 // appendToConfigFile appends content to the config file
+// v26.06.13.3+ 行为变更: 改为先读全文件 → 与新内容合并 → writeTomlWithBackup 原子覆盖
+// 优点: 触发自动备份 (backup_keep 数量), 而非追加 (避免累积/格式错乱)
 func appendToConfigFile(content string) error {
 	// Get full config file path
 	cfgPath, err := config.GetCfgPath("")
@@ -189,28 +191,21 @@ func appendToConfigFile(content string) error {
 		return err
 	}
 
-	// Check if file exists
-	fileInfo, err := os.Stat(cfgPath)
-	fileExists := err == nil && !fileInfo.IsDir()
+	// 读取现有内容 (如不存在则为空)
+	existing, _ := os.ReadFile(cfgPath)
 
-	// Open file in append mode
-	file, err := os.OpenFile(cfgPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	// If file exists, add a blank line before appending new content
-	if fileExists {
-		if _, err := file.WriteString("\n"); err != nil {
-			return err
+	// 合并: 现有 + 空行 (如有) + 新内容
+	var merged []byte
+	if len(existing) > 0 {
+		merged = append(merged, existing...)
+		// 确保分隔空行
+		if len(existing) > 0 && existing[len(existing)-1] != '\n' {
+			merged = append(merged, '\n')
 		}
+		merged = append(merged, '\n')
 	}
+	merged = append(merged, []byte(content)...)
 
-	// Write the converted TOML content
-	if _, err := file.WriteString(content); err != nil {
-		return err
-	}
-
-	return nil
+	// 原子写 + 自动备份
+	return config.WriteTomlWithBackup(cfgPath, merged)
 }
