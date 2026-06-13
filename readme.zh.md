@@ -2,50 +2,46 @@
 
 **开源免费的SSH命令行客户端工具**  
 **Go 1.23.0 及以上版本**  
-**支持 Linux、macOS、Windows 平台**  
+**支持 Linux、macOS、Windows 平台**
 
 [English Documentation](readme.md)
 
 ## 功能特性
 
-- 🚀 **多协议支持**
-  - SSH 2.0协议全功能实现
-  - SCP文件传输协议支持
-  - 终端会话管理
-  
+- 🚀 **SSH 2.0 协议全功能**
+  - SCP 文件传输
+  - 终端会话管理 (Raw 模式)
+  - 窗口自适应、KeepAlive 保活
+
 - 🔑 **灵活认证方式**
   - 密码认证
   - 密钥认证
-  - 带密码短语的密钥支持
-  - 交互式键盘认证
+  - 带密码短语的密钥
+  - 键盘交互认证
+  - 主机指纹校验 (TOFU, Trust On First Use)
 
 - 🛠 **配置管理**
-  - TOML格式配置文件
-  - 支持节点分组管理
-  - 配置同步功能（SCP已实现，GitHub/Gitee开发中）
-  - 自动生成默认配置
-  - 完善的配置文件校验功能
-  - 支持自定义配置文件路径
-  - 跨平台路径格式支持（Windows/Linux/MacOS）
-  - 配置的远程备份与恢复
-  - 配置文件的自动备份
+  - TOML 格式
+  - 节点分组管理
+  - `${ENV_VAR}` 密码引用 (避免明文落盘)
+  - 配置文件权限自动收紧 (0600)
+  - 配置远程备份与恢复 (SCP / WebDAV / S3)
+  - 跨平台路径处理 (Windows / Linux / macOS)
+  - sshw YAML → TOML 迁移 (`mysshw yml`)
 
 - 🖥 **终端体验**
-  - 自适应窗口大小
-  - 支持KeepAlive保活
-  - 颜色高亮显示
-  - 历史命令记录(开发中)
-  - 多种退出方式（Ctrl+d、Ctrl+c、输入q）
-  - 退出SSH会话后自动返回主界面
-  - 退出方式： 先输入Ctrl+c，再输入 q或Q or Ctrl+d
+  - huh 交互式菜单
+  - Lipgloss 颜色高亮
+  - 多种退出方式 (Ctrl+D / Ctrl+C / `q`)
+  - 退出 SSH 会话后自动返回主界面
 
-- 💻 **跨平台兼容**
-  - 支持Linux、macOS、Windows操作系统
-  - 针对不同平台的路径处理优化
+- 🔌 **配置同步 (远程备份)**
+  - SCP、WebDAV、S3 (MinIO / RustFS / 云平台 S3)
 
 ## 安装指南
 
 ### 从源码安装
+
 ```bash
 git clone https://github.com/cnphpbb/mysshw.git mysshw
 cd mysshw
@@ -53,77 +49,73 @@ go mod tidy
 go install github.com/magefile/mage@latest
 mage build
 ```
+
 ### 下载二进制
-访问 Release页面 下载对应平台版本
-https://github.com/cnphpbb/mysshw/releases
 
-## TODO
-
-### 功能开发
-
-- RunSSH功能
-  - [ ] 主界面支持主题
-- 配置管理
-  - [ ] 添加配置文件加密选项
-- 同步功能
-  - [x] SCP/SFTP
-  - [ ] WebDAV
-  - [ ] S3 (RustFS, MinIO社区版, 云平台S3)
-- 发布计划
-  - [ ] 制作Docker镜像
-  - [ ] 自动化构建与测试流程
-- 代码优化
-  - [ ] 添加集成测试
-
-### 已完成功能
-
-- RunSSH
-  - 退出会话返回主界面
-  - 支持多种退出方式(Ctrl+d/Ctrl+c/q)
-  - 主界面支持搜索
-- 配置管理
-  - 文件校验功能
-  - 自定义配置文件路径
-  - 跨平台路径支持(Windows/Linux/MacOS)
-  - sshw配置导入
-  - 配置的远程备份与恢复
-  - 配置文件的自动备份
-- 用户界面
-  - 命令自动补全
-  - 替换promptui为charmbracelet/huh
-- 发布
-  - GitHub Releases
+访问 [Release 页面](https://github.com/cnphpbb/mysshw/releases) 下载对应平台版本。
 
 ## 配置文件
-默认路径： ~/.mysshw.toml
+
+配置文件可放在以下任一位置：
+- `~/.mysshw.toml` (推荐)
+- `~/.mysshw`
+- `./.mysshw.toml`
+- `./.mysshw`
+
+默认配置路径：`$HOME/.mysshw.toml`
+
+也可使用自定义路径：`mysshw -c /path/to/your.toml`。
+
+### 配置示例
 
 ```toml
-cfg_dir = "~/.mysshw.toml"
+cfg_dir = "~/.mysshw.toml"   # default: $HOME/.mysshw.toml
 
 [sync]
-type = "scp"
+type = "scp"                  # scp | webdav | s3
 remote_uri = "127.0.0.1:22"
+remote_path = "/data/backup/mysshw/mysshw.toml"
+
+[sync.scp]
 username = "root"
-password = "your_password"
-remote_path = "/path/to/backup"
+password = "${MYSSHW_PWD_sync}"
+keyPath = ""
+passphrase = ""
+
+[sync.webdav]
+auth = "Basic"                # Basic | Digest
+username = "root"
+password = "${MYSSHW_PWD_webdav}"
+
+[sync.s3]
+access_key = ""               # 访问密钥
+secret_key = ""               # 密钥
+bucket_name = ""              # 桶名
+region = ""                   # 区域
+endpoint = ""                 # 终端节点 (空 → 用 remote_uri)
 
 [[nodes]]
-groups = "生产服务器"
-ssh = [
-    { name="web01", host="192.168.1.101", user="admin", port=22 },
-    { name="db01", host="192.168.1.102", keypath="~/.ssh/id_rsa" }
-]
-
-[[nodes]]
-groups = "测试环境"
+groups = "Groups01"
 
 [[nodes.ssh]]
-host = 'dev.example.com'
-name = 'dev01'
-password = 'test123'
-user = 'root'
-port = 22
- ```
+alias = "Test"
+name = "vm-test-1"
+host = "127.0.0.1"
+user = "root"
+password = "${MYSSHW_PWD_vm_test_1}"
+#keypath = "~/.ssh/id_rsa"
+#passphrase = "${MYSSHW_KEY_PASSPHRASE}"
+#strict_host_key_checking = false  # 跳过主机指纹校验 (仅测试)
+
+[[nodes]]
+groups = "Groups02"
+ssh = [
+    { name = "web01", host = "192.168.1.101", user = "admin", port = 22 },
+    { name = "db01",  host = "192.168.1.102", user = "admin", keypath = "~/.ssh/id_rsa" },
+]
+```
+
+> ⚠️ 配置文件可能含密码/密钥引用, mysshw 加载后会自动收紧到 `0600` (Windows 由 NTFS ACL 控制)。
 
 ## 环境变量 (Environment Variables)
 
@@ -163,7 +155,7 @@ password = "${MYSSHW_PWD_web01}"            # 必填
 export MYSSHW_PWD_web01='S3cret!'
 mysshw -c ~/.mysshw.toml
 
-# 方式 2: 配合 secret 管理工具 (如 Vault, 1Password CLI, pass)
+# 方式 2: 配合 secret 管理工具 (Vault, 1Password CLI, pass 等)
 export MYSSHW_PWD_web01=$(op read 'op://vault/web01/password')
 mysshw -c ~/.mysshw.toml
 ```
@@ -174,6 +166,7 @@ mysshw 加载配置后会自动将权限收紧到 `0600`（仅所有者可读写
 Windows 上 `Chmod` 是 no-op，权限由 NTFS ACL 控制。
 
 ## 使用示例
+
 ```bash
 # 查看帮助信息
 mysshw --help | -h
@@ -183,8 +176,7 @@ mysshw
 
 # 指定配置文件路径
 mysshw --cfg /path/to/custom/config.toml
-# 或使用短选项
-mysshw -c /path/to/custom/config.toml
+mysshw -c /path/to/custom/config.toml   # 短选项
 
 # 查看版本信息
 mysshw version | --version | -v
@@ -196,40 +188,61 @@ mysshw sync --upload | -u
 mysshw sync --down | -z
 
 # 使用自定义配置文件路径进行同步
-mysshw sync --cfg /path/to/custom/config.toml --upload | --down
-# 或混合使用短选项
-mysshw sync -c /path/to/custom/config.toml -u | -z
+mysshw sync --cfg /path/to/custom/config.toml --upload
+mysshw sync -c /path/to/custom/config.toml -u   # 混合短选项
 
 # 从 sshw 的 YAML 配置迁移到 mysshw TOML 配置
 mysshw yml -f ~/.sshw.yml
-# 或使用长选项
-mysshw yml --file ~/.sshw.yml
+mysshw yml --file ~/.sshw.yml   # 长选项
 
-# 查看同步命令帮助
+# 查看子命令帮助
 mysshw sync --help | -h
-
-# 查看 yml 命令帮助
 mysshw yml --help | -h
 ```
 
-## 贡献指南
-欢迎提交Issue和PR！项目遵循MIT开源协议。
+## TODO
 
-## 许可证
-MIT
+简要状态 — 完整列表见 [TODO.md](TODO.md)。
+
+- ✅ P0: 仓库健康 (`.gitattributes`)
+- ✅ P0/P1: 关键 Bug 修复 (SCP panic、Login 回调)
+- ✅ P1: 安全 (TOFU、env vars、chmod 0600、`${VAR}` 密码引用)
+- 🟡 P2: 代码质量、集成测试
+- ❌ P3: CI/CD、Docker 镜像、Homebrew/Scoop
 
 ## Go Packages 依赖
 
-- github.com/magefile/mage
-- github.com/spf13/cobra
-- github.com/GuanceCloud/toml
-- github.com/spf13/viper
-- github.com/charmbracelet/huh
-- github.com/charmbracelet/lipgloss
-- github.com/pkg/sftp
-- golang.org/x/crypto/ssh
+- [github.com/magefile/mage](https://github.com/magefile/mage) — 构建系统
+- [github.com/spf13/cobra](https://github.com/spf13/cobra) — CLI 框架
+- [github.com/spf13/viper](https://github.com/spf13/viper) — 配置加载
+- [github.com/GuanceCloud/toml](https://github.com/GuanceCloud/toml) — TOML 编解码
+- [github.com/charmbracelet/huh](https://github.com/charmbracelet/huh) — TUI 菜单
+- [github.com/charmbracelet/lipgloss](https://github.com/charmbracelet/lipgloss) — 终端样式
+- [github.com/minio/minio-go/v7](https://github.com/minio/minio-go) — S3 客户端
+- [github.com/studio-b12/gowebdav](https://github.com/studio-b12/gowebdav) — WebDAV 客户端
+- [golang.org/x/crypto/ssh](https://pkg.go.dev/golang.org/x/crypto/ssh) — SSH 协议
+- [golang.org/x/term](https://pkg.go.dev/golang.org/x/term) — 终端 Raw 模式
+- [gopkg.in/yaml.v3](https://gopkg.in/yaml.v3) — YAML 迁移
+- [github.com/stretchr/testify](https://github.com/stretchr/testify) — 测试框架
 
-详细的依赖说明请参考 [go.mod](go.mod) 文件
+完整列表及版本见 [go.mod](go.mod)。
+
+## 测试
+
+```bash
+go test -v ./...
+mage test          # 含覆盖率报告
+```
+
+使用 [testify](http://github.com/stretchr/testify) 作为 Go 测试框架。
+
+## 贡献指南
+
+欢迎提交 Issue 和 PR！项目遵循 MIT 开源协议。
+
+## 许可证
+
+[MIT](../LICENSE)
 
 ## 项目编译
 
@@ -239,71 +252,50 @@ docker compose -p base -f ./docker-compose.yml up -d
 docker exec -it build_go bash
 # 可选：添加安全目录
 git config --global --add safe.directory /app
+
 # 以下必须在项目根目录执行
 go mod tidy
 go install github.com/magefile/mage@latest
-mage clean  // 清理编译目录 dist
-mage build  // 开发编译，不打tar包
-mage pack   // 发布打包编译
-./mysshw -h   // 查看帮助信息
-./mysshw -c ./mysshw.toml   // 启动程序, 指定配置文件 然后做个alias
-# 参考：
-# alias mysshw='./mysshw -c ./mysshw.toml'
-# 或者
-# echo "alias mysshw='./mysshw -c ./mysshw.toml'" >> ~/.bashrc
-# source ~/.bashrc
-# 可以直接使用 mysshw 命令
-./mysshw // 查找默认配置文件, 位置 ~/.mysshw.toml。 如果没有默认配置文件, 则第一次会报错并自动生成默认配置文件
+mage clean   # 清理 dist/
+mage build   # 开发编译 (不打 tar)
+mage pack    # 发布打包 (8 平台 + tar/zip + sha1)
+
+./mysshw -h                # 查看帮助
+./mysshw -c ./mysshw.toml  # 指定配置运行
+
+# 设置别名方便使用
+echo "alias mysshw='./mysshw -c ./mysshw.toml'" >> ~/.bashrc
+source ~/.bashrc
 ```
+
 ### Windows 平台
-- 在 Windows 平台下，推荐使用 PowerShell、Windows Terminal、Windows Subsystem for Linux (WSL) 或 Git Bash 等终端工具，以获得最佳使用体验。
-- 确保已安装 OpenSSH 客户端, git, mingw64 等工具
-- 配置环境变量
-  - 确保 `C:\Windows\System32\OpenSSH` 目录已添加到系统环境变量 `PATH` 中
-  - 确保 `C:\Program Files\Git\usr\bin` 目录已添加到系统环境变量 `PATH` 中
-  - 确保 `C:\Program Files\Git\mingw64\bin` 目录已添加到系统环境变量 `PATH` 中
-  - 确保 `C:\Program Files\Git\usr\sbin` 目录已添加到系统环境变量 `PATH` 中
-  - 确保 `C:\Program Files\Git\usr\libexec\git-core` 目录已添加到系统环境变量 `PATH` 中
-  - 确保 `C:\Program Files\Git\mingw64\libexec\git-core` 目录已添加到系统环境变量 `PATH` 中
-  - 确保 `C:\Program Files\Git\mingw64\bin` 目录已添加到系统环境变量 `PATH` 中
-  - 确保 `C:\Program Files\Git\usr\libexec\git-core` 目录已添加到系统环境变量 `PATH` 中
 
-- 重启终端，使环境变量生效  
+- 推荐使用 PowerShell、Windows Terminal、WSL 或 Git Bash，以获得最佳体验。
+- 确保已安装 OpenSSH 客户端、Git、mingw64。
+- 添加以下路径到系统 `PATH`：
+  - `C:\Windows\System32\OpenSSH`
+  - `C:\Program Files\Git\usr\bin`
+  - `C:\Program Files\Git\mingw64\bin`
+  - `C:\Program Files\Git\usr\sbin`
+  - `C:\Program Files\Git\usr\libexec\git-core`
+  - `C:\Program Files\Git\mingw64\libexec\git-core`
+- 重启终端，使环境变量生效。
 
-**支持 `.\mysshw.exe -c D:\mydata\mysshw\mysshw.toml` 启动程序, 指定配置文件**
-- 支持 `Ctrl+d` 退出程序, Windows 下不支持
-- 支持 `q | Q` 退出程序
+**支持**： `.\mysshw.exe -c D:\mydata\mysshw\mysshw.toml`
 
-**支持 `D:\sbin\mysshw.exe -c D:\mydata\mysshw\mysshw.toml` 启动程序, 指定配置文件** by 2025-08-24
+> 注意：Windows 下 `Ctrl+D` 不支持，请使用 `Ctrl+C` 或输入 `q | Q`。
 
 #### PowerShell 中设置别名
-- 打开 PowerShell 终端
-- 执行以下命令设置别名
-- 因 Set-Alias 不支持带参数的命令，所以不能直接设置别名 `mysshw="D:\sbin\mysshw.exe -c D:\mydata\mysshw\mysshw.toml"`
 
-  ```powershell
-  Set-Alias -Name mysshw -Value "D:\sbin\mysshw.exe"
-  ```
-- 执行以下命令查看别名是否设置成功
+PowerShell 的 `Set-Alias` 不支持带参数命令，需在 profile 中定义函数：
 
-  ```powershell
-  Get-Alias -Name mysshw | Format-List
-  ```
+```powershell
+notepad $profile   # 打开 profile (如不存在需先创建)
 
-- 执行以下命令创建带参数的PowerShell函数
-  > 打开 PowerShell 配置文件（路径通过 $profile获取），添加以下内容：
-  > 注意：如果没有配置文件，需要先创建一个
-  
-  - 执行以下命令打开配置文件
-  ```powershell
-  notepad $profile
-  ```
-  - 添加以下内容
-
-  ```powershell
-  function mysshw {
+# 在 profile 中添加：
+function mysshw {
     D:\sbin\mysshw.exe -c D:\mydata\mysshw\mysshw.toml $args
-  }
-  ```
+}
+```
 
-- 重启 PowerShell 终端，使别名生效
+重启 PowerShell 激活。
