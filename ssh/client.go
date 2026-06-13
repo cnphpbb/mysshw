@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -19,6 +20,8 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/term"
 )
+
+var plainPwdWarnOnce sync.Once
 
 var (
 	DefaultCiphers = []string{
@@ -146,32 +149,25 @@ func genSSHConfig(node *config.SSHNode) *defaultClient {
 		}
 	}
 
-	// 密码支持 ${ENV_VAR} / ${ENV_VAR:-default} 引用, 避免明文落盘
-	// 解析后仍为空 → 走交互输入
+	// 密码支持多种格式 (Phase 3 引入):
+	//   1. 明文:    "my-secret-password"
+	//   2. ${ENV}:   "${MYSSHW_PWD_node1}"  (由 ResolveEnvRef 处理)
+	//   3. bcrypt:  "$2a$10$..."           (Phase 2 自动检测, 需交互输入明文并验证)
+	//   4. 空字符串: ""                    (Phase 3 新行为: 交互输入, 不写回)
 	resolvedPwd := ResolveEnvRef(node.Password)
 	if resolvedPwd != node.Password {
 		fmt.Printf("mysshw:: password resolved from env var for %s@%s\n", node.SetUser(), node.Host)
 	}
-	var password ssh.AuthMethod
-	if resolvedPwd != "" {
-		password = ssh.Password(resolvedPwd)
-	} else {
-		password = node.SetPassword() // 保留原行为 (空 → nil)
-	}
+
+	password, pwdCleartext := resolvePasswordForSSH(node, resolvedPwd)
+	_ = pwdCleartext // 明文由 Go GC 负责回收, 无需手动 zero
+	// 注: Go string 不可变, 显式 zeroBytes 对 string 无效 (只能用于 []byte)
+	// term.ReadPassword 返回的 []byte 转换为 string 后已无引用, 由 GC 回收
 
 	if password != nil {
 		authMethods = append(authMethods, password)
 	} else {
-		// 当密码为空时，提示用户输入密码
-		fmt.Print("请输入SSH密码: ")
-		var passwordStr string
-		fmt.Scanln(&passwordStr)
-		if passwordStr != "" {
-			password = ssh.Password(passwordStr)
-			authMethods = append(authMethods, password)
-		} else {
-			fmt.Println("警告: 密码认证方式不可用，将尝试其他认证方式")
-		}
+		fmt.Println("警告: 密码认证方式不可用，将尝试其他认证方式")
 	}
 
 	authMethods = append(authMethods, ssh.KeyboardInteractive(func(user, instruction string, questions []string, echos []bool) ([]string, error) {
@@ -394,4 +390,104 @@ func (c *defaultClient) Login(sessionEndCallback func()) {
 	}()
 
 	session.Wait()
+}
+
+// resolvePasswordForSSH 解析 SSH 认证用的明文密码 + (可选) AuthMethod
+// 输入 resolvedPwd 是 ResolveEnvRef 处理后的值 (可能是 明文 / bcrypt 哈希 / env 解析结果 / "")
+// 返回:
+//   password:     ssh.AuthMethod (明文) 或 nil (不可用)
+//   pwdCleartext: 明文字符串, 供调用方 defer zeroBytes 清理
+//
+// 决策 B1 自动检测分支:
+//   - bcrypt 哈希 → term.ReadPassword 交互输入 → VerifyPassword
+//   - 空字符串  → term.ReadPassword 交互输入, **不写回 TOML** (默认行为, 用户可后续 init 向导设置)
+//   - 明文     → 直接使用, 可选提示迁移为 bcrypt
+func resolvePasswordForSSH(node *config.SSHNode, resolvedPwd string) (ssh.AuthMethod, string) {
+	// 情况 1: bcrypt 哈希 → 交互输入 + 验证
+	if config.IsBcryptHash(resolvedPwd) {
+		cleartext, err := promptPassword(node, "TOML 中存的是 bcrypt 哈希, 请输入明文密码以验证: ")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "mysshw:: failed to read password: %v\n", err)
+			return nil, ""
+		}
+		if err := config.VerifyPassword(resolvedPwd, cleartext); err != nil {
+			fmt.Fprintln(os.Stderr, "mysshw:: 密码验证失败 (bcrypt mismatch)")
+			zeroBytes(cleartext)
+			return nil, ""
+		}
+		fmt.Fprintln(os.Stderr, "mysshw:: bcrypt 验证通过")
+		return ssh.Password(cleartext), cleartext
+	}
+
+	// 情况 2: 明文 (可能含 ${ENV} 未解析) → 直接使用, 可选迁移提示
+	if resolvedPwd != "" {
+		// 进程级一次性提示用户改用更安全的方式
+		plainPwdWarnOnce.Do(func() {
+			if isTerminal(os.Stdin) {
+				fmt.Fprintf(os.Stderr, "mysshw:: 注意: TOML 中存有明文密码, 建议改用 ${ENV_VAR} 或 bcrypt 哈希 (参见 `mysshw init` 向导)\n")
+			}
+		})
+		return ssh.Password(resolvedPwd), resolvedPwd
+	}
+
+	// 情况 3: 空字符串 → 交互输入, 不写回 (默认行为, Phase 3 核心变更)
+	cleartext, err := promptPassword(node, "请输入 SSH 密码 (不写入 TOML): ")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "mysshw:: failed to read password: %v\n", err)
+		return nil, ""
+	}
+	if cleartext == "" {
+		fmt.Fprintln(os.Stderr, "mysshw:: 密码为空, 跳过密码认证")
+		return nil, ""
+	}
+	fmt.Fprintln(os.Stderr, "mysshw:: 密码已临时读取 (本次会话不持久化)")
+	return ssh.Password(cleartext), cleartext
+}
+
+// promptPassword 用 term.ReadPassword 安全读取密码 (不回显)
+// 在非 terminal stdin (CI/管道) 下降级为 fmt.Scanln
+func promptPassword(node *config.SSHNode, prompt string) (string, error) {
+	fmt.Fprintf(os.Stderr, "%s", prompt)
+
+	if isTerminal(os.Stdin) {
+		fd := int(os.Stdin.Fd())
+		// Windows 上 term 需要 stdout fd
+		if runtime.GOOS == "windows" {
+			fd = int(os.Stdout.Fd())
+		}
+		b, err := term.ReadPassword(fd)
+		if err != nil {
+			return "", err
+		}
+		fmt.Fprintln(os.Stderr) // 换行
+		return string(b), nil
+	}
+
+	// 非 terminal 降级路径
+	var pw string
+	if _, err := fmt.Scanln(&pw); err != nil {
+		return "", err
+	}
+	return pw, nil
+}
+
+// isTerminal 检查 fd 是否关联到 terminal
+func isTerminal(f *os.File) bool {
+	fi, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode() & os.ModeCharDevice) != 0
+}
+
+// zeroBytes 覆写 byte slice 内容 (降低内存中明文密码残留时间)
+// 注: Go string 不可变, 此函数对 string 无效; 仅供 []byte 类型的明文使用
+// 当前流程 term.ReadPassword 返回 []byte 转为 string 后已无引用, 由 GC 回收,
+// 故此函数暂未在主流程调用, 保留供未来若改用 []byte 传递明文时使用。
+func zeroBytes(s string) {
+	b := []byte(s)
+	for i := range b {
+		b[i] = 0
+	}
+	_ = b
 }
