@@ -269,13 +269,39 @@ defer func() {
 
 ### 6.2 中等问题
 
-#### 🟡 `InsecureIgnoreHostKey()` 全部使用
+#### 🟡 ~~`InsecureIgnoreHostKey()` 全部使用~~（已修复）
 
-所有 SSH 连接都跳过主机指纹校验，存在中间人攻击风险。
+~~所有 SSH 连接都跳过主机指纹校验，存在中间人攻击风险。~~
 
-**建议**：
-- 首次连接时提示用户确认并保存 `known_hosts`
-- 后续使用 `ssh.FixedHostKey` 校验
+**修复说明**：新增 `ssh/hostkey.go`，实现 Trust On First Use (TOFU) 策略：
+- 指纹存储：`~/.ssh/known_hosts`（与 OpenSSH 共享同一份指纹库）
+- 首次连接：显示 SHA256 指纹 → 提示用户确认 → 信任后追加写入
+- 后续连接：严格校验，不匹配直接拒绝连接（防中间人）
+- 并发安全：`sync.Mutex` 保护 known_hosts 写入
+- 错误信息包含期望/实际指纹，便于诊断
+
+**灵活配置**（v2 增强）：
+- **per-node 控制**：`SSHNode.StrictHostKeyChecking *bool` 字段
+  - `nil` / `true` = 启用严格校验（默认）
+  - `false` = 跳过校验（测试环境）
+  - 跳过时会输出 `WARNING: host key verification disabled` 警告
+- **全局自定义路径**：`Configs.KnownHostsPath string` 字段
+  - 留空 = 使用默认 `~/.ssh/known_hosts`
+  - 支持 `~` 和 `$HOME` 展开
+  - 父目录不存在时自动创建（0700 权限）
+  - 实现与 OpenSSH 指纹库隔离
+
+**相关文件**：
+- `ssh/hostkey.go`（新增，~170 行）
+- `ssh/hostkey_test.go`（新增，9 个测试用例）
+- `config/model_config.go`（新增 2 个字段 + 1 个方法）
+- `config/model_config_test.go`（新增，1 个测试）
+- `ssh/messages.go`（新增 5 个提示常量）
+- `ssh/client.go`（per-node 策略选择）
+- `example/mysshw.toml`（加示例注释）
+
+**遗留改进**（未实施，留作后续）：
+- 非交互场景（CI/脚本）下 TOFU 会失败，建议加 `MYSSHW_SKIP_HOST_KEY_CHECK` 环境变量
 
 #### 🟡 密码明文存储 + 明文回显
 
@@ -369,7 +395,9 @@ S3/WebDAV 客户端里 `context.Background()` 硬编码，没有从外层 `cmd` 
 |--------|------|---------|
 | P0 | 修复 `CopyFromRemotePassThru` 双重发送 panic | `scp/client.go` |
 | P0 | 修复 `Login` 多个错误路径未调 callback | `ssh/client.go` |
-| P1 | 主机指纹校验（known_hosts） | `ssh/client.go` |
+| ~~P1~~ | ~~主机指纹校验（known_hosts）~~ | ✅ **已完成**（`ssh/hostkey.go`） |
+| ~~P1~~ | ~~per-node `strict_host_key_checking` 配置~~ | ✅ **已完成**（`config/model_config.go`） |
+| ~~P1~~ | ~~自定义 `known_hosts_path` 配置~~ | ✅ **已完成**（`config/model_config.go`） |
 | P1 | 密码安全（环境变量 + term.ReadPassword） | `config/` + `ssh/client.go` |
 | P2 | 集成测试覆盖 SCP/S3/WebDAV/YML | 各包 `_test.go` |
 | P2 | GitHub Actions CI（build + test on 3 OS） | `.github/workflows/` |

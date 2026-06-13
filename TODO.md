@@ -94,6 +94,12 @@
 
 **支持 `D:\sbin\mysshw.exe -c D:\mydata\mysshw\mysshw.toml` 启动程序, 指定配置文件** by 2025-08-24
 
+## 安全 (Security)
+- [x] 主机指纹校验 (Trust On First Use) by 2025-06-13
+- [x] per-node `strict_host_key_checking` 配置 by 2025-06-13
+- [x] 自定义 `known_hosts_path` 配置 (与 OpenSSH 隔离) by 2025-06-13
+- [ ] 非交互场景 (CI/脚本) 支持 (环境变量跳过校验)
+
 ## 发布计划
 - [x] 发布到 GitHub Releases
 - [ ] 制作 Docker 镜像
