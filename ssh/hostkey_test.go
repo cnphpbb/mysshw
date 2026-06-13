@@ -215,7 +215,7 @@ func TestIsEnvTrue(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.val, func(t *testing.T) {
 			t.Setenv("MYSSHW_TEST_BOOL", c.val)
-			assert.Equal(t, c.expected, isEnvTrue("MYSSHW_TEST_BOOL"))
+			assert.Equal(t, c.expected, IsEnvTrue("MYSSHW_TEST_BOOL"))
 		})
 	}
 }

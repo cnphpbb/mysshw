@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	"log"
-	"mysshw/auth"
 	"mysshw/config"
 	"mysshw/s3"
 	"mysshw/scp"
+	"mysshw/ssh"
 	"mysshw/webdav"
 	"os"
 	"path/filepath"
@@ -129,12 +129,16 @@ func loadConfig() error {
 }
 
 // createSSHConfig 创建 SSH 客户端配置
+// 密码支持 ${ENV_VAR} 引用 (与 ssh/client.go 一致)
 func createSSHConfig(syncCfg config.SyncInfo) *crypto_ssh.ClientConfig {
+	resolvedPwd := ssh.ResolveEnvRef(syncCfg.SCPConfig.Password)
+	authMethods := []crypto_ssh.AuthMethod{}
+	if resolvedPwd != "" {
+		authMethods = append(authMethods, crypto_ssh.Password(resolvedPwd))
+	}
 	return &crypto_ssh.ClientConfig{
-		User: syncCfg.SCPConfig.Username,
-		Auth: []crypto_ssh.AuthMethod{
-			auth.PasswordKey(syncCfg.SCPConfig.Username, syncCfg.SCPConfig.Password),
-		},
+		User:            syncCfg.SCPConfig.Username,
+		Auth:            authMethods,
 		HostKeyCallback: crypto_ssh.InsecureIgnoreHostKey(),
 	}
 }

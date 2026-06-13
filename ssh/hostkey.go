@@ -146,7 +146,7 @@ func trustOnFirstUseCallback() (ssh.HostKeyCallback, error) {
 // getHostKeyCallback 根据环境变量和节点配置返回合适的主机指纹校验策略
 // 优先级: MYSSHW_SKIP_HOST_KEY_CHECK 环境变量 > per-node strict_host_key_checking > 默认 TOFU
 func getHostKeyCallback(node *config.SSHNode) (ssh.HostKeyCallback, error) {
-	if isEnvTrue(EnvSkipHostKeyCheck) {
+	if IsEnvTrue(EnvSkipHostKeyCheck) {
 		// 环境变量: 最高优先级, 用于 CI/脚本场景临时跳过校验
 		fmt.Fprintf(os.Stderr, "mysshw:: WARNING: %s=true, host key verification disabled (MITM risk)\n", EnvSkipHostKeyCheck)
 		return ssh.InsecureIgnoreHostKey(), nil
