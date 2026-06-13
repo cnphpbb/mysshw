@@ -27,3 +27,6 @@ sshw.toml
 mysshw.toml
 mysshw
 /vendor/*
+
+# 本地分析文档 (AI 生成的深度分析, 仅供开发者本地参考, 不入库)
+analysis.md
