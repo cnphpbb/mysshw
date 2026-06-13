@@ -81,6 +81,12 @@
 | ✅ | sshw YAML 配置导入 | `cmd/yml_cmd.go` |
 | ✅ | 远程备份与恢复 (SCP / WebDAV / S3) | `cmd/sync_cobra.go` |
 | ✅ | 配置文件自动备份 | `config/backup_config.go` |
+| ✅ | 写 TOML 时自动备份 + 可配置保留数量 (`backup_keep`, 默认 5) | `config/backup_config.go` | 2026-06-13 (v26.06.13.3) |
+| ✅ | 密码 bcrypt 哈希存储 (`password = "$2a$10$..."`) | `config/password.go` | 2026-06-13 (v26.06.13.3) |
+| ✅ | 密码支持多格式自动识别 (明文 / ${ENV} / bcrypt / 空) | `config/password.go` | 2026-06-13 (v26.06.13.3) |
+| ✅ | 空密码 = 交互输入 (term.ReadPassword, 不写回) | `ssh/client.go` | 2026-06-13 (v26.06.13.3) |
+| ✅ | 首次运行向导 (`mysshw init`, huh 驱动 4 步) | `cmd/init_cmd.go` | 2026-06-13 (v26.06.13.3) |
+| ✅ | 首次运行显示 What's New + 升级时显示一次 | `cmd/init_cmd.go`、`cmd/cobra_cmd.go` | 2026-06-13 (v26.06.13.3) |
 | ❌ | 配置文件加密选项 | `config/` (新功能) |
 
 ---
@@ -121,6 +127,10 @@
 | ✅ | 单元测试：`isEnvTrue` + env 路径解析 + callback 策略 7 个用例 | `ssh/hostkey_test.go` | 2026-06-13 |
 | ✅ | 单元测试：`ResolveEnvRef` 8 个用例 | `ssh/env_test.go` | 2026-06-13 |
 | ✅ | 单元测试：`secureConfigFile` 4 个用例 | `config/backup_config_test.go` | 2026-06-13 |
+| ✅ | 单元测试：WriteTomlWithBackup + PruneBackups 7 个用例 | `config/backup_config_test.go` | 2026-06-13 (v26.06.13.3) |
+| ✅ | 单元测试：bcrypt 自动检测 / 哈希 / 验证 14 个用例 | `config/password_test.go` | 2026-06-13 (v26.06.13.3) |
+| ✅ | 单元测试：ssh 密码三分支 7 个用例 | `ssh/client_password_test.go` | 2026-06-13 (v26.06.13.3) |
+| ✅ | 单元测试：cmd init wizard 检测 8 个用例 | `cmd/init_cmd_test.go` | 2026-06-13 (v26.06.13.3) |
 | ✅ | 集成测试：SCP 协议 11 个用例 (`ParseResponse` / `Ack` / `CopyN` / `FileInfos`) | `scp/protocol_test.go` | 2026-06-13 |
 | ✅ | 集成测试：SCP 传输 4 个用例 (mock SSH server 端到端) | `scp/client_test.go` | 2026-06-13 |
 | ✅ | 集成测试：配置校验 27 个用例 (`ValidateConfig` 全分支) | `config/validated_config_test.go` | 2026-06-13 |
