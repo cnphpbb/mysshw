@@ -34,12 +34,6 @@ var currentHomeDir = func() (string, error) {
 	return u.HomeDir, nil
 }
 
-// isEnvTrue 解析布尔型环境变量 (true/1/yes, 大小写不敏感)
-func isEnvTrue(name string) bool {
-	v := strings.ToLower(strings.TrimSpace(os.Getenv(name)))
-	return v == "true" || v == "1" || v == "yes"
-}
-
 // getKnownHostsPath 返回 known_hosts 文件的绝对路径
 // 优先级: MYSSHW_KNOWN_HOSTS 环境变量 > config.CFG.KnownHostsPath > ~/.ssh/known_hosts
 func getKnownHostsPath() (string, error) {

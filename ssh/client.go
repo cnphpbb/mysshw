@@ -132,8 +132,10 @@ func genSSHConfig(node *config.SSHNode) *defaultClient {
 		fmt.Println(err)
 	} else {
 		var signer ssh.Signer
-		if node.Passphrase != "" {
-			signer, err = ssh.ParsePrivateKeyWithPassphrase(pemBytes, []byte(node.Passphrase))
+		// 私钥口令也支持 ${ENV_VAR} 引用
+		passphrase := resolveEnvRef(node.Passphrase)
+		if passphrase != "" {
+			signer, err = ssh.ParsePrivateKeyWithPassphrase(pemBytes, []byte(passphrase))
 		} else {
 			signer, err = ssh.ParsePrivateKey(pemBytes)
 		}
@@ -144,7 +146,18 @@ func genSSHConfig(node *config.SSHNode) *defaultClient {
 		}
 	}
 
-	password := node.SetPassword()
+	// 密码支持 ${ENV_VAR} / ${ENV_VAR:-default} 引用, 避免明文落盘
+	// 解析后仍为空 → 走交互输入
+	resolvedPwd := resolveEnvRef(node.Password)
+	if resolvedPwd != node.Password {
+		fmt.Printf("mysshw:: password resolved from env var for %s@%s\n", node.SetUser(), node.Host)
+	}
+	var password ssh.AuthMethod
+	if resolvedPwd != "" {
+		password = ssh.Password(resolvedPwd)
+	} else {
+		password = node.SetPassword() // 保留原行为 (空 → nil)
+	}
 
 	if password != nil {
 		authMethods = append(authMethods, password)
