@@ -2,39 +2,23 @@
 
 **mysshw - A free and open source SSH command line client software.**  
 **Go 1.23.0 and above**  
-**Supports Linux, macOS, and Windows platforms**
+**Supports Linux, macOS, and Windows platforms (Docker recommended for Windows)**
 
-[中文文档](readme.zh.md)
+[中文文档](readme.zh.md) · [Changelog](changelog.v26.06.13.2.md)
+
+> 🐳 **Docker users**: The official image (`mysshw:latest`) is the recommended way to run on Windows and any environment where terminal semantics differ from Unix. See [Docker](#docker).
 
 ## Features
 
-- 🚀 **SSH 2.0 full protocol**
-  - SCP file transfer
-  - Terminal session with raw mode
-  - Adaptive window resize, KeepAlive
-
-- 🔑 **Flexible authentication**
-  - Password, public key, key with passphrase
-  - Keyboard-interactive
-  - Trust On First Use (TOFU) host key verification
-
-- 🛠 **Configuration management**
-  - TOML format
-  - Node group organization
-  - `${ENV_VAR}` password references (avoid plain-text storage)
-  - Automatic config file permission tightening (0600)
-  - Config backup & restore (SCP / WebDAV / S3)
-  - Cross-platform path handling (Windows / Linux / macOS)
-  - sshw YAML → TOML migration (`mysshw yml`)
-
-- 🖥 **Terminal experience**
-  - huh-based interactive menus
-  - Lipgloss color highlighting
-  - Multiple exit methods (Ctrl+D / Ctrl+C / `q`)
-  - Return to main menu after SSH session ends
-
-- 🔌 **Config sync (remote backup)**
-  - SCP, WebDAV, S3 (MinIO / RustFS / cloud S3)
+- 🚀 **SSH 2.0 full protocol** — terminal session with raw mode, adaptive window resize, KeepAlive
+- 🔑 **Flexible authentication** — password, public key, key with passphrase, keyboard-interactive
+- 🛡 **TOFU host key verification** — Trust On First Use with `~/.ssh/known_hosts` (shared with OpenSSH)
+- 🛠 **TOML configuration** — node group organization, `${ENV_VAR}` password references (no plain-text)
+- 🖥 **huh-based interactive menu** — Lipgloss colors, virtual "返回上级" node
+- 🔌 **Config sync (remote backup)** — SCP, WebDAV, S3 (MinIO / RustFS / cloud S3)
+- 🔁 **Loop-back main menu** — exit SSH session returns to the picker (no process restart)
+- 🐳 **Docker image** — multi-stage build, ~21 MB, non-root user
+- 📦 **Static binary** — `CGO_ENABLED=0`, runs anywhere
 
 ## Installation
 
@@ -52,17 +36,34 @@ mage build
 
 Download the latest binary from [releases](https://github.com/cnphpbb/mysshw/releases).
 
+### Docker
+
+```bash
+# Build
+docker build -t mysshw:latest .
+docker build -t mysshw:v26.06.13.2 \
+  --build-arg VERSION=v26.06.13.2 \
+  --build-arg BUILD=$(git rev-parse --short HEAD) \
+  --build-arg BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) .
+
+# Run
+docker run --rm -it mysshw:latest
+docker run --rm -v $PWD/mysshw.toml:/home/mysshw/.mysshw.toml:ro mysshw
+```
+
+The image is based on `alpine:3.19`, runs as non-root `mysshw` user, and includes ca-certificates + tzdata. See `Dockerfile` for build details.
+
+> **Why Docker for Windows**: mysshw uses Unix terminal semantics (raw mode, KeepAlive goroutines, scp binary invocation). On Windows native, several features are limited (`Ctrl+D` does not exit, scp client needs `scp.exe` in PATH, etc.). Docker provides a consistent Linux userspace and is the recommended way to run on Windows.
+
 ## Configuration
 
-The configuration file can be placed in one of the following locations:
+The configuration file can be placed in one of:
 - `~/.mysshw.toml` (recommended)
 - `~/.mysshw`
 - `./.mysshw.toml`
 - `./.mysshw`
 
-Default configuration path: `$HOME/.mysshw.toml`
-
-You can also use a custom path: `mysshw -c /path/to/your.toml`.
+Default: `$HOME/.mysshw.toml`. Override with `--cfg /path/to/your.toml`.
 
 ### Configuration Example
 
@@ -76,7 +77,7 @@ remote_path = "/data/backup/mysshw/mysshw.toml"
 
 [sync.scp]
 username = "root"
-password = "${MYSSHW_PWD_sync}"
+password = "${MYSSHW_PWD_sync}"  # supports ${VAR} and ${VAR:-default}
 keypath = ""
 passphrase = ""
 
@@ -90,7 +91,7 @@ access_key = ""               # 访问密钥
 secret_key = ""               # 密钥
 bucket_name = ""              # 桶名
 region = ""                   # 区域
-endpoint = ""                 # 终端节点 (空 → 用 remote_uri)
+endpoint = ""                 # terminal node (空 → 用 remote_uri)
 
 [[nodes]]
 groups = "Groups01"
@@ -113,7 +114,7 @@ ssh = [
 ]
 ```
 
-> ⚠️ 配置文件可能含密码/密钥引用, mysshw 加载后会自动收紧到 `0600` (Windows 由 NTFS ACL 控制)。
+> ⚠️ The configuration may contain password/key references. mysshw auto-tightens loaded config to `0600` (Windows uses NTFS ACL).
 
 ## Architecture
 
@@ -161,10 +162,10 @@ graph TB
 
 **Key design decisions:**
 
-- **Config is the single source of truth**: All flows start from `config.LoadViperConfig` → `ValidateConfig` → `chmod 0600`.
-- **Environment variables are resolved at runtime**: `${MYSSHW_PWD_*}` references in `password` / `passphrase` fields are substituted from env at SSH/SFTP connection time, not at config-load time.
-- **TOFU is opt-out, not opt-in**: `SSHNode.StrictHostKeyChecking = false` disables per-node; `MYSSHW_SKIP_HOST_KEY_CHECK=true` disables globally.
-- **Sync is the only path to remote**: There is no implicit remote write. `mysshw sync -u` / `-z` is the explicit user action.
+- **Config is the single source of truth** — every flow starts from `LoadViperConfig` → `ValidateConfig` → `chmod 0600`.
+- **Environment variables are resolved at runtime** — `${MYSSHW_PWD_*}` in `password`/`passphrase` are substituted at SSH/SFTP connection time, not config-load time.
+- **TOFU is opt-out, not opt-in** — `SSHNode.StrictHostKeyChecking = false` disables per-node; `MYSSHW_SKIP_HOST_KEY_CHECK=true` disables globally.
+- **Sync is the only path to remote** — `mysshw sync -u` / `-z` is the explicit user action.
 
 ## Environment Variables
 
@@ -211,8 +212,7 @@ mysshw -c ~/.mysshw.toml
 
 ### Config File Permissions
 
-mysshw automatically tightens the loaded config file to mode `0600` (owner-only), same for backup files.
-On Windows, `Chmod` is a no-op; permissions are controlled by NTFS ACL.
+mysshw automatically tightens the loaded config file to mode `0600` (owner-only), same for backup files. On Windows, `Chmod` is a no-op; permissions are controlled by NTFS ACL.
 
 ## Usage Examples
 
@@ -253,11 +253,14 @@ mysshw yml --help | -h
 
 Quick status — see [TODO.md](TODO.md) for full list.
 
-- ✅ P0: Repository hygiene (`.gitattributes`)
+- ✅ P0: Repository hygiene (`.gitattributes`, `analysis.md` ignored, filter-repo cleanup)
 - ✅ P0/P1: Critical bug fixes (SCP panic, Login callback)
 - ✅ P1: Security (TOFU, env vars, chmod 0600, `${VAR}` password refs)
-- 🟡 P2: Code quality, integration tests
-- ❌ P3: CI/CD, Docker image, Homebrew/Scoop
+- ✅ P2: Code quality (auth removed, tag unified, context propagation, etc.)
+- 🟡 P2: UI theme (deferred), S3/WebDAV mock tests, end-to-end SSH tests
+- ✅ P3: Dockerfile, architecture diagram, changelog rule
+- ⏸️ P3: CI/CD, Homebrew, Scoop (not goals)
+- ❌ P3: `go install` docs, changelog link in readme
 
 ## Go Packages
 
@@ -272,7 +275,7 @@ Quick status — see [TODO.md](TODO.md) for full list.
 - [golang.org/x/crypto/ssh](https://pkg.go.dev/golang.org/x/crypto/ssh) — SSH protocol
 - [golang.org/x/term](https://pkg.go.dev/golang.org/x/term) — raw terminal
 - [gopkg.in/yaml.v3](https://gopkg.in/yaml.v3) — YAML migration
-- [github.com/stretchr/testify](https://github.com/stretchr/testify) — testing
+- [github.com/stretchr/testify](https://github.com/stretchr/testify) — testing framework
 
 See [go.mod](go.mod) for the complete list with versions.
 
@@ -283,11 +286,17 @@ go test -v ./...
 mage test          # with coverage report
 ```
 
-We use [testify](http://github.com/stretchr/testify) as our Go testing framework.
+We use [testify](http://github.com/stretchr/testify) as our Go testing framework. Test coverage includes:
+
+- **110+ test cases** across 13 test files
+- SCP protocol layer: 100% covered
+- `ValidateConfig`: 27 cases covering all branches
+- `ssh/hostkey.go` TOFU + env var + callback strategy
+- Mock SSH server (using `golang.org/x/crypto/ssh`) for end-to-end transfer tests
 
 ## Contributing
 
-Issues and PRs welcome! Project is MIT licensed.
+Issues and PRs welcome! Project is MIT licensed. See [AGENTS.md](AGENTS.md) for the AI-agent development guide and process rules (commit format, tag/changelog workflow, branch classification).
 
 ## License
 
@@ -316,22 +325,28 @@ echo "alias mysshw='./mysshw -c ./mysshw.toml'" >> ~/.bashrc
 source ~/.bashrc
 ```
 
-### Windows Platform
+### Windows Platform (Native)
 
-- Use PowerShell, Windows Terminal, WSL, or Git Bash for best experience.
-- Install OpenSSH client, Git, mingw64.
-- Add the following to system `PATH`:
-  - `C:\Windows\System32\OpenSSH`
-  - `C:\Program Files\Git\usr\bin`
-  - `C:\Program Files\Git\mingw64\bin`
-  - `C:\Program Files\Git\usr\sbin`
-  - `C:\Program Files\Git\usr\libexec\git-core`
-  - `C:\Program Files\Git\mingw64\libexec\git-core`
-- Restart the terminal.
+> ⚠️ **Not recommended** — use [Docker](#docker) instead. Native Windows has several limitations:
+
+- `Ctrl+D` does not exit (use `Ctrl+C` or `q | Q`)
+- `scp.exe` must be in `PATH` for `sync` subcommand
+- Terminal raw mode behavior differs from Unix
+
+If you must run on Windows natively:
+
+1. Use PowerShell, Windows Terminal, WSL, or Git Bash
+2. Install OpenSSH client, Git, mingw64
+3. Add to system `PATH`:
+   - `C:\Windows\System32\OpenSSH`
+   - `C:\Program Files\Git\usr\bin`
+   - `C:\Program Files\Git\mingw64\bin`
+   - `C:\Program Files\Git\usr\sbin`
+   - `C:\Program Files\Git\usr\libexec\git-core`
+   - `C:\Program Files\Git\mingw64\libexec\git-core`
+4. Restart terminal
 
 **Supported**: `.\mysshw.exe -c D:\mydata\mysshw\mysshw.toml`
-
-> Note: `Ctrl+D` does not work on Windows. Use `Ctrl+C` or type `q | Q`.
 
 #### PowerShell Alias
 
@@ -340,10 +355,14 @@ PowerShell's `Set-Alias` doesn't support parameters, so create a function in you
 ```powershell
 notepad $profile   # open profile (create $PROFILE first if missing)
 
-# Add this to the profile:
+# Add to the profile:
 function mysshw {
     D:\sbin\mysshw.exe -c D:\mydata\mysshw\mysshw.toml $args
 }
 ```
 
 Restart PowerShell to activate.
+
+## Changelog
+
+See [changelog.v26.06.13.2.md](changelog.v26.06.13.2.md) for the latest release. Process rule: every version tag on `main` must have a corresponding `changelog.${tag}.md` (see [AGENTS.md](AGENTS.md)).

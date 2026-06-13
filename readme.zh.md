@@ -2,41 +2,23 @@
 
 **开源免费的SSH命令行客户端工具**  
 **Go 1.23.0 及以上版本**  
-**支持 Linux、macOS、Windows 平台**
+**支持 Linux、macOS、Windows 平台（Windows 强烈推荐使用 Docker）**
 
-[English Documentation](readme.md)
+[English Documentation](readme.md) · [更新日志](changelog.v26.06.13.2.md)
+
+> 🐳 **Docker 用户**：官方镜像（`mysshw:latest`）是 Windows 以及任何终端行为与 Unix 不一致的运行环境下的**推荐运行方式**。详见 [Docker](#docker)。
 
 ## 功能特性
 
-- 🚀 **SSH 2.0 协议全功能**
-  - SCP 文件传输
-  - 终端会话管理 (Raw 模式)
-  - 窗口自适应、KeepAlive 保活
-
-- 🔑 **灵活认证方式**
-  - 密码认证
-  - 密钥认证
-  - 带密码短语的密钥
-  - 键盘交互认证
-  - 主机指纹校验 (TOFU, Trust On First Use)
-
-- 🛠 **配置管理**
-  - TOML 格式
-  - 节点分组管理
-  - `${ENV_VAR}` 密码引用 (避免明文落盘)
-  - 配置文件权限自动收紧 (0600)
-  - 配置远程备份与恢复 (SCP / WebDAV / S3)
-  - 跨平台路径处理 (Windows / Linux / macOS)
-  - sshw YAML → TOML 迁移 (`mysshw yml`)
-
-- 🖥 **终端体验**
-  - huh 交互式菜单
-  - Lipgloss 颜色高亮
-  - 多种退出方式 (Ctrl+D / Ctrl+C / `q`)
-  - 退出 SSH 会话后自动返回主界面
-
-- 🔌 **配置同步 (远程备份)**
-  - SCP、WebDAV、S3 (MinIO / RustFS / 云平台 S3)
+- 🚀 **SSH 2.0 协议全功能** — 终端会话（Raw 模式）、窗口自适应、KeepAlive 保活
+- 🔑 **灵活认证方式** — 密码、密钥、带密码短语密钥、键盘交互
+- 🛡 **主机指纹校验 (TOFU)** — Trust On First Use，共享 `~/.ssh/known_hosts`
+- 🛠 **TOML 配置管理** — 节点分组、`${ENV_VAR}` 密码引用（避免明文落盘）
+- 🖥 **huh 交互式菜单** — Lipgloss 颜色高亮、虚拟"返回上级"节点
+- 🔌 **配置远程同步** — SCP、WebDAV、S3（MinIO / RustFS / 云 S3）
+- 🔁 **会话可循环** — 退出 SSH 自动返回主菜单，无需重启进程
+- 🐳 **Docker 镜像** — 多阶段构建，~21 MB，非 root 用户
+- 📦 **静态二进制** — `CGO_ENABLED=0`，跨平台直接运行
 
 ## 安装指南
 
@@ -54,17 +36,34 @@ mage build
 
 访问 [Release 页面](https://github.com/cnphpbb/mysshw/releases) 下载对应平台版本。
 
+### Docker
+
+```bash
+# 构建
+docker build -t mysshw:latest .
+docker build -t mysshw:v26.06.13.2 \
+  --build-arg VERSION=v26.06.13.2 \
+  --build-arg BUILD=$(git rev-parse --short HEAD) \
+  --build-arg BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) .
+
+# 运行
+docker run --rm -it mysshw:latest
+docker run --rm -v $PWD/mysshw.toml:/home/mysshw/.mysshw.toml:ro mysshw
+```
+
+镜像基于 `alpine:3.19`，以非 root 用户 `mysshw` 运行，包含 ca-certificates + tzdata。详见 `Dockerfile`。
+
+> **为什么 Windows 推荐 Docker**：mysshw 深度使用 Unix 终端语义（Raw 模式、KeepAlive goroutines、scp 二进制调用）。Windows 原生环境有多项限制（`Ctrl+D` 无效、需将 `scp.exe` 加入 PATH 等）。Docker 提供一致的 Linux 用户态，是 Windows 下的推荐运行方式。
+
 ## 配置文件
 
 配置文件可放在以下任一位置：
-- `~/.mysshw.toml` (推荐)
+- `~/.mysshw.toml`（推荐）
 - `~/.mysshw`
 - `./.mysshw.toml`
 - `./.mysshw`
 
-默认配置路径：`$HOME/.mysshw.toml`
-
-也可使用自定义路径：`mysshw -c /path/to/your.toml`。
+默认路径：`$HOME/.mysshw.toml`。可用 `--cfg /path/to/your.toml` 自定义。
 
 ### 配置示例
 
@@ -78,7 +77,7 @@ remote_path = "/data/backup/mysshw/mysshw.toml"
 
 [sync.scp]
 username = "root"
-password = "${MYSSHW_PWD_sync}"
+password = "${MYSSHW_PWD_sync}"  # 支持 ${VAR} 和 ${VAR:-default}
 keypath = ""
 passphrase = ""
 
@@ -115,7 +114,7 @@ ssh = [
 ]
 ```
 
-> ⚠️ 配置文件可能含密码/密钥引用, mysshw 加载后会自动收紧到 `0600` (Windows 由 NTFS ACL 控制)。
+> ⚠️ 配置文件可能含密码/密钥引用，mysshw 加载后会自动收紧到 `0600`（Windows 由 NTFS ACL 控制）。
 
 ## 架构
 
@@ -161,9 +160,9 @@ graph TB
     WebDAV --> DAV
 ```
 
-**关键设计决策：**
+**关键设计决策**：
 
-- **config 是唯一真相源**：所有流程都从 `config.LoadViperConfig` → `ValidateConfig` → `chmod 0600` 开始
+- **config 是唯一真相源**：所有流程都从 `LoadViperConfig` → `ValidateConfig` → `chmod 0600` 开始
 - **环境变量在运行时解析**：`password` / `passphrase` 中的 `${MYSSHW_PWD_*}` 在 SSH/SFTP 连接时（而非加载配置时）替换
 - **TOFU 默认开启，opt-out 关闭**：`SSHNode.StrictHostKeyChecking = false` 关闭单节点；`MYSSHW_SKIP_HOST_KEY_CHECK=true` 全局关闭
 - **远程写入只能通过 sync**：没有隐式远程写，`mysshw sync -u` / `-z` 是用户显式动作
@@ -255,11 +254,14 @@ mysshw yml --help | -h
 
 简要状态 — 完整列表见 [TODO.md](TODO.md)。
 
-- ✅ P0: 仓库健康 (`.gitattributes`)
-- ✅ P0/P1: 关键 Bug 修复 (SCP panic、Login 回调)
-- ✅ P1: 安全 (TOFU、env vars、chmod 0600、`${VAR}` 密码引用)
-- 🟡 P2: 代码质量、集成测试
-- ❌ P3: CI/CD、Docker 镜像、Homebrew/Scoop
+- ✅ P0：仓库健康（`.gitattributes`、`analysis.md` 忽略、filter-repo 清理）
+- ✅ P0/P1：关键 Bug 修复（SCP panic、Login 回调）
+- ✅ P1：安全（TOFU、env vars、chmod 0600、`${VAR}` 密码引用）
+- ✅ P2：代码质量（auth 删除、tag 统一、context 传播等）
+- 🟡 P2：UI 主题（搁置）、S3/WebDAV mock 测试、端到端 SSH 测试
+- ✅ P3：Dockerfile、架构图、changelog 规则
+- ⏸️ P3：CI/CD、Homebrew、Scoop（非目标）
+- ❌ P3：`go install` 文档化、readme 中的 changelog 链接
 
 ## Go Packages 依赖
 
@@ -285,11 +287,17 @@ go test -v ./...
 mage test          # 含覆盖率报告
 ```
 
-使用 [testify](http://github.com/stretchr/testify) 作为 Go 测试框架。
+使用 [testify](http://github.com/stretchr/testify) 作为 Go 测试框架。测试覆盖包括：
+
+- **110+ 个测试用例**，分布于 13 个测试文件
+- SCP 协议层：100% 覆盖
+- `ValidateConfig`：27 个用例覆盖全部分支
+- `ssh/hostkey.go` TOFU + env var + callback 策略
+- Mock SSH server（用 `golang.org/x/crypto/ssh`）端到端传输测试
 
 ## 贡献指南
 
-欢迎提交 Issue 和 PR！项目遵循 MIT 开源协议。
+欢迎提交 Issue 和 PR！项目遵循 MIT 开源协议。详见 [AGENTS.md](AGENTS.md) 中的 AI 代理开发指南和流程规范（commit 格式、tag/changelog 流程、分支分类）。
 
 ## 许可证
 
@@ -319,22 +327,28 @@ echo "alias mysshw='./mysshw -c ./mysshw.toml'" >> ~/.bashrc
 source ~/.bashrc
 ```
 
-### Windows 平台
+### Windows 平台（原生）
 
-- 推荐使用 PowerShell、Windows Terminal、WSL 或 Git Bash，以获得最佳体验。
-- 确保已安装 OpenSSH 客户端、Git、mingw64。
-- 添加以下路径到系统 `PATH`：
-  - `C:\Windows\System32\OpenSSH`
-  - `C:\Program Files\Git\usr\bin`
-  - `C:\Program Files\Git\mingw64\bin`
-  - `C:\Program Files\Git\usr\sbin`
-  - `C:\Program Files\Git\usr\libexec\git-core`
-  - `C:\Program Files\Git\mingw64\libexec\git-core`
-- 重启终端，使环境变量生效。
+> ⚠️ **不推荐** — 请改用 [Docker](#docker)。Windows 原生有多项限制：
+
+- `Ctrl+D` 不支持（请使用 `Ctrl+C` 或输入 `q | Q`）
+- `sync` 子命令需要 `scp.exe` 在 `PATH` 中
+- 终端 Raw 模式行为与 Unix 不同
+
+如必须在 Windows 原生运行：
+
+1. 使用 PowerShell、Windows Terminal、WSL 或 Git Bash
+2. 确保已安装 OpenSSH 客户端、Git、mingw64
+3. 添加以下路径到系统 `PATH`：
+   - `C:\Windows\System32\OpenSSH`
+   - `C:\Program Files\Git\usr\bin`
+   - `C:\Program Files\Git\mingw64\bin`
+   - `C:\Program Files\Git\usr\sbin`
+   - `C:\Program Files\Git\usr\libexec\git-core`
+   - `C:\Program Files\Git\mingw64\libexec\git-core`
+4. 重启终端，使环境变量生效
 
 **支持**： `.\mysshw.exe -c D:\mydata\mysshw\mysshw.toml`
-
-> 注意：Windows 下 `Ctrl+D` 不支持，请使用 `Ctrl+C` 或输入 `q | Q`。
 
 #### PowerShell 中设置别名
 
@@ -350,3 +364,7 @@ function mysshw {
 ```
 
 重启 PowerShell 激活。
+
+## 更新日志
+
+最新发布见 [changelog.v26.06.13.2.md](changelog.v26.06.13.2.md)。流程规则：每次在 `main` 分支打版本 tag 前必须生成 `changelog.${tag}.md`（详见 [AGENTS.md](AGENTS.md)）。

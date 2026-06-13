@@ -1,11 +1,11 @@
 # TODO List
 
-> 按优先级组织。✅ = 已完成，🔄 = 进行中，❌ = 未开始。
-> 最后更新：2026-06-13 (readme 结构同步 + 仓库健康收尾)
+> 按优先级组织。✅ = 已完成，🔄 = 进行中，⏸️ = 搁置，❌ = 未开始。
+> 最后更新：2026-06-13 (v26.06.13.2 收尾 + AGENTS.md 新增「非 main 分支 tag 分类」规则)
 
 ---
 
-## 0. 仓库健康 (P0 — 立即处理)
+## 0. 仓库健康 (P0 — 立即处理) ✅ 全部完成
 
 | 状态 | 任务 | 说明 | 完成日期 |
 |------|------|------|---------|
@@ -13,48 +13,50 @@
 | ✅ | 文档统一行尾为 LF | `sed -i 's/\r$//'` + .gitattributes 自动保护 | 2026-06-13 |
 | ✅ | `analysis.md` 加入 `.gitignore` + 从索引 untrack | 本地 AI 文档不入库, 历史记录保留 | 2026-06-13 |
 | ✅ | `git filter-repo` 清理已提交的二进制 (`mysshw` / `sshw/sshw`) | 11.9 MB + 7 MB, 178 commits 全重写 | 2026-06-13 |
+| ✅ | AGENTS.md 新增「Tag 与 Changelog 流程」规则 | tag 必生成 `changelog.${tag}.md` 并先 commit 后 push | 2026-06-13 |
+| ✅ | AGENTS.md 新增「分支与 Tag 分类」规则 | **只有 main 分支 tag 才是版本发布**, 其他分支 tag 自由命名 | 2026-06-13 |
 
 ---
 
-## 1. 安全 (Security) — P1
+## 1. 安全 (Security) — P1 ✅ 全部完成
 
 | 状态 | 任务 | 涉及文件 | 完成日期 |
 |------|------|---------|---------|
 | ✅ | 主机指纹校验 (Trust On First Use) | `ssh/hostkey.go` | 2025-06-13 |
 | ✅ | per-node `strict_host_key_checking` 配置 | `config/model_config.go` | 2025-06-13 |
 | ✅ | 自定义 `known_hosts_path` 配置 (与 OpenSSH 隔离) | `config/model_config.go` | 2025-06-13 |
-| ✅ | 非交互场景 (CI/脚本) 支持 — `MYSSHW_SKIP_HOST_KEY_CHECK` / `MYSSHW_KNOWN_HOSTS` | `ssh/env.go`、`ssh/hostkey.go` | 2026-06-13 |
+| ✅ | 非交互场景 — `MYSSHW_SKIP_HOST_KEY_CHECK` / `MYSSHW_KNOWN_HOSTS` | `ssh/env.go`、`ssh/hostkey.go` | 2026-06-13 |
 | ✅ | 密码安全：明文 → `${ENV_VAR}` 引用 | `ssh/env.go`、`ssh/client.go` | 2026-06-13 |
 | ✅ | 默认模板删除弱密码占位 `$ZK7M@~1RY` | `config/model_config.go` | 2026-06-13 |
-| ✅ | 配置文件落盘后 `chmod 0600` | `config/backup_config.go` | 2026-06-13 |
-| ✅ | `MYSSHW_SKIP_HOST_KEY_CHECK` 等安全相关环境变量文档化 | `readme.md`、`readme.zh.md` | 2026-06-13 |
+| ✅ | 配置文件落盘后 `chmod 0600` (含自动收紧旧 0644) | `config/backup_config.go` | 2026-06-13 |
+| ✅ | `MYSSHW_SKIP_HOST_KEY_CHECK` 等文档化 | `readme.md`、`readme.zh.md` | 2026-06-13 |
 
 ---
 
-## 2. 关键 Bug 修复 (P0/P1)
+## 2. 关键 Bug 修复 (P0/P1) ✅ 全部完成
 
 | 状态 | 任务 | 涉及文件 | 完成日期 |
 |------|------|---------|---------|
-| ✅ | 修复 `scp/client.go::CopyFromRemotePassThru` 双重发送 panic | `scp/client.go:240-242` | 已修复 (2026-06-13) |
-| ✅ | 修复 `ssh/client.go::Login` 多个错误路径未调 callback | `ssh/client.go:230,262,275,294,301` | 已修复 (2026-06-13) |
+| ✅ | 修复 `scp/client.go::CopyFromRemotePassThru` 双重发送 panic | `scp/client.go:240-242` | 2025 (P0 时) |
+| ✅ | 修复 `ssh/client.go::Login` 多个错误路径未调 callback (Dial/NewSession) | `ssh/client.go:230,262,275,294,301` | 2025 (P0 时) |
 
 ---
 
-## 3. 代码质量 (P2)
+## 3. 代码质量 (P2) ✅ 全部完成
 
 | 状态 | 任务 | 涉及文件 | 完成日期 |
 |------|------|---------|---------|
-| ✅ | `auth` 包清理：删除死包，4 个函数全部移除 | (包删除) | 2026-06-13 |
+| ✅ | `auth` 包清理：删除死包 (4 函数全部移除) | (包删除) | 2026-06-13 |
 | ✅ | `SCPConfig.KeyPath` tag 统一为 `keypath` (与 `SSHNode` 一致) | `config/model_config.go` | 2026-06-13 |
-| ✅ | `magefile.go::tag()` 重命名为 `branch()`, 修正注释 | `magefile.go` | 2026-06-13 |
+| ✅ | `magefile.go::tag()` 重命名为 `branch()`, 修正误导性注释 | `magefile.go` | 2026-06-13 |
 | ✅ | `s3/client.go` 和 `webdav/client.go` 的 `SyncConfig`/`GetConfig` 未用代码清理 | `s3/client.go`、`webdav/client.go` | 2026-06-13 |
 | ✅ | `S3.NewClient` / `WebDAV.NewClient` 改用 `strings.HasPrefix(..., "/")` 校验远程路径 | `s3/client.go`、`webdav/client.go` | 2026-06-13 |
 | ✅ | S3 / WebDAV 客户端接受外部 `context.Context` 参数 | `s3/client.go`、`webdav/client.go`、`cmd/sync_cobra.go` | 2026-06-13 |
-| ✅ | 默认 TOML 模板中 `[sync.webdav]` `Auth` 改为 `auth` (大小写统一) | `config/model_config.go` | 2025-09 (commit 2168426) |
+| ✅ | 默认 TOML 模板 `[sync.webdav]` `Auth` → `auth` 大小写统一 | `config/model_config.go` | 2025-09 (commit 2168426) |
 
 ---
 
-## 4. RunSSH 功能 (P2)
+## 4. RunSSH 功能 (P2) 🟡 部分 (剩主题切换)
 
 | 状态 | 任务 | 涉及文件 |
 |------|------|---------|
@@ -64,11 +66,11 @@
 | ✅ | 支持 `q` / `Q` 退出 | `cmd/runssh_cmd.go` |
 | ✅ | 支持 `Ctrl+c` 退出 | `cmd/runssh_cmd.go` |
 | ✅ | 主界面支持搜索 | `ssh/cmd.go` (huh Filter) |
-| ❌ | 主界面支持主题 | `ssh/cmd.go` (lipgloss theme) |
+| ⏸️ | 主界面支持主题 | `ssh/cmd.go` (lipgloss theme) — **搁置** |
 
 ---
 
-## 5. 配置管理 (P2)
+## 5. 配置管理 (P2) ✅ 主要完成 (剩加密)
 
 | 状态 | 任务 | 涉及文件 |
 |------|------|---------|
@@ -83,7 +85,7 @@
 
 ---
 
-## 6. Sync Actions (P2)
+## 6. Sync Actions (P2) ✅ 全部完成
 
 | 状态 | 任务 | 完成日期 |
 |------|------|---------|
@@ -98,17 +100,17 @@
 
 ---
 
-## 7. 用户界面 (P2)
+## 7. 用户界面 (P2) 🟡 部分 (剩 huh 主题)
 
 | 状态 | 任务 |
 |------|------|
 | ✅ | 实现命令自动补全 (cobra 默认) |
 | ✅ | 用 `charmbracelet/huh` 替换 `manifoldco/promptui`（后者已停止维护）|
-| ❌ | huh 主题定制（huh 自带 `huh.Theme*()`，可暴露配置） |
+| ⏸️ | huh 主题定制（huh 自带 `huh.Theme*()`，可暴露配置）— **搁置** |
 
 ---
 
-## 8. 测试 (P2)
+## 8. 测试 (P2) 🟡 主要完成 (剩 2 集成)
 
 | 状态 | 任务 | 涉及包 | 完成日期 |
 |------|------|-------|---------|
@@ -117,45 +119,42 @@
 | ✅ | 单元测试：`expandHomeDir` 9 个子用例 | `ssh/client_test.go` | 已有 |
 | ✅ | 单元测试：TOFU 主机指纹 8 个用例 | `ssh/hostkey_test.go` | 已有 |
 | ✅ | 单元测试：`isEnvTrue` + env 路径解析 + callback 策略 7 个用例 | `ssh/hostkey_test.go` | 2026-06-13 |
-| ✅ | 单元测试：`resolveEnvRef` 8 个用例 | `ssh/env_test.go` | 2026-06-13 |
+| ✅ | 单元测试：`ResolveEnvRef` 8 个用例 | `ssh/env_test.go` | 2026-06-13 |
 | ✅ | 单元测试：`secureConfigFile` 4 个用例 | `config/backup_config_test.go` | 2026-06-13 |
 | ✅ | 集成测试：SCP 协议 11 个用例 (`ParseResponse` / `Ack` / `CopyN` / `FileInfos`) | `scp/protocol_test.go` | 2026-06-13 |
 | ✅ | 集成测试：SCP 传输 4 个用例 (mock SSH server 端到端) | `scp/client_test.go` | 2026-06-13 |
 | ✅ | 集成测试：配置校验 27 个用例 (`ValidateConfig` 全分支) | `config/validated_config_test.go` | 2026-06-13 |
 | ✅ | 集成测试：YML 迁移 12 个用例 (`escapeTomlString` + `convertYAMLToTOML`) | `cmd/yml_cmd_test.go` | 2026-06-13 |
-| ✅ | 单元测试：s3/webdav `joinRemotePath` 4 子用例 + `minioFileInfo` | `s3/client_test.go`、`webdav/client_test.go` | 2026-06-13 |
+| ✅ | 单元测试：s3/webdav `joinRemotePath` 8 子用例 + `minioFileInfo` | `s3/client_test.go`、`webdav/client_test.go` | 2026-06-13 |
 | ✅ | 单元测试：cmd `createSSHConfig` 4 个用例 (env 引用) | `cmd/sync_cobra_test.go` | 2026-06-13 |
 | ❌ | 集成测试：S3 / WebDAV 客户端 (需 mock S3/MinIO server) | `s3/`、`webdav/` | — |
-| ❌ | 端到端测试：完整 SSH 客户端连接流程 (含键盘交互认证) | 新建 | — |
+| ❌ | 端到端 SSH 客户端测试 (含键盘交互认证) | 新建 | — |
 
 ---
 
-## 9. 发布与运维 (P3)
+## 9. 发布与运维 (P3) 🟡 主要完成
 
 | 状态 | 任务 | 涉及文件 | 完成日期 |
 |------|------|---------|---------|
 | ✅ | Mage 构建任务 (Build / Pack / Test / Clean) | `magefile.go` | 已有 |
 | ✅ | 8 平台交叉编译 + 打包 | `magefile.go::Pack` | 已有 |
 | ✅ | GitHub Releases 发布 | 历史记录 | 已有 |
-| ✅ | `v26.06.13` tag 创建并推送 | annotated tag, 包含完整 changelog | 2026-06-13 |
-| ✅ | `v26.06.13.1` tag 创建并推送 (P2 收尾) | annotated tag | 2026-06-13 |
-| ✅ | `Dockerfile` (多阶段: golang → alpine) | `Dockerfile`、`Dockerfile` 镜像 20.9 MB | 2026-06-13 |
-| ✅ | `.dockerignore` 排除无关文件 | `.dockerignore` | 2026-06-13 |
-| ⏸️ | 自动化 CI/CD (`.github/workflows/`) | — | 搁置 (非生产环境工具) |
-| ⏸️ | Homebrew tap (macOS) | — | 搁置 (作者不想推) |
-| ⏸️ | Scoop bucket (Windows) | — | 搁置 (作者不想推) |
+| ✅ | `v26.06.13` / `v26.06.13.1` / `v26.06.13.2` tag 推送 | annotated tag + changelog | 2026-06-13 |
+| ✅ | `Dockerfile` (多阶段: golang → alpine) | `Dockerfile`、`.dockerignore` (~21 MB) | 2026-06-13 |
+| ⏸️ | 自动化 CI/CD (`.github/workflows/`) | — | **搁置** (非生产环境工具) |
+| ⏸️ | Homebrew tap (macOS) | — | **搁置** (作者不想推) |
+| ⏸️ | Scoop bucket (Windows) | — | **搁置** (作者不想推) |
 | ❌ | `go install github.com/cnphpbb/mysshw@latest` 文档化 | `readme.md` | — |
 
 ---
 
-## 10. 文档 (P3)
+## 10. 文档 (P3) 🟡 主要完成 (剩 changelog 链接)
 
 | 状态 | 任务 | 完成日期 |
 |------|------|---------|
 | ✅ | `readme.md` (英文) | 2026-06-13 |
 | ✅ | `readme.zh.md` (中文) | 2026-06-13 |
-| ✅ | `AGENTS.md` (AI 代理开发指南) | 已有 |
-| ✅ | `AGENTS.md` 新增「Tag 与 Changelog 流程」规则 | 2026-06-13 |
+| ✅ | `AGENTS.md` (AI 代理开发指南) | 2026-06-13 (含 tag + changelog + 分支分类 规范) |
 | ✅ | `analysis.md` (项目深度分析) | 2026-06-13 (已加入 .gitignore, 仅本地) |
 | ✅ | `readme.md` 与 `readme.zh.md` 大纲结构统一 (15 主章节对应) | 2026-06-13 |
 | ✅ | 移除文档中过时的 `pkg/sftp` 引用 + 弱密码示例 | 2026-06-13 |
@@ -165,63 +164,47 @@
 
 ---
 
+## 11. AGENTS.md 规范 (流程类)
+
+| 状态 | 规则 | 涉及章节 |
+|------|------|---------|
+| ✅ | commit 频率 + 中文 commit 格式 | §9.7 |
+| ✅ | Tag 与 Changelog 流程 (tag 前必须生成 `changelog.${tag}.md`) | §9.7 |
+| ✅ | 分支与 Tag 分类 (**只有 main 分支 tag 视为版本发布**) | §9.7 |
+
+---
+
 ## 优先级总览
 
 | 优先级 | 类别 | 任务数 | 状态 |
 |--------|------|--------|------|
-| P0 | 仓库健康 (CRLF) + 关键 Bug | 4 + 2 | ✅ 全部完成 2026-06-13 |
+| P0 | 仓库健康 (CRLF) + 关键 Bug | 6 | ✅ 全部完成 2026-06-13 |
 | P1 | 安全 (密码/非交互) | 8 | ✅ 全部完成 2026-06-13 |
-| P2 | 代码质量 + RunSSH + 配置 + Sync + UI + 测试 | 7 + 1 + 1 + 0 + 1 + 6 | 🟡 主要完成 (剩 UI 主题 + S3/WebDAV 集成测试 + 端到端 SSH) |
-| P3 | 发布 + 文档 | 4 + 2 | 🟡 大部分完成 (Docker ✅, 架构图 ✅, 4 项搁置/未做) |
+| P2 | 代码质量 + RunSSH + 配置 + Sync + UI + 测试 | 7 + 1 + 1 + 0 + 1 + 5 | 🟡 主要完成 (UI 主题 + 2 集成测试未做) |
+| P3 | 发布 + 文档 | 5 + 1 | 🟡 主要完成 (Docker ✅, 架构图 ✅, 4 项搁置/未做) |
 
 ---
 
-## v26.06.13.2 发布总结 (P3 收尾 + Changelog 规则)
+## v26.06.13.x 三阶段发布总览
 
-✅ **P0/P1 全部完成** (4 项 P0 + 8 项 P1 + 2 项关键 Bug)
-✅ **P2 代码质量全部完成** (7/7 项)
-✅ **P2 测试大幅推进** (5/7 项: SCP 协议 11 + SCP 传输 4 + 配置校验 27 + YML 12 + s3/webdav/cmd 杂项)
-🟡 **P2 未完成**: UI 主题、s3/webdav 集成测试 (需 mock server)、端到端 SSH 客户端测试
-🟡 **P3 大部分完成** (Docker 镜像 + 架构图 + changelog 规则)
-⏸️ **P3 搁置** (CI/CD + Homebrew + Scoop - 都不是目标)
-❌ **P3 未做** (`go install` 文档化 + changelog 链接到 readme)
-
-代码质量改进统计 (P2 期间累计):
-- 删除死代码: ~230 行 (auth 包 + s3/webdav SyncConfig/GetConfig)
-- API 增强: s3/webdav 接受 context.Context
-- API 一致性: SCPConfig.KeyPath tag 统一
-- 测试覆盖: +78 个测试用例 (P2)
-
-P3 新增产物:
-- `Dockerfile` + `.dockerignore` (镜像 20.9 MB, alpine 基础)
-- readme 中英文新增「架构」章节 (mermaid 图)
-- `AGENTS.md` 新增 changelog 规则 (强制流程)
-- 本次 tag 前会生成 `changelog.v26.06.13.2.md`
-
-下次发布可考虑:
-- s3/webdav 集成测试 (需 mock S3/MinIO server, 类似 scp 的 mock SSH server)
-- 端到端 SSH 客户端测试 (含键盘交互认证)
-- Huh 主题切换 (如需要)
+```
+v26.06.13   (P1)  6 个 commit   +312/-127  安全完整集
+v26.06.13.1 (P2) 12 个 commit   +975/-323  代码质量 + 测试收尾
+v26.06.13.2 (P3)  5 个 commit   +318/-17   Docker + 架构图 + 流程规范
+─────────────────────────────────────────────────────────
+累计 23 个 commit, +1605/-467 行, +110 个测试用例
+```
 
 ---
 
-代码质量改进统计:
-- 删除死代码: ~150 行 (auth 包 + s3/webdav SyncConfig/GetConfig)
-- API 增强: s3/webdav 接受 context.Context
-- API 一致性: SCPConfig.KeyPath tag 统一
-- 测试覆盖: +78 个测试用例
+## 显式搁置项 (P2/P3)
 
-测试覆盖率 (截至本次):
-- scp/protocol.go: 100% (11/11 公开函数)
-- scp/client.go: ~60% (4 集成测试覆盖主要路径)
-- config/validated_config.go: 100% (27 用例)
-- cmd/yml_cmd.go: ~80% (12 用例)
-- cmd/sync_cobra.go: ~70% (4 用例)
-
-下次发布可考虑:
-- 完成 P3 任务: CI/CD、Docker 镜像、Homebrew/Scoop
-- 添加 s3/webdav 集成测试 (需 mock S3/MinIO server, 类似 scp 的 mock SSH server)
-- 端到端 SSH 客户端测试 (含键盘交互认证流程)
+| 项 | 原因 | 决定日期 |
+|---|---|---|
+| Huh UI 主题切换 | 现有 huh 默认主题已够用 | 2026-06-13 |
+| Homebrew tap (macOS) | 作者不想推 | 2026-06-13 |
+| Scoop bucket (Windows) | 作者不想推 | 2026-06-13 |
+| GitHub Actions CI/CD | 非生产环境工具 | 2026-06-13 |
 
 ---
 
@@ -230,3 +213,5 @@ P3 新增产物:
 - "完成" 的定义：代码已提交到 HEAD，文档已同步。
 - "进行中" 仅用于有 WIP 分支或工作区修改未提交的情况。
 - 安全相关任务即使排 P1，也应在下一次发布前完成。
+- AGENTS.md 是项目所有流程规范的唯一真相源。
+
