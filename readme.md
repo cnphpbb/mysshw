@@ -27,15 +27,27 @@ Default configuration path: `$HOME/.mysshw.toml`
 cfg_dir = "~/.mysshw.toml"   # default:  $HOME/.sshw.toml
 
 [sync]
-type = "scp" # type: ( scp || github || gitee || Api-http || rpc ) default: scp
+type = "scp" # type: ( scp || webdav || s3 ) default: scp
 remote_uri = "127.0.0.1:22"
+remote_path = "/data/backup/mysshw/mysshw.toml"
+
+[sync.scp]
 username = "root"
-password = "qweqwe123"
+password = "${MYSSHW_PWD_sync}"
 keyPath = ""
 passphrase = ""
-remote_path = "/data/backup/mysshw/mysshw.toml"
-access_token = "" # gitee_access_token
-gist_id = ""  #gist_id
+
+[sync.webdav]
+auth = "Basic" # Basic || Digest
+username = "root"
+password = "${MYSSHW_PWD_webdav}"
+
+[sync.s3]
+access_key = "" # 访问密钥
+secret_key = "" # 密钥
+bucket_name = "" # 桶名
+region = "" # 区域
+endpoint = "" # 终端节点 这个值为空，按 remote_uri 的值
 
 [[nodes]]
 groups = "Groups01"
@@ -82,6 +94,43 @@ port = 65522
 keypath="~/.ssh/id_rsa"
 passphrase = "cnphpbb#Yong"
 ```
+
+## Environment Variables
+
+mysshw supports the following environment variables for non-interactive scenarios (CI / scripts / containers).
+
+### Host Key Verification
+
+| Variable | Values | Description |
+|----------|--------|-------------|
+| `MYSSHW_SKIP_HOST_KEY_CHECK` | `true` / `1` / `yes` | Skip all host key checks (uses `InsecureIgnoreHostKey`). **MITM risk**, recommended only for test or isolated networks. |
+| `MYSSHW_KNOWN_HOSTS` | absolute path | Custom `known_hosts` path. Highest priority, overrides `config.KnownHostsPath` and default `~/.ssh/known_hosts`. Supports `~` and `$HOME` expansion. |
+
+### Password & Key Passphrase (`${VAR}` References)
+
+`password` and `passphrase` fields support shell-style `${VAR}` references, **avoiding plain-text storage**:
+
+```toml
+[[nodes.ssh]]
+name = "web01"
+host = "192.168.1.101"
+user = "admin"
+password = "${MYSSHW_PWD_web01}"            # required
+# passphrase = "${MYSSHW_KEY_PASSPHRASE}"  # key passphrase also supported
+# password = "${MYSSHW_PWD_x:-fallback}"   # default value when unset
+# password = "${MYSSHW_PWD_x:-}"           # empty default, fall back to interactive prompt
+```
+
+**Syntax**:
+- `${VAR}` — substitute `$VAR`; empty if unset
+- `${VAR:-default}` — use `default` when `$VAR` is unset/empty (default may contain spaces, punctuation)
+- Other text preserved as-is
+
+### Config File Permissions
+
+mysshw automatically tightens the loaded config file to mode `0600` (owner-only), same for backup files.
+On Windows, `Chmod` is a no-op; permissions are controlled by NTFS ACL.
+
 ## Go Packages
 
 - github.com/magefile/mage

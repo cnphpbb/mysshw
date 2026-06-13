@@ -125,6 +125,54 @@ user = 'root'
 port = 22
  ```
 
+## 环境变量 (Environment Variables)
+
+mysshw 支持以下环境变量，用于非交互式场景（CI/脚本/容器）。
+
+### 主机指纹校验
+
+| 变量名 | 取值 | 说明 |
+|--------|------|------|
+| `MYSSHW_SKIP_HOST_KEY_CHECK` | `true` / `1` / `yes` | 跳过所有主机指纹校验（用 `InsecureIgnoreHostKey`）。**有 MITM 风险**，仅推荐测试或隔离网络环境。 |
+| `MYSSHW_KNOWN_HOSTS` | 绝对路径 | 自定义 `known_hosts` 文件路径。优先级最高，覆盖 `config.KnownHostsPath` 和默认 `~/.ssh/known_hosts`。支持 `~` 和 `$HOME` 展开。 |
+
+### 密码与私钥口令（`${VAR}` 引用）
+
+`password` 和 `passphrase` 字段支持 Shell 风格的 `${VAR}` 引用，**避免明文落盘**：
+
+```toml
+[[nodes.ssh]]
+name = "web01"
+host = "192.168.1.101"
+user = "admin"
+password = "${MYSSHW_PWD_web01}"            # 必填
+# passphrase = "${MYSSHW_KEY_PASSPHRASE}"  # 私钥口令同样支持
+# password = "${MYSSHW_PWD_x:-fallback}"   # 未设置时使用默认值
+# password = "${MYSSHW_PWD_x:-}"           # 未设置时为空, 走交互输入
+```
+
+**语法**：
+- `${VAR}` — 取环境变量 `$VAR`；未设置或为空时替换为空字符串
+- `${VAR:-default}` — `$VAR` 未设置或为空时使用 `default`（default 可含空格、标点）
+- 其他文本原样保留
+
+**使用示例**：
+
+```bash
+# 方式 1: 启动前 export
+export MYSSHW_PWD_web01='S3cret!'
+mysshw -c ~/.mysshw.toml
+
+# 方式 2: 配合 secret 管理工具 (如 Vault, 1Password CLI, pass)
+export MYSSHW_PWD_web01=$(op read 'op://vault/web01/password')
+mysshw -c ~/.mysshw.toml
+```
+
+### 配置文件权限
+
+mysshw 加载配置后会自动将权限收紧到 `0600`（仅所有者可读写），备份文件同样处理。
+Windows 上 `Chmod` 是 no-op，权限由 NTFS ACL 控制。
+
 ## 使用示例
 ```bash
 # 查看帮助信息
