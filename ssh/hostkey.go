@@ -34,10 +34,21 @@ var currentHomeDir = func() (string, error) {
 	return u.HomeDir, nil
 }
 
+// isEnvTrue 解析布尔型环境变量 (true/1/yes, 大小写不敏感)
+func isEnvTrue(name string) bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv(name)))
+	return v == "true" || v == "1" || v == "yes"
+}
+
 // getKnownHostsPath 返回 known_hosts 文件的绝对路径
-// 优先使用 config.CFG.KnownHostsPath 自定义路径, 否则使用 ~/.ssh/known_hosts
+// 优先级: MYSSHW_KNOWN_HOSTS 环境变量 > config.CFG.KnownHostsPath > ~/.ssh/known_hosts
 func getKnownHostsPath() (string, error) {
-	// 优先: 用户在配置文件中指定的自定义路径
+	// 最高优先: 环境变量 (CI/脚本场景下可临时指定)
+	if envPath := os.Getenv(EnvKnownHosts); envPath != "" {
+		return resolveKnownHostsPath(envPath)
+	}
+
+	// 次优先: 用户在配置文件中指定的自定义路径
 	if config.CFG != nil && config.CFG.KnownHostsPath != "" {
 		return resolveKnownHostsPath(config.CFG.KnownHostsPath)
 	}
@@ -136,6 +147,26 @@ func trustOnFirstUseCallback() (ssh.HostKeyCallback, error) {
 			strings.Join(wantFPs, ", "),
 			ssh.FingerprintSHA256(key))
 	}, nil
+}
+
+// getHostKeyCallback 根据环境变量和节点配置返回合适的主机指纹校验策略
+// 优先级: MYSSHW_SKIP_HOST_KEY_CHECK 环境变量 > per-node strict_host_key_checking > 默认 TOFU
+func getHostKeyCallback(node *config.SSHNode) (ssh.HostKeyCallback, error) {
+	if isEnvTrue(EnvSkipHostKeyCheck) {
+		// 环境变量: 最高优先级, 用于 CI/脚本场景临时跳过校验
+		fmt.Fprintf(os.Stderr, "mysshw:: WARNING: %s=true, host key verification disabled (MITM risk)\n", EnvSkipHostKeyCheck)
+		return ssh.InsecureIgnoreHostKey(), nil
+	}
+
+	if !node.IsStrictHostKeyChecking() {
+		// per-node 配置: 测试环境跳过
+		fmt.Fprintf(os.Stderr, "mysshw:: WARNING: host key verification disabled for %s@%s (MITM risk)\n",
+			node.SetUser(), node.Host)
+		return ssh.InsecureIgnoreHostKey(), nil
+	}
+
+	// 默认: TOFU (Trust On First Use)
+	return trustOnFirstUseCallback()
 }
 
 // promptAndAddHost 提示用户确认新主机的指纹, 确认后追加到 known_hosts

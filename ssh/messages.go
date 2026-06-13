@@ -17,4 +17,9 @@ const (
 	HostKeyFirstTimeAcceptedStr = "已信任主机指纹, 保存到: %s"
 	HostKeyFirstTimeRejectedStr = "用户拒绝信任主机指纹, 连接终止"
 	HostKeyMismatchErrorStr     = "主机指纹与 known_hosts 不匹配! 可能的中间人攻击或主机密钥已变更\n  主机: %s\n  期望: %s\n  实际: %s"
+
+	// 环境变量名 (用于非交互场景)
+	EnvSkipHostKeyCheck = "MYSSHW_SKIP_HOST_KEY_CHECK"
+	EnvKnownHosts       = "MYSSHW_KNOWN_HOSTS"
+	EnvPasswordPrefix   = "MYSSHW_PWD_"
 )

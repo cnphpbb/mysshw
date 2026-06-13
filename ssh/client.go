@@ -187,20 +187,11 @@ func genSSHConfig(node *config.SSHNode) *defaultClient {
 	}))
 
 	// 主机指纹校验策略选择 (详见 ssh/hostkey.go)
-	// 默认: 严格校验 + TOFU (Trust On First Use)
-	// per-node 可通过 strict_host_key_checking = false 跳过校验 (测试环境)
-	var hostKeyCallback ssh.HostKeyCallback
-	if !node.IsStrictHostKeyChecking() {
-		fmt.Printf("mysshw:: WARNING: host key verification disabled for %s@%s (MITM risk)\n",
-			node.SetUser(), node.Host)
-		hostKeyCallback = ssh.InsecureIgnoreHostKey()
-	} else {
-		var cbErr error
-		hostKeyCallback, cbErr = trustOnFirstUseCallback()
-		if cbErr != nil {
-			fmt.Printf("mysshw:: failed to initialize host key verification: %s\n", cbErr)
-			return nil
-		}
+	// 优先级: MYSSHW_SKIP_HOST_KEY_CHECK env > per-node strict_host_key_checking > 默认 TOFU
+	hostKeyCallback, cbErr := getHostKeyCallback(node)
+	if cbErr != nil {
+		fmt.Printf("mysshw:: failed to initialize host key verification: %s\n", cbErr)
+		return nil
 	}
 
 	config := &ssh.ClientConfig{

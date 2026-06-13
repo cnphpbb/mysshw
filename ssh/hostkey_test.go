@@ -193,3 +193,115 @@ func TestGetKnownHostsPath_EmptyCustomPathFallsBackToDefault(t *testing.T) {
 	expected := filepath.Join(tmpHome, ".ssh", "known_hosts")
 	assert.Equal(t, expected, path)
 }
+
+func TestIsEnvTrue(t *testing.T) {
+	cases := []struct {
+		val      string
+		expected bool
+	}{
+		{"true", true},
+		{"TRUE", true},
+		{"True", true},
+		{"1", true},
+		{"yes", true},
+		{"YES", true},
+		{"  true  ", true}, // 带空格
+		{"false", false},
+		{"0", false},
+		{"no", false},
+		{"", false},
+		{"random", false},
+	}
+	for _, c := range cases {
+		t.Run(c.val, func(t *testing.T) {
+			t.Setenv("MYSSHW_TEST_BOOL", c.val)
+			assert.Equal(t, c.expected, isEnvTrue("MYSSHW_TEST_BOOL"))
+		})
+	}
+}
+
+func TestGetKnownHostsPath_EnvOverride(t *testing.T) {
+	withMockHome(t)
+
+	// 即使 config.CFG 有自定义路径, 环境变量也应优先
+	orig := config.CFG
+	t.Cleanup(func() { config.CFG = orig })
+	config.CFG = &config.Configs{
+		KnownHostsPath: "/should/be/ignored/by/env",
+	}
+
+	envPath := filepath.Join(t.TempDir(), "env_known_hosts")
+	t.Setenv(EnvKnownHosts, envPath)
+
+	path, err := getKnownHostsPath()
+	assert.NoError(t, err)
+	assert.Equal(t, envPath, path)
+}
+
+func TestGetKnownHostsPath_EnvOverrideWithTilde(t *testing.T) {
+	tmpHome := withMockHome(t)
+
+	envPath := "~/.mysshw_env/known_hosts"
+	t.Setenv(EnvKnownHosts, envPath)
+
+	path, err := getKnownHostsPath()
+	assert.NoError(t, err)
+
+	expected := filepath.Join(tmpHome, ".mysshw_env", "known_hosts")
+	assert.Equal(t, expected, path)
+}
+
+func TestGetHostKeyCallback_EnvSkipReturnsInsecure(t *testing.T) {
+	withMockHome(t)
+
+	t.Setenv(EnvSkipHostKeyCheck, "true")
+
+	node := &config.SSHNode{Name: "test", Host: "127.0.0.1", User: "root"}
+	cb, err := getHostKeyCallback(node)
+	assert.NoError(t, err)
+	assert.NotNil(t, cb)
+}
+
+func TestGetHostKeyCallback_EnvSkipOverridesPerNode(t *testing.T) {
+	// 环境变量 SKIP 应优先于 per-node 的 strict_host_key_checking = true
+	withMockHome(t)
+	t.Setenv(EnvSkipHostKeyCheck, "yes")
+
+	strict := true
+	node := &config.SSHNode{
+		Name:                  "test",
+		Host:                  "127.0.0.1",
+		User:                  "root",
+		StrictHostKeyChecking: &strict,
+	}
+	cb, err := getHostKeyCallback(node)
+	assert.NoError(t, err)
+	assert.NotNil(t, cb)
+}
+
+func TestGetHostKeyCallback_PerNodeSkip(t *testing.T) {
+	withMockHome(t)
+	t.Setenv(EnvSkipHostKeyCheck, "") // 显式清空
+
+	skip := false
+	node := &config.SSHNode{
+		Name:                  "test",
+		Host:                  "127.0.0.1",
+		User:                  "root",
+		StrictHostKeyChecking: &skip,
+	}
+	cb, err := getHostKeyCallback(node)
+	assert.NoError(t, err)
+	assert.NotNil(t, cb)
+}
+
+func TestGetHostKeyCallback_DefaultTOFU(t *testing.T) {
+	withMockHome(t)
+	t.Setenv(EnvSkipHostKeyCheck, "")
+
+	// 默认 (nil StrictHostKeyChecking) → 走 TOFU
+	node := &config.SSHNode{Name: "test", Host: "127.0.0.1", User: "root"}
+	cb, err := getHostKeyCallback(node)
+	assert.NoError(t, err)
+	assert.NotNil(t, cb)
+}
