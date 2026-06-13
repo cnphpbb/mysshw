@@ -234,55 +234,47 @@ func (a *Client) CopyFromRemotePassThru(w io.Writer, remotePath string, passThru
 	wg.Add(1)
 	go func() {
 		var err error
-
+		defer wg.Done()
+		// 统一在 defer 中发送 err，确保只发送一次。
+		// 修复原代码中 "if err != nil { errCh <- err }; errCh <- err" 的双重发送问题：
+		// 当 errCh 容量为 1 时，重复发送会导致发送方阻塞或 panic（已关闭 channel 上发送）。
 		defer func() {
-			if err != nil {
-				errCh <- err
-			}
 			errCh <- err
-			wg.Done()
 		}()
 
 		r, err := a.Session.StdoutPipe()
 		if err != nil {
-			errCh <- err
 			return
 		}
 
 		in, err := a.Session.StdinPipe()
 		if err != nil {
-			errCh <- err
 			return
 		}
 		defer in.Close()
 
 		err = a.Session.Start(fmt.Sprintf("%s -f %q", a.RemoteBinary, remotePath))
 		if err != nil {
-			errCh <- err
 			return
 		}
 
 		err = Ack(in)
 		if err != nil {
-			errCh <- err
 			return
 		}
 
 		res, err := ParseResponse(r)
 		if err != nil {
-			errCh <- err
 			return
 		}
 
 		infos, err := res.ParseFileInfos()
 		if err != nil {
-			errCh <- err
 			return
 		}
 
 		err = Ack(in)
 		if err != nil {
-			errCh <- err
 			return
 		}
 
@@ -292,19 +284,16 @@ func (a *Client) CopyFromRemotePassThru(w io.Writer, remotePath string, passThru
 
 		_, err = CopyN(w, r, infos.Size)
 		if err != nil {
-			errCh <- err
 			return
 		}
 
 		err = Ack(in)
 		if err != nil {
-			errCh <- err
 			return
 		}
 
 		err = a.Session.Wait()
 		if err != nil {
-			errCh <- err
 			return
 		}
 	}()

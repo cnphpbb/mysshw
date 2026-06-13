@@ -53,18 +53,19 @@ type defaultClient struct {
 }
 
 // expandHomeDir 解析路径中的波浪号和$HOME环境变量，将它们替换为用户主目录
+// 使用 currentHomeDir 变量获取家目录, 以便测试 mock
 func expandHomeDir(path string) (string, error) {
 	// 处理波浪号路径
 	if strings.HasPrefix(path, "~") {
-		// 获取当前用户信息
-		u, err := user.Current()
+		// 获取当前用户主目录 (走 currentHomeDir 以便 mock)
+		homeDir, err := currentHomeDir()
 		if err != nil {
 			return "", err
 		}
 
 		// 替换 ~ 为用户主目录
 		if path == "~" {
-			return u.HomeDir, nil
+			return homeDir, nil
 		} else if len(path) > 1 {
 			// 兼容不同操作系统的路径分隔符
 			if path[1] == '/' || path[1] == '\\' {
@@ -72,18 +73,18 @@ func expandHomeDir(path string) (string, error) {
 				relativePath := path[2:]
 				// 将反斜杠替换为正斜杠，然后让 filepath.Join 处理系统特定的分隔符
 				relativePath = strings.ReplaceAll(relativePath, "\\", "/")
-				return filepath.Join(u.HomeDir, relativePath), nil
+				return filepath.Join(homeDir, relativePath), nil
 			}
 		}
 	} else if strings.HasPrefix(path, "$HOME") {
-		// 获取当前用户信息
-		u, err := user.Current()
+		// 获取当前用户主目录 (走 currentHomeDir 以便 mock)
+		homeDir, err := currentHomeDir()
 		if err != nil {
 			return "", err
 		}
 
 		if path == "$HOME" {
-			return u.HomeDir, nil
+			return homeDir, nil
 		} else if len(path) > 5 {
 			// 处理$HOME/或$HOME\开头的路径
 			if path[5] == '/' || path[5] == '\\' {
@@ -91,7 +92,7 @@ func expandHomeDir(path string) (string, error) {
 				relativePath := path[6:]
 				// 将反斜杠替换为正斜杠，然后让 filepath.Join 处理系统特定的分隔符
 				relativePath = strings.ReplaceAll(relativePath, "\\", "/")
-				return filepath.Join(u.HomeDir, relativePath), nil
+				return filepath.Join(homeDir, relativePath), nil
 			}
 		}
 	}
@@ -185,10 +186,27 @@ func genSSHConfig(node *config.SSHNode) *defaultClient {
 		return answers, nil
 	}))
 
+	// 主机指纹校验策略选择 (详见 ssh/hostkey.go)
+	// 默认: 严格校验 + TOFU (Trust On First Use)
+	// per-node 可通过 strict_host_key_checking = false 跳过校验 (测试环境)
+	var hostKeyCallback ssh.HostKeyCallback
+	if !node.IsStrictHostKeyChecking() {
+		fmt.Printf("mysshw:: WARNING: host key verification disabled for %s@%s (MITM risk)\n",
+			node.SetUser(), node.Host)
+		hostKeyCallback = ssh.InsecureIgnoreHostKey()
+	} else {
+		var cbErr error
+		hostKeyCallback, cbErr = trustOnFirstUseCallback()
+		if cbErr != nil {
+			fmt.Printf("mysshw:: failed to initialize host key verification: %s\n", cbErr)
+			return nil
+		}
+	}
+
 	config := &ssh.ClientConfig{
 		User:            node.SetUser(),
 		Auth:            authMethods,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: hostKeyCallback,
 		Timeout:         time.Second * 10,
 	}
 
@@ -247,6 +265,8 @@ func (c *defaultClient) Login(sessionEndCallback func()) {
 					return
 				}
 				client = clientC
+				// 密码重试成功：重置 err 以避免外层 if err != nil 分支重复触发 callback
+				err = nil
 			}
 		}
 	}
@@ -258,7 +278,13 @@ func (c *defaultClient) Login(sessionEndCallback func()) {
 		return
 	}
 	//}
-	defer client.Close()
+	// client 可能仍为 nil（连接失败且未进入密码重试 / 重试也失败的场景），
+	// 在 nil receiver 上调用 Close() 会 panic，这里加 nil check 保护。
+	defer func() {
+		if client != nil {
+			client.Close()
+		}
+	}()
 
 	fmt.Printf(SSHConnectInfoStr, c.node.SetPort(), c.node.SetUser(), host, string(client.ServerVersion()))
 

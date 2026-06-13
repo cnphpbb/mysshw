@@ -2,6 +2,10 @@
 # see URL: https://github.com/cnphpbb/mysshw/blob/master/readme.md#config
 cfg_dir = "./.mysshw.toml"   # default:  $HOME/.mysshw.toml
 
+# 主机指纹校验 (可选, 留空使用默认 ~/.ssh/known_hosts)
+# 支持 ~ 和 $HOME 展开, 父目录不存在时会自动创建
+# known_hosts_path = "~/.mysshw/known_hosts"
+
 [sync]
 type = "scp" # type: ( scp || webdav || s3 ) default: scp
 remote_uri = "127.0.0.1:22"
@@ -47,11 +51,12 @@ port = 22  # 默认值:22, 不可以空, 如果是22端口, 可以忽略这个KE
 password = "" # 可以空, 可选; 如果有要自己填密码，可以空
 #keypath="~/.ssh/id_rsa" # 可以空, 可选
 #passphrase="abcdefghijklmn" # 可以空, 可选
+#strict_host_key_checking = false  # 测试环境临时跳过主机指纹校验 (不推荐生产环境使用)
 
 [[nodes]]
 groups = "Groups02"
 ssh = [
-    # 
+    #
 	# { name="no ssh conf", alias="", host="192.168.10.60", user="vm00", port=22, password="qwe123!@#qwe", keypath="~/.ssh/id_rsa", passphrase="abcdefghijklmn" },
     { name="vm-test-1", alias="TestNode-1", host="127.0.0.1", user="root", port=22, password="test#Password" },
 	{ name="vm-test-2", alias="TestNode", host="127.0.0.1", user="root", port=22, password="test#Password" },

@@ -58,7 +58,7 @@ password = "" # 可以空, 可选; 如果有要自己填密码，可以空
 [[nodes]]
 groups = "Groups02"
 ssh = [
-    # 
+    #
 	# { name="no ssh conf", alias="", host="192.168.10.60", user="vm00", port=22, password="qwe123!@#qwe", keypath="~/.ssh/id_rsa", passphrase="abcdefghijklmn" },
     { name="vm-test-1", alias="TestNode-1", host="127.0.0.1", user="root", port=22, password="test#Password" },
 	{ name="vm-test-2", alias="TestNode", host="127.0.0.1", user="root", port=22, password="test#Password" },
@@ -67,9 +67,12 @@ ssh = [
 
 type (
 	Configs struct {
-		CfgDir  string   `toml:"cfg_dir" mapstructure:"cfg_dir"`
-		SyncCfg SyncInfo `toml:"sync" mapstructure:"sync"`
-		Nodes   []Nodes  `toml:"nodes" mapstructure:"nodes"`
+		CfgDir string `toml:"cfg_dir" mapstructure:"cfg_dir"`
+		// KnownHostsPath 自定义主机指纹存储路径, 留空时使用 ~/.ssh/known_hosts
+		// 支持 ~ 和 $HOME 展开, 父目录不存在时会自动创建
+		KnownHostsPath string   `toml:"known_hosts_path,omitempty" mapstructure:"known_hosts_path"`
+		SyncCfg        SyncInfo `toml:"sync" mapstructure:"sync"`
+		Nodes          []Nodes  `toml:"nodes" mapstructure:"nodes"`
 	}
 
 	SyncInfo struct {
@@ -111,6 +114,11 @@ type (
 		KeyPath    string `toml:"keypath,omitempty" mapstructure:"keypath"`
 		Passphrase string `toml:"passphrase,omitempty" mapstructure:"passphrase"`
 		Password   string `toml:"password,omitempty" mapstructure:"password"`
+		// StrictHostKeyChecking 控制对当前节点的主机指纹校验策略
+		// nil  = 启用严格校验 (默认, 推荐, 防中间人攻击)
+		// true = 启用严格校验
+		// false = 跳过主机指纹校验 (不推荐, 测试环境可临时使用)
+		StrictHostKeyChecking *bool `toml:"strict_host_key_checking,omitempty" mapstructure:"strict_host_key_checking"`
 	}
 )
 
@@ -168,6 +176,15 @@ func (n *SSHNode) SetPassword() ssh.AuthMethod {
 		return nil
 	}
 	return ssh.Password(n.Password)
+}
+
+// IsStrictHostKeyChecking 返回该节点是否启用严格主机指纹校验
+// StrictHostKeyChecking 为 nil 时默认启用 (返回 true)
+func (n *SSHNode) IsStrictHostKeyChecking() bool {
+	if n.StrictHostKeyChecking == nil {
+		return true
+	}
+	return *n.StrictHostKeyChecking
 }
 
 const configReadInConfigPrintStr = `mysshw:: The configuration file '%s' was not detected,
