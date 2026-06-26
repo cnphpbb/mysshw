@@ -6,7 +6,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"os/user"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -108,11 +107,11 @@ func genSSHConfig(node *config.SSHNode) *defaultClient {
 	if node == nil {
 		return nil
 	}
-	u, err := user.Current()
-	if err != nil {
-		fmt.Println(err)
-		return nil
-	}
+	// u, err := user.Current()
+	// if err != nil {
+	// 	fmt.Println(err)
+	// 	return nil
+	// }
 
 	var authMethods []ssh.AuthMethod
 
