@@ -104,6 +104,7 @@ func expandHomeDir(path string) (string, error) {
 
 // genSSHConfig 生成SSH客户端配置
 func genSSHConfig(node *config.SSHNode) *defaultClient {
+	var err error
 	if node == nil {
 		return nil
 	}
