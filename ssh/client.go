@@ -117,9 +117,21 @@ func genSSHConfig(node *config.SSHNode) *defaultClient {
 	var authMethods []ssh.AuthMethod
 
 	var pemBytes []byte
-	if node.KeyPath == "" {
-		pemBytes, err = os.ReadFile(filepath.Join(u.HomeDir, ".ssh", "id_rsa"))
-	} else {
+	// if node.KeyPath == "" {
+	// 	pemBytes, err = os.ReadFile(filepath.Join(u.HomeDir, ".ssh", "id_rsa"))
+	// } else {
+	// 	// 处理波浪号路径, 将 ~ 替换为用户主目录;
+	// 	// 兼容不同操作系统的路径分隔符,
+	// 	// 主要是在Mac系统的配置文件，在Windows系统中使用不需要替换
+	// 	keyPath, expandErr := expandHomeDir(node.KeyPath)
+	// 	if expandErr != nil {
+	// 		fmt.Printf("路径解析错误: %v\n", expandErr)
+	// 	} else {
+	// 		pemBytes, err = os.ReadFile(keyPath)
+	// 	}
+	// }
+
+	if node.KeyPath != "" {
 		// 处理波浪号路径, 将 ~ 替换为用户主目录;
 		// 兼容不同操作系统的路径分隔符,
 		// 主要是在Mac系统的配置文件，在Windows系统中使用不需要替换
