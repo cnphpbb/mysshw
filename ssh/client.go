@@ -132,7 +132,9 @@ func genSSHConfig(node *config.SSHNode) *defaultClient {
 	}
 
 	if err != nil {
-		fmt.Println(err)
+		//fmt.Println(err)
+		fmt.Printf("mysshw:: 无法读取私钥 %s: %v\n", keyPath, err)
+
 	} else {
 		var signer ssh.Signer
 		// 私钥口令也支持 ${ENV_VAR} 引用
@@ -395,8 +397,9 @@ func (c *defaultClient) Login(sessionEndCallback func()) {
 // resolvePasswordForSSH 解析 SSH 认证用的明文密码 + (可选) AuthMethod
 // 输入 resolvedPwd 是 ResolveEnvRef 处理后的值 (可能是 明文 / bcrypt 哈希 / env 解析结果 / "")
 // 返回:
-//   password:     ssh.AuthMethod (明文) 或 nil (不可用)
-//   pwdCleartext: 明文字符串, 供调用方 defer zeroBytes 清理
+//
+//	password:     ssh.AuthMethod (明文) 或 nil (不可用)
+//	pwdCleartext: 明文字符串, 供调用方 defer zeroBytes 清理
 //
 // 决策 B1 自动检测分支:
 //   - bcrypt 哈希 → term.ReadPassword 交互输入 → VerifyPassword
