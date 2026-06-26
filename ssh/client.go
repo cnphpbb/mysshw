@@ -133,7 +133,7 @@ func genSSHConfig(node *config.SSHNode) *defaultClient {
 
 	if err != nil {
 		//fmt.Println(err)
-		fmt.Printf("mysshw:: 无法读取私钥 %s: %v\n", keyPath, err)
+		fmt.Printf("mysshw:: 无法读取私钥 %s: %v\n", node.KeyPath, err)
 
 	} else {
 		var signer ssh.Signer
