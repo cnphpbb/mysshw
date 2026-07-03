@@ -8,6 +8,7 @@ require (
 	github.com/GuanceCloud/toml v1.2.5
 	github.com/charmbracelet/huh v0.7.0
 	github.com/charmbracelet/lipgloss v1.1.0
+	github.com/gliderlabs/ssh v0.3.8 // 仅 e2e 测试使用 (build tag: e2e)
 	github.com/magefile/mage v1.15.0
 	github.com/minio/minio-go/v7 v7.0.95
 	github.com/spf13/cobra v1.9.1
@@ -20,6 +21,7 @@ require (
 )
 
 require (
+	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/catppuccin/go v0.3.0 // indirect

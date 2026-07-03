@@ -455,15 +455,17 @@ func (c *defaultClient) Login(sessionEndCallback func()) {
 //   - 明文     → 直接使用, 可选提示迁移为 bcrypt
 func resolvePasswordForSSH(node *config.SSHNode, resolvedPwd string, allowStdin bool) (ssh.AuthMethod, string) {
 	// 提前: 非交互场景 (AI/脚本/CI) — 不允许任何 stdin 操作
-	// bcrypt / 空密码 都是 Login 才用到的场景, 非交互场景下直接 nil
+	// 限制仅针对需要用户输入密码的场景 (bcrypt / 空) — 明文/${ENV} 仍直接使用
 	if !allowStdin {
 		if config.IsBcryptHash(resolvedPwd) {
 			fmt.Fprintln(os.Stderr, "mysshw:: bcrypt 哈希节点需要在终端中输入明文密码, 或改用 ${ENV} 引用")
+			return nil, ""
 		}
 		if resolvedPwd == "" {
-			// 静默: Exec 路径不需要密码
+			// 空密码: 非交互场景不会提示, 直接 nil (仍可走密钥)
+			return nil, ""
 		}
-		return nil, ""
+		// 明文 + ${ENV}: 跟交互路径一致处理 (fall through)
 	}
 
 	// 情况 1: bcrypt 哈希 → 交互输入 + 验证
