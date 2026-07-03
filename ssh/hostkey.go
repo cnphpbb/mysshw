@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"os/user"
@@ -87,9 +86,12 @@ func resolveKnownHostsPath(path string) (string, error) {
 // trustOnFirstUseCallback 创建一个带回退机制的主机指纹校验回调
 // 行为:
 //  1. 主机在 known_hosts 中: 严格校验, 指纹不匹配则拒绝连接（防中间人）
-//  2. 主机不在 known_hosts 中: 提示用户确认, 信任后追加写入
+//  2. 主机不在 known_hosts 中:
+//     - 终端交互 (stdin 是 TTY): 提示用户确认, 信任后追加写入
+//     - 非交互 (stdin 不是 TTY / pipe): 自动 trust 并写入 known_hosts
+//     (OpenSSH StrictHostKeyChecking=accept-new 的语义；供 AI/脚本场景使用)
 //
-// 注意: 此回调依赖 stdin 交互, 在非交互式场景 (CI/脚本) 中会失败
+// 注意: 指纹不匹配始终拒绝 (防中间人), 不受交互模式影响。
 func trustOnFirstUseCallback() (ssh.HostKeyCallback, error) {
 	path, err := getKnownHostsPath()
 	if err != nil {
@@ -126,11 +128,21 @@ func trustOnFirstUseCallback() (ssh.HostKeyCallback, error) {
 		}
 
 		if len(keyErr.Want) == 0 {
-			// 主机不在 known_hosts 中: 走交互式确认流程
-			return promptAndAddHost(path, hostname, remote, key)
+			// 主机不在 known_hosts 中: TTY 下确认, 非 TTY 下自动 trust
+			if isTerminal(os.Stdin) {
+				return promptAndAddHost(path, hostname, remote, key)
+			}
+			// 非交互场景: 自动 trust (OpenSSH accept-new 语义)
+			if err := appendKnownHost(path, hostname, key); err != nil {
+				return fmt.Errorf("mysshw:: failed to auto-trust host %s: %w", hostname, err)
+			}
+			fmt.Fprintf(os.Stderr,
+				"mysshw:: auto-trusted new host (non-interactive): %s [%s]; saved to %s\n",
+				hostname, ssh.FingerprintSHA256(key), path)
+			return nil
 		}
 
-		// 指纹不匹配: 详细诊断信息
+		// 指纹不匹配: 详细诊断信息 (不受交互模式影响, 始终拒绝)
 		// 注意: knownhosts.KeyError 没有 Got 字段, 实际收到的 key 通过 callback 参数 key 传入
 		var wantFPs []string
 		for _, k := range keyErr.Want {
@@ -164,26 +176,35 @@ func getHostKeyCallback(node *config.SSHNode) (ssh.HostKeyCallback, error) {
 }
 
 // promptAndAddHost 提示用户确认新主机的指纹, 确认后追加到 known_hosts
+//
+// stdin 是 TTY 时, 等待用户输入 y/N
+// stdin 不是 TTY 或读不到输入 (pipe/redirect/error) 时, 自动 trust
+//
+//	(OpenSSH StrictHostKeyChecking=accept-new; 让 AI/脚本场景不被卡住)
 func promptAndAddHost(knownHostsPath, hostname string, remote net.Addr, key ssh.PublicKey) error {
 	fingerprint := ssh.FingerprintSHA256(key)
-	fmt.Fprintf(os.Stderr, "\n[ %s ]\n", HostKeyFirstTimeTitleStr)
-	fmt.Fprintf(os.Stderr, "  主机: %s\n", hostname)
-	fmt.Fprintf(os.Stderr, "  指纹: %s\n", fingerprint)
-	fmt.Fprintf(os.Stderr, HostKeyFirstTimePromptStr, hostname, fingerprint)
 
-	reader := bufio.NewReader(os.Stdin)
-	input, err := reader.ReadString('\n')
-	if err != nil {
-		if errors.Is(err, io.EOF) {
-			return errors.New(HostKeyFirstTimeRejectedStr)
+	if isTerminal(os.Stdin) {
+		fmt.Fprintf(os.Stderr, "\n[ %s ]\n", HostKeyFirstTimeTitleStr)
+		fmt.Fprintf(os.Stderr, "  主机: %s\n", hostname)
+		fmt.Fprintf(os.Stderr, "  指纹: %s\n", fingerprint)
+		fmt.Fprintf(os.Stderr, HostKeyFirstTimePromptStr, hostname, fingerprint)
+
+		reader := bufio.NewReader(os.Stdin)
+		input, readErr := reader.ReadString('\n')
+		if readErr != nil {
+			// stdin 读失败 (CI 中 SIGTERM / pipe 关闭), 走自动 trust
+			fmt.Fprintf(os.Stderr,
+				"mysshw:: stdin read failed (%v); auto-trusting host %s [%s]\n",
+				readErr, hostname, fingerprint)
+		} else {
+			input = strings.TrimSpace(strings.ToLower(input))
+			if input != "y" && input != "yes" {
+				return errors.New(HostKeyFirstTimeRejectedStr)
+			}
 		}
-		return fmt.Errorf("mysshw:: failed to read user input: %w", err)
 	}
-
-	input = strings.TrimSpace(strings.ToLower(input))
-	if input != "y" && input != "yes" {
-		return errors.New(HostKeyFirstTimeRejectedStr)
-	}
+	// 非 TTY 或 read 失败: 直接走 auto-trust
 
 	if err := appendKnownHost(knownHostsPath, hostname, key); err != nil {
 		return err

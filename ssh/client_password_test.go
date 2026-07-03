@@ -4,9 +4,10 @@ import (
 	"os"
 	"testing"
 
+	"mysshw/config"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"mysshw/config"
 )
 
 // pipeStdin 把 s 写入临时 pipe, 设为 os.Stdin, 恢复函数返回
@@ -31,7 +32,7 @@ func TestResolvePasswordForSSH_Empty(t *testing.T) {
 	defer pipeStdin(t, "test-password\n")()
 
 	node := &config.SSHNode{Name: "test", Host: "127.0.0.1"}
-	auth, cleartext := resolvePasswordForSSH(node, "")
+	auth, cleartext := resolvePasswordForSSH(node, "", true)
 	assert.NotNil(t, auth, "应返回非 nil AuthMethod")
 	assert.Equal(t, "test-password", cleartext)
 }
@@ -44,7 +45,7 @@ func TestResolvePasswordForSSH_Bcrypt(t *testing.T) {
 	defer pipeStdin(t, "secret-pwd\n")()
 	node := &config.SSHNode{Name: "test", Host: "127.0.0.1"}
 
-	auth, cleartext := resolvePasswordForSSH(node, hash)
+	auth, cleartext := resolvePasswordForSSH(node, hash, true)
 	assert.NotNil(t, auth)
 	assert.Equal(t, "secret-pwd", cleartext)
 }
@@ -56,7 +57,7 @@ func TestResolvePasswordForSSH_BcryptMismatch(t *testing.T) {
 	defer pipeStdin(t, "wrong-pwd\n")()
 	node := &config.SSHNode{Name: "test", Host: "127.0.0.1"}
 
-	auth, cleartext := resolvePasswordForSSH(node, hash)
+	auth, cleartext := resolvePasswordForSSH(node, hash, true)
 	assert.Nil(t, auth, "验证失败应返回 nil")
 	assert.Empty(t, cleartext)
 }
@@ -65,7 +66,7 @@ func TestResolvePasswordForSSH_BcryptMismatch(t *testing.T) {
 func TestResolvePasswordForSSH_Plain(t *testing.T) {
 	node := &config.SSHNode{Name: "test", Host: "127.0.0.1"}
 	// isTerminal(pipe) = false → 警告跳过, 明文直接使用
-	auth, cleartext := resolvePasswordForSSH(node, "plain-password")
+	auth, cleartext := resolvePasswordForSSH(node, "plain-password", true)
 	assert.NotNil(t, auth)
 	assert.Equal(t, "plain-password", cleartext)
 }
@@ -75,8 +76,19 @@ func TestResolvePasswordForSSH_EmptyPipeEmpty(t *testing.T) {
 	defer pipeStdin(t, "")()
 
 	node := &config.SSHNode{Name: "test", Host: "127.0.0.1"}
-	auth, cleartext := resolvePasswordForSSH(node, "")
+	auth, cleartext := resolvePasswordForSSH(node, "", true)
 	assert.Nil(t, auth, "空密码 + 空输入应跳过认证")
+	assert.Empty(t, cleartext)
+}
+
+// TestResolvePasswordForSSH_NonInteractiveSkipsStdin 验证 allowStdin=false 时
+// 不读 stdin (AI/exec 场景)。即使 stdin 里有内容也直接返回 nil。
+func TestResolvePasswordForSSH_NonInteractiveSkipsStdin(t *testing.T) {
+	defer pipeStdin(t, "ignored-input\n")()
+
+	node := &config.SSHNode{Name: "test", Host: "127.0.0.1"}
+	auth, cleartext := resolvePasswordForSSH(node, "", false)
+	assert.Nil(t, auth, "非交互 + 空密码 → nil auth")
 	assert.Empty(t, cleartext)
 }
 

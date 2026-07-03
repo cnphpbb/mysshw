@@ -103,7 +103,12 @@ func expandHomeDir(path string) (string, error) {
 }
 
 // genSSHConfig 生成SSH客户端配置
-func genSSHConfig(node *config.SSHNode) *defaultClient {
+//
+// allowStdin: true (Login 用) 时, bcrypt/空密码分支允许走 promptPassword;
+//
+//	false (Executor 用) 时, 这些分支直接返回 nil AuthMethod,
+//	避免在无 terminal 的 AI/脚本场景下阻塞。
+func genSSHConfig(node *config.SSHNode, allowStdin bool) *defaultClient {
 	var err error
 	if node == nil {
 		return nil
@@ -173,14 +178,15 @@ func genSSHConfig(node *config.SSHNode) *defaultClient {
 		fmt.Printf("mysshw:: password resolved from env var for %s@%s\n", node.SetUser(), node.Host)
 	}
 
-	password, pwdCleartext := resolvePasswordForSSH(node, resolvedPwd)
+	password, pwdCleartext := resolvePasswordForSSH(node, resolvedPwd, allowStdin)
 	_ = pwdCleartext // 明文由 Go GC 负责回收, 无需手动 zero
 	// 注: Go string 不可变, 显式 zeroBytes 对 string 无效 (只能用于 []byte)
 	// term.ReadPassword 返回的 []byte 转换为 string 后已无引用, 由 GC 回收
 
 	if password != nil {
 		authMethods = append(authMethods, password)
-	} else {
+	} else if allowStdin {
+		// 非交互路径下, AuthMethod=nil 是预期 (Exec 不需要密码); 静默即可
 		fmt.Println("警告: 密码认证方式不可用，将尝试其他认证方式")
 	}
 
@@ -235,7 +241,37 @@ func genSSHConfig(node *config.SSHNode) *defaultClient {
 
 // NewClient 创建SSH客户端
 func NewClient(node *config.SSHNode) Client {
-	return genSSHConfig(node)
+	return genSSHConfig(node, true)
+}
+
+// NewClientNonInteractive 构造一个不触发 stdin 交互的 SSH 客户端
+//
+// 与 NewClient 的区别: 当 node.Password 为空 / bcrypt 哈希时,
+// NewClientNonInteractive 直接跳过, AuthMethod=nil (不读 stdin 不阻塞);
+// 用于 ssh.Executor (AI / 脚本 / CI 场景, 这些场景没有可用 stdin)。
+//
+// 注意: 其他 ssh.AuthMethod (PublicKeys, KeyboardInteractive) 仍按现有逻辑处理。
+func NewClientNonInteractive(node *config.SSHNode) Client {
+	return genSSHConfig(node, false)
+}
+
+// connect 建立到节点的 SSH 连接
+//
+// 该方法抽离自原 Login 中的 Dial 段，供 RunCommand（非交互执行器）复用，
+// 保持 Login 现有的密码重试分支不变。
+//
+// 不做交互式密码重试——非交互场景（exec）无 stdin 可用，调用方应确保
+// 认证材料（password/keypath/${ENV}/bcrypt）在执行前已就绪。
+func (c *defaultClient) connect() (*ssh.Client, error) {
+	if c == nil || c.clientConfig == nil || c.node == nil {
+		return nil, fmt.Errorf("mysshw:: defaultClient not initialised")
+	}
+	host := c.node.Host
+	port := strconv.Itoa(c.node.SetPort())
+	if host == "" {
+		return nil, fmt.Errorf("mysshw:: node %q has empty host", c.node.Name)
+	}
+	return ssh.Dial("tcp", net.JoinHostPort(host, port), c.clientConfig)
 }
 
 // Login 建立SSH连接并启动会话，sessionEndCallback在会话结束时被调用
@@ -252,7 +288,7 @@ func (c *defaultClient) Login(sessionEndCallback func()) {
 
 	var client *ssh.Client
 
-	client1, err := ssh.Dial("tcp", net.JoinHostPort(host, port), c.clientConfig)
+	client1, err := c.connect()
 	client = client1
 	if err != nil {
 		msg := err.Error()
@@ -417,7 +453,19 @@ func (c *defaultClient) Login(sessionEndCallback func()) {
 //   - bcrypt 哈希 → term.ReadPassword 交互输入 → VerifyPassword
 //   - 空字符串  → term.ReadPassword 交互输入, **不写回 TOML** (默认行为, 用户可后续 init 向导设置)
 //   - 明文     → 直接使用, 可选提示迁移为 bcrypt
-func resolvePasswordForSSH(node *config.SSHNode, resolvedPwd string) (ssh.AuthMethod, string) {
+func resolvePasswordForSSH(node *config.SSHNode, resolvedPwd string, allowStdin bool) (ssh.AuthMethod, string) {
+	// 提前: 非交互场景 (AI/脚本/CI) — 不允许任何 stdin 操作
+	// bcrypt / 空密码 都是 Login 才用到的场景, 非交互场景下直接 nil
+	if !allowStdin {
+		if config.IsBcryptHash(resolvedPwd) {
+			fmt.Fprintln(os.Stderr, "mysshw:: bcrypt 哈希节点需要在终端中输入明文密码, 或改用 ${ENV} 引用")
+		}
+		if resolvedPwd == "" {
+			// 静默: Exec 路径不需要密码
+		}
+		return nil, ""
+	}
+
 	// 情况 1: bcrypt 哈希 → 交互输入 + 验证
 	if config.IsBcryptHash(resolvedPwd) {
 		cleartext, err := promptPassword(node, "TOML 中存的是 bcrypt 哈希, 请输入明文密码以验证: ")
