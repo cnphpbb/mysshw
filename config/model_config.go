@@ -70,13 +70,13 @@ type (
 		CfgDir string `toml:"cfg_dir" mapstructure:"cfg_dir"`
 		// KnownHostsPath 自定义主机指纹存储路径, 留空时使用 ~/.ssh/known_hosts
 		// 支持 ~ 和 $HOME 展开, 父目录不存在时会自动创建
-		KnownHostsPath string   `toml:"known_hosts_path,omitempty" mapstructure:"known_hosts_path"`
+		KnownHostsPath string `toml:"known_hosts_path,omitempty" mapstructure:"known_hosts_path"`
 		// BackupKeep 写 TOML 时保留的本地备份数量 (默认 5)
 		// 备份命名: <name>.<YYYYMMDD_HHMMSS>.bak
 		// 0 或负数 → 使用 DefaultBackupKeep
 		BackupKeep int      `toml:"backup_keep,omitempty" mapstructure:"backup_keep"`
-		SyncCfg     SyncInfo `toml:"sync" mapstructure:"sync"`
-		Nodes       []Nodes  `toml:"nodes" mapstructure:"nodes"`
+		SyncCfg    SyncInfo `toml:"sync" mapstructure:"sync"`
+		Nodes      []Nodes  `toml:"nodes" mapstructure:"nodes"`
 	}
 
 	SyncInfo struct {
@@ -118,6 +118,11 @@ type (
 		KeyPath    string `toml:"keypath,omitempty" mapstructure:"keypath"`
 		Passphrase string `toml:"passphrase,omitempty" mapstructure:"passphrase"`
 		Password   string `toml:"password,omitempty" mapstructure:"password"`
+		// Proxy 跳板节点 name (指向同一配置中的另一个 SSHNode)
+		// 启用后, 连接顺序: client -> Proxy 节点 -> 本节点
+		// 典型场景: 通过 bastion 跳板访问内网不可直连的机器
+		// 注: 当前实现仅支持单跳, 多跳 (A -> B -> C) 不在阶段 4 范围
+		Proxy string `toml:"proxy,omitempty" mapstructure:"proxy"`
 		// StrictHostKeyChecking 控制对当前节点的主机指纹校验策略
 		// nil  = 启用严格校验 (默认, 推荐, 防中间人攻击)
 		// true = 启用严格校验

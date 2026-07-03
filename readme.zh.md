@@ -397,6 +397,48 @@ mysshw exec --dry-run --node prod-1 -- "uptime"
 
 `--dry-run` 不会建立任何 SSH 连接，仅打印「将要做什么」。
 
+### 跳板 (`-J` 等价)
+
+通过 `[[nodes.ssh]]` 中的 `proxy` 字段指定下一个节点名即可走跳板链:
+
+```toml
+[[nodes.ssh]]
+name = "bastion"
+host = "bastion.example.com"
+user = "sshw"
+password = "${SSHW_PWD_BASTION}"
+
+[[nodes.ssh]]
+name = "internal-1"
+host = "10.0.0.5"
+user = "app"
+password = "${SSHW_PWD_INTERNAL}"
+proxy = "bastion"   # ← 走 bastion 跳板访问
+
+[[nodes.ssh]]
+name = "deep-1"
+host = "10.0.1.10"
+user = "ops"
+proxy = "internal-1"  # ← 多跳 (最多 6 层节点, 含 target)
+```
+
+访问 `internal-1` 与直连节点无差别:
+
+```bash
+mysshw exec --node internal-1 -- "hostname"
+mysshw copy -U --node deep-1 --local ./deploy.sh --remote /tmp/deploy.sh
+mysshw list -o json | jq '.[] | select(.proxy != null)'
+```
+
+机制:
+1. `ssh.Dial` 直连跳板 (bastion)
+2. 在跳板上 `Client.Dial("tcp", next)` 建立 direct-tcpip channel
+3. channel 上二次 SSH 握手连到下一跳
+4. 链上任意 hop 失败 → 全部已建立的 transport Close (无资源泄露)
+5. 循环引用检测 + 6 层深度上限
+
+未走 proxy 时直连, 性能与之前一致。
+
 ### `copy` — 非交互文件传输
 
 ```bash

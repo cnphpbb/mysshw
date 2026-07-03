@@ -63,6 +63,7 @@ type nodeSummary struct {
 	Port    int    `json:"port"`
 	Auth    string `json:"auth"`              // key | password | env | bcrypt | empty | unknown
 	KeyPath string `json:"keypath,omitempty"` // 仅当 KeyPath 非空
+	Proxy   string `json:"proxy,omitempty"`   // 仅当 SSHNode.Proxy 非空 (节点通过跳板访问)
 }
 
 // classifyAuth 根据节点字段归类认证方式（仅展示用，不输出密码本身）
@@ -141,6 +142,7 @@ func buildNodeSummaries(cfg *config.Configs) []nodeSummary {
 				Port:    n.SetPort(),
 				Auth:    classifyAuth(n),
 				KeyPath: n.KeyPath,
+				Proxy:   n.Proxy,
 			}
 			out = append(out, s)
 		}

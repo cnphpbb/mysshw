@@ -262,10 +262,27 @@ func NewClientNonInteractive(node *config.SSHNode) Client {
 //
 // 不做交互式密码重试——非交互场景（exec）无 stdin 可用，调用方应确保
 // 认证材料（password/keypath/${ENV}/bcrypt）在执行前已就绪。
+//
+// Proxy 跳板: 若节点 SSHNode.Proxy 非空, 自动走 resolveProxyChain + dialViaProxyChain;
+//
+//	不影响现有无 Proxy 路径。
 func (c *defaultClient) connect() (*ssh.Client, error) {
 	if c == nil || c.clientConfig == nil || c.node == nil {
 		return nil, fmt.Errorf("mysshw:: defaultClient not initialised")
 	}
+
+	// Proxy 跳板链优先
+	if c.node.Proxy != "" {
+		chain, err := resolveProxyChain(c.node, config.CFG)
+		if err != nil {
+			return nil, err
+		}
+		if len(chain) > 1 {
+			return dialViaProxyChain(chain)
+		}
+		// chain 只有自身 (理论上不应该到这, 防御编程)
+	}
+
 	host := c.node.Host
 	port := strconv.Itoa(c.node.SetPort())
 	if host == "" {
