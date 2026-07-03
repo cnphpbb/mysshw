@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "name": "mysshw",
+  "description": "mysshw 是一个面向 AI agent 与脚本的 SSH CLI 工具。本 skill 让 Claude 可调用 mysshw 的 list / exec / copy 子命令。所有方法返回结构化 JSON, 错误码遵循 BSD sysexits。",
+  "version": "1.0.0",
+  "tools": [
+    {
+      "name": "ssh_list_nodes",
+      "description": "列出 mysshw 配置中所有 SSH 节点。可按 group 精确筛选, 或 --search 子串匹配 name/alias/host/user。返回 JSON schema 永不含 password 字段。",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "string",
+            "description": "按 group 名精确筛选, 留空则全部节点"
+          },
+          "search": {
+            "type": "string",
+            "description": "子串匹配 (大小写不敏感), 命中 name/alias/host/user 任一字段"
+          },
+          "cfg": {
+            "type": "string",
+            "description": "可选: 自定义 config 路径, 默认 ~/.mysshw.toml"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "ssh_exec",
+      "description": "在指定 SSH 节点上执行一条 shell 命令, 等待结束, 返回结构化结果 (stdout / stderr / exit_code / duration)。可批量扇出 (传多个 node)。默认 PTY 开启以支持 sudo / 进度条。--dry-run 模式打印计划不实际连接, 适合危险命令前的安全预演。",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "节点 name 列表, 传多个即为批量"
+          },
+          "alias": { "type": "string" },
+          "host": {
+            "type": "string",
+            "description": "按 host 定位, 可与 user/port 组合缩小"
+          },
+          "user": { "type": "string" },
+          "port": { "type": "integer", "minimum": 0, "maximum": 65535 },
+          "command": {
+            "type": "string",
+            "description": "必传, 要执行的 shell 命令"
+          },
+          "timeout": { "type": "string", "default": "30s" },
+          "no_pty": { "type": "boolean", "default": false },
+          "dry_run": { "type": "boolean", "default": false },
+          "parallel": { "type": "integer", "default": 10 }
+        },
+        "required": ["command"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "ssh_copy",
+      "description": "非交互文件传输 (SCP)。upload 上传本地文件到节点; download 从节点拉取到本地。download 仅支持单节点 (避免文件覆盖歧义)。",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node": { "type": "array", "items": { "type": "string" } },
+          "alias": { "type": "string" },
+          "host": { "type": "string" },
+          "user": { "type": "string" },
+          "port": { "type": "integer" },
+          "direction": {
+            "type": "string",
+            "enum": ["upload", "download"],
+            "description": "必传"
+          },
+          "local": { "type": "string" },
+          "remote": { "type": "string" },
+          "mode": {
+            "type": "string",
+            "default": "0644",
+            "description": "仅 upload; 远端文件权限 (4 位八进制字符串)"
+          },
+          "timeout": { "type": "string", "default": "5m" },
+          "parallel": { "type": "integer", "default": 5 }
+        },
+        "required": ["direction", "local", "remote"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "ssh_tunnel",
+      "description": "本地端口转发: 在本地端口监听, 每个连接通过 SSH server 转发到 remote host:port。Ctrl+C 优雅退出。典型用例: 通过跳板机访问内网服务。",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "tunnel 要求恰好一个节点"
+          },
+          "alias": { "type": "string" },
+          "host": { "type": "string" },
+          "user": { "type": "string" },
+          "port": { "type": "integer" },
+          "local_bind": {
+            "type": "string",
+            "description": "如 127.0.0.1:8080 或 :8080"
+          },
+          "remote_addr": {
+            "type": "string",
+            "description": "相对 SSH server 的目标, 如 127.0.0.1:80"
+          },
+          "idle_timeout": { "type": "string", "default": "0" }
+        },
+        "required": ["local_bind", "remote_addr"],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "exit_codes": {
+    "0": "OK",
+    "1": "通用 / 批量场景下部分失败",
+    "2": "认证失败",
+    "64": "命令行参数错误 (EX_USAGE)",
+    "65": "TOML 格式错 (EX_DATAERR)",
+    "66": "本地输入文件缺失 (EX_NOINPUT)",
+    "70": "内部错误 (EX_SOFTWARE)",
+    "73": "无法创建输出文件 (EX_CANTCREAT)",
+    "74": "IO 错误 (EX_IOERR)",
+    "78": "配置错 / 节点未找到 (EX_CONFIG)",
+    "124": "超时",
+    "255": "SSH 协议错误",
+    "transparent": "单节点 exec 模式: 命令自身的 exit code 透传"
+  },
+  "usage_patterns": {
+    "list_then_decide": [
+      "mysshw list -o json",
+      "用户选择节点 name",
+      "mysshw exec --node <name> -o json -- <cmd>"
+    ],
+    "dangerous_command_safety": [
+      "mysshw exec --dry-run -o json --node X --node Y -- <risk-cmd>",
+      "Claude 审查 nodes 列表是否正确",
+      "确认后去掉 --dry-run 重跑"
+    ],
+    "batch_health_check": "mysshw exec -o json --node prod-1 --node prod-2 -- \"uptime\" | jq '[.[] | {n: .node, ok: (.exit_code == 0)}]'"
+  }
+}
