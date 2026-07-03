@@ -274,6 +274,96 @@ mysshw sync --help | -h
 mysshw yml --help | -h
 ```
 
+## AI / 脚本友好模式
+
+新增的 `list` 与 `exec` 子命令专为 AI Agent 与脚本设计，不需要 TUI 菜单，可以机器可读方式输出：
+
+- 默认输出人类可读（plain），加 `-o json` 输出机器可读 JSON
+- 退出码按 BSD sysexits（0/1/2/64/65/66/70/73/74/78/124/126/127/255），AI 可直接读退出码分类错误
+- 不依赖 TTY/终端，没有 huh 或交互菜单
+
+### `list` — 列出节点
+
+```bash
+# 默认表格
+mysshw list
+
+# JSON (供 jq / AI 解析)
+mysshw list -o json
+mysshw list -o json --search prod        # 模糊匹配 name/alias/host/user
+mysshw list -o json --group Production   # 筛选 group
+```
+
+JSON 输出示例：
+
+```json
+[
+  {
+    "group": "Production",
+    "name": "prod-1",
+    "alias": "Web01",
+    "user": "app",
+    "host": "10.0.0.1",
+    "port": 22,
+    "auth": "env"
+  }
+]
+```
+
+**安全**：list 永不输出 `password` / `passphrase` 字段。`auth` 字段仅标识认证方式类别（`key` / `password` / `env` / `bcrypt` / `empty`），AI 可据此决定怎么认证。
+
+### `exec` — 在节点上执行命令
+
+```bash
+# 单节点（按 name 定位）
+mysshw exec --node prod-1 -- uptime
+
+# 按 host + user (不需要 name)
+mysshw exec --host 10.0.0.5 -u app -- "systemctl status nginx"
+
+# 按 alias
+mysshw exec --alias Web01 -- "df -h"
+
+# 批量扇出：多条 --node 并发执行
+mysshw exec --node prod-1 --node prod-2 --node prod-3 -- "uptime"
+
+# JSON 输出（适合 AI 解析）
+mysshw exec -o json --node prod-1 -- "ls -la /var/log"
+
+# 禁用 PTY (管道模式，适合二进制)
+mysshw exec --no-pty --node prod-1 -- "tar czf - /var/log" > out.tgz
+
+# 超时控制
+mysshw exec --node prod-1 --timeout 5s -- "ping 8.8.8.8"
+```
+
+**默认 PTY 开启**：支持 `sudo` / 进度条 / 交互式密码检测（sudo 需要 NOPASSWD 或配 `${ENV}`）。
+需要纯管道模式用 `--no-pty`。
+
+**退出码**：
+
+- 单节点：`os.Exit(命令退出码)`，透传命令自身的 exit code
+- 批量：任一失败时 `os.Exit(1)`，细节看 JSON 输出 `exit_code` 字段
+- 参数错误：`64` (EX_USAGE)
+- 节点未找到：`78` (EX_CONFIG)
+- 超时：`124`
+- SSH 协议错误：`255`
+
+**典型 AI 工作流**：
+
+```bash
+# 1) 让 AI 先看节点列表再决定连哪一台
+mysshw list -o json | jq '.[] | select(.group=="Production")'
+
+# 2) 在选定节点上执行命令并解析 JSON
+RESULT=$(mysshw exec -o json --node prod-1 -- "free -m")
+echo "$RESULT" | jq '.stdout'
+
+# 3) 批量检查
+mysshw exec -o json --node prod-1 --node prod-2 -- "uptime" \
+  | jq '[.[] | {name: .node, ok: (.exit_code == 0)}]'
+```
+
 ## TODO
 
 简要状态 — 完整列表见 [TODO.md](TODO.md)。

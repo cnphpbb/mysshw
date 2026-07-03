@@ -1,0 +1,241 @@
+package cmd
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"mysshw/config"
+	"mysshw/ssh"
+
+	"github.com/spf13/cobra"
+)
+
+var (
+	execNodesFlag   []string
+	execAlias       string
+	execHost        string
+	execUser        string
+	execPort        int
+	execTimeout     time.Duration
+	execParallel    int
+	execNoPTY       bool
+	execStopOnError bool
+)
+
+// execCmd 非交互 SSH 命令执行（AI / 脚本友好）
+//
+// 与默认 `mysshw` 走交互式 TUI 选择菜单不同:
+//   - 必须显式指定节点定位参数（无菜单）
+//   - 默认 PTY 开启，支持 sudo / 进度条
+//   - 一次性执行返回，不像 Login 持续附着 shell
+//   - 输出格式: plain / JSON（与 list 共用 -o flag）
+//   - 退出码: BSD sysexits; 单节点模式下命令自身的 exit code 透传
+//
+// 批量: --node 可重复, 同一条命令扇出到所有匹配节点
+var execCmd = &cobra.Command{
+	Use:   "exec [--node N [--node M] | --alias A | --host H [-u U] [-p P]] [--timeout 30s] [--parallel N] [--no-pty] -- <command> [args...]",
+	Short: "Non-interactive: log into a node and run a command",
+	Long: `Connect to one or more SSH nodes and run a command without TUI menu or PTY shell.
+
+Designed for AI agents and scripts:
+  - Requires explicit node selector (no menu)
+  - PTY enabled by default (for sudo / progress bars)
+  - Output format via -o plain|json
+  - BSD sysexits-style exit codes
+
+Selectors (priority: --node > --alias > --host [+ -u / -p]):
+  --node <name>     Exact match of SSHNode.Name (repeatable for batch)
+  --alias <alias>   Exact match of SSHNode.Alias
+  --host <host>     Match by Host (combine with -u/-p to disambiguate)
+
+Examples:
+  # Single node
+  mysshw exec --node prod-1 -- uptime
+  mysshw exec --host 10.0.0.5 -u app -- "systemctl status nginx"
+
+  # Batch fan-out
+  mysshw exec --node prod-1 --node prod-2 --node prod-3 -- "uptime"
+
+  # Machine-readable output
+  mysshw exec -o json --node prod-1 -- "df -h" | jq '.'
+
+  # Disable PTY (pure pipe)
+  mysshw exec --no-pty --node prod-1 -- "tar czf - /var/log" > out.tgz
+
+Exit codes (BSD sysexits):
+  0    成功
+  1    批量场景下部分/全部失败
+  64   命令行参数错误
+  78   节点未找到 (EX_CONFIG)
+  124  超时
+  255  SSH 协议错误
+  -    单节点模式下, exit code = 命令自身的退出码 (透传)`,
+	Args: cobra.ArbitraryArgs,
+	RunE: runExec,
+}
+
+func init() {
+	f := execCmd.Flags()
+	f.StringSliceVar(&execNodesFlag, "node", nil,
+		"Node name (exact). Repeat for batch: --node X --node Y --node Z")
+	f.StringVar(&execAlias, "alias", "", "Node alias (exact)")
+	f.StringVar(&execHost, "host", "", "Node host (combine with -u/-p)")
+	f.StringVarP(&execUser, "user", "u", "", "User for --host selector")
+	f.IntVarP(&execPort, "port", "p", 0, "Port for --host selector (0=any)")
+	f.DurationVar(&execTimeout, "timeout", 30*time.Second,
+		"Per-node command timeout (e.g. 5s, 1m); 0=no limit")
+	f.IntVar(&execParallel, "parallel", 10,
+		"Max concurrent nodes for batch (0=unbounded)")
+	f.BoolVar(&execNoPTY, "no-pty", false,
+		"Disable PTY (default: PTY enabled for sudo/progress)")
+	f.BoolVar(&execStopOnError, "stop-on-error", false,
+		"Abort batch on first node failure (default: wait all)")
+	rootCmd.AddCommand(execCmd)
+}
+
+func runExec(cmd *cobra.Command, args []string) error {
+	// Args 验证移到 RunE 内部, 才能用 ExitError(64) 而不是 cobra 默认 1
+	if len(args) == 0 {
+		return NewExitError(ExitUsage, "missing <command> after `--` (e.g. `mysshw exec --node X -- uptime`)")
+	}
+
+	if cfgPath, _ := cmd.Flags().GetString("cfg"); cfgPath != "" {
+		config.CFG_PATH = cfgPath
+	}
+	if err := config.LoadViperConfig(config.CFG_PATH); err != nil {
+		return WrapExit(ExitConfig, fmt.Errorf("load config: %w", err))
+	}
+
+	selector := ssh.NodeSelector{
+		Names: execNodesFlag,
+		Alias: execAlias,
+		Host:  execHost,
+		User:  execUser,
+		Port:  execPort,
+	}
+
+	nodes, err := ssh.ResolveNodes(config.CFG, selector)
+	if err != nil && !errors.Is(err, ssh.ErrNodeNotFound) {
+		// Names 部分缺失 = 软错误, 继续
+		fmt.Fprintln(cmd.ErrOrStderr(), "mysshw::", err)
+	}
+	if errors.Is(err, ssh.ErrNodeNotFound) {
+		return WrapExit(ExitConfig, err)
+	}
+	if len(nodes) == 0 {
+		return WrapExit(ExitConfig,
+			fmt.Errorf("no nodes matched (--node=%v --alias=%q --host=%q -u=%q -p=%s)",
+				execNodesFlag, execAlias, execHost, execUser, portOrEmpty(execPort)))
+	}
+
+	command := strings.Join(args, " ")
+	if command == "" {
+		return NewExitError(ExitUsage, "missing command after `--`")
+	}
+
+	usePTY := !execNoPTY
+
+	// 单节点: 直接透传命令 exit code
+	if len(nodes) == 1 {
+		return runExecSingle(cmd, nodes[0], command, usePTY)
+	}
+	// 批量: 任一失败 → 1
+	return runExecBatch(cmd, nodes, command, usePTY)
+}
+
+func runExecSingle(cmd *cobra.Command, node *config.SSHNode, command string, usePTY bool) error {
+	ctx, cancel := withCmdTimeout(cmd.Context(), execTimeout)
+	defer cancel()
+
+	exec, err := ssh.NewExecutor(node, ssh.ExecOptions{UsePTY: usePTY})
+	if err != nil {
+		return WrapExit(ExitAuthFailed, err)
+	}
+	defer exec.Close()
+
+	result, runErr := exec.RunCommand(ctx, command)
+	if runErr != nil {
+		// 先输出已有 result (若 dial 成功但 Run 失败)
+		_ = WriteOut(cmd.OutOrStdout(), result, GetOutputFormat(cmd))
+		if isCtxErr(runErr) {
+			return WrapExit(ExitTimeout, runErr)
+		}
+		return WrapExit(ExitSSHError, runErr)
+	}
+
+	if err := WriteOut(cmd.OutOrStdout(), result, GetOutputFormat(cmd)); err != nil {
+		return WrapExit(ExitIOErr, err)
+	}
+
+	// 透传命令自身的 exit code
+	switch {
+	case result.ExitCode == 0:
+		return nil
+	case result.ExitCode > 0 && result.ExitCode < 256:
+		os.Exit(result.ExitCode) // 透传命令 exit code
+		return nil               // unreachable
+	default:
+		return WrapExit(ExitSSHError,
+			fmt.Errorf("command exited with code %d (likely connection closed)", result.ExitCode))
+	}
+}
+
+func runExecBatch(cmd *cobra.Command, nodes []*config.SSHNode, command string, usePTY bool) error {
+	be := &ssh.BatchExecutor{
+		Nodes: nodes,
+		Options: ssh.BatchOptions{
+			UsePTY:   usePTY,
+			Timeout:  execTimeout,
+			Parallel: execParallel,
+		},
+	}
+	results := be.RunFanOut(cmd.Context(), command)
+
+	format := GetOutputFormat(cmd)
+	if err := WriteOut(cmd.OutOrStdout(), results, format); err != nil {
+		return WrapExit(ExitIOErr, err)
+	}
+
+	// 任一节点失败 → 1
+	for _, r := range results {
+		if r == nil {
+			continue
+		}
+		if r.Error != "" || r.ExitCode != 0 {
+			return NewExitError(ExitGeneric,
+				"batch completed with failures (see -o json for details)")
+		}
+	}
+	return nil
+}
+
+// --- 内部辅助 ---
+
+// withCmdTimeout 给 cmd context 加 timeout (timeout<=0 时直接返回 parent)
+func withCmdTimeout(parent context.Context, d time.Duration) (context.Context, context.CancelFunc) {
+	if d <= 0 {
+		return parent, func() {}
+	}
+	return context.WithTimeout(parent, d)
+}
+
+// isCtxErr 判断 error 链中是否含 context 错误 (timeout/cancel)
+func isCtxErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
+// portOrEmpty 把 0 端口格式化为空字符串 (便于错误信息显示)
+func portOrEmpty(p int) string {
+	if p == 0 {
+		return ""
+	}
+	return strconv.Itoa(p)
+}

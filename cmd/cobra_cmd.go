@@ -115,10 +115,14 @@ func init() {
 
 	rootCmd.PersistentFlags().BoolP("version", "v", false, "Print version for mysshw")
 
+	// AI 友好子命令使用的全局输出格式 (list / exec 等)
+	RegisterOutputFlag(rootCmd)
+
 	// 添加子命令
 	rootCmd.AddCommand(syncCmd)
 	rootCmd.AddCommand(VersionCmd)
 	rootCmd.AddCommand(YMLCmd)
+	// listCmd / execCmd 由各自文件 init() 独占注册 (避免重复)
 
 	// 为 sync 命令添加标志
 	syncCmd.Flags().BoolP("upload", "u", false, "Upload local config to remote server")
@@ -130,12 +134,21 @@ func init() {
 }
 
 // Execute 执行根命令
+//
+// 退出码策略:
+//   - RunE 返回 nil                  → exit 0
+//   - RunE 返回 *ExitError            → exit ExitError.Code (BSD sysexits)
+//   - RunE 返回其他 error 或 flag 错  → exit ExitGeneric (1)
 func Execute() {
 	err := rootCmd.ExecuteContext(context.Background())
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+	if err == nil {
+		return
 	}
+	fmt.Fprintln(os.Stderr, err)
+	if ee, ok := err.(ExitError); ok {
+		os.Exit(ee.Code)
+	}
+	os.Exit(ExitGeneric)
 }
 
 // ExecuteCobra 供 cmd.go 调用的执行函数
