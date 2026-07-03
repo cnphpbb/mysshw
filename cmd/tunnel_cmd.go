@@ -8,7 +8,6 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
-	"time"
 
 	"mysshw/config"
 	"mysshw/ssh"
@@ -16,84 +15,216 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// tunnel group flags (本地 + 远端)
 var (
-	tunnelLocal  string
-	tunnelRemote string
-	tunnelIdle   string // duration string
+	tunnelNodesFlag []string
+	tunnelAlias     string
+	tunnelHost      string
+	tunnelUser      string
+	tunnelPort      int
 )
 
-var tunnelCmd = &cobra.Command{
-	Use:   "tunnel [--node N | --alias A | --host H [-u U] [-p P]] --local 127.0.0.1:8080 --remote 127.0.0.1:80",
-	Short: "Local port forwarding over SSH",
+// 本地端口转发 (默认, 等价 `ssh -L`)
+var tunnelLocalCmd = &cobra.Command{
+	Use:   "local --local 127.0.0.1:8080 --remote 127.0.0.1:80",
+	Short: "Local port forwarding (client listens, forwards via SSH)",
 	Long: `Forward a local TCP port through an SSH tunnel to a remote endpoint
 (reachable from the SSH server).
 
-Mode: local port forwarding (SSH client listens locally, forwards via SSH to remote).
+Equivalent to OpenSSH -L.`,
+	Args: cobra.ArbitraryArgs,
+	RunE: runTunnelLocal,
+}
 
-This is non-interactive: it connects on first use, then blocks. Send SIGINT (Ctrl+C)
-or SIGTERM to stop.
+// 反向端口转发 (等价 `ssh -R`)
+var tunnelReverseCmd = &cobra.Command{
+	Use:   "reverse --bind :8080 --remote 127.0.0.1:80",
+	Short: "Reverse port forwarding (SSH server listens, forwards to client)",
+	Long: `Bind a port on the SSH server side, and forward incoming connections
+back to the client side, then forward to a local target.
 
-Exit codes:
-  0    tunnel stopped cleanly (signal or ctx cancelled)
-  64   usage error (missing/invalid flags)
-  73   local bind failed (port in use / permission)
-  74   IO error (SSH dial failed, mid-stream drop)
-  78   node not found
-  255  raw SSH protocol error
+Equivalent to OpenSSH -R.
+
+Use case: expose an internal-only service to the outside through a bastion.`,
+	Args: cobra.ArbitraryArgs,
+	RunE: runTunnelReverse,
+}
+
+// 动态转发 SOCKS5 (等价 `ssh -D`)
+var tunnelDynamicCmd = &cobra.Command{
+	Use:   "dynamic --local 127.0.0.1:1080",
+	Short: "Dynamic port forwarding (SOCKS5 proxy over SSH)",
+	Long: `Start a SOCKS5 proxy on the local side. Each connection's destination
+is forwarded through the SSH tunnel.
+
+Equivalent to OpenSSH -D.
+
+Use case: route all traffic through a bastion. Configure your browser/system
+proxy to use the listening address.`,
+	Args: cobra.ArbitraryArgs,
+	RunE: runTunnelDynamic,
+}
+
+// tunnelCmd 是 parent, 仅作为路由器 / 显示帮助
+var tunnelCmd = &cobra.Command{
+	Use:   "tunnel",
+	Short: "SSH port forwarding: local / reverse / dynamic (SOCKS5)",
+	Long: `Establish various kinds of port forwarding over an existing SSH connection.
+
+Subcommands:
+  local     -L  Client listens, forwards to remote target via SSH server
+  reverse   -R  SSH server listens, forwards to client-side target
+  dynamic   -D  Client SOCKS5 proxy, target resolved per request via SSH server
 
 Examples:
-  # Forward localhost:8080 → prod-1:80 (典型场景: 看 web 服务)
-  mysshw tunnel --node prod-1 --local 127.0.0.1:8080 --remote 127.0.0.1:80
-
-  # 监听所有接口
-  mysshw tunnel --node prod-1 --local :8080 --remote db.internal:5432
-
-  # 远程目标用别名 (依赖 /etc/hosts on SSH server)
-  mysshw tunnel --node bastion --local :2222 --remote internal-host:22`,
+  mysshw tunnel local   --node prod-1 --local 127.0.0.1:8080 --remote 127.0.0.1:80
+  mysshw tunnel reverse --node bastion --bind 0.0.0.0:8080 --remote 10.0.0.5:80
+  mysshw tunnel dynamic --node bastion --local 127.0.0.1:1080`,
 	Args: cobra.ArbitraryArgs,
-	RunE: runTunnel,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return cmd.Help()
+	},
 }
 
 func init() {
-	f := tunnelCmd.Flags()
-	f.StringVar(&tunnelLocal, "local", "",
-		"Local listen address (e.g. 127.0.0.1:8080 or :8080). Required.")
-	f.StringVar(&tunnelRemote, "remote", "",
-		"Remote address reachable from the SSH server (e.g. 127.0.0.1:80). Required.")
-	f.StringVar(&tunnelIdle, "idle-timeout", "0",
-		"Per-connection idle timeout (e.g. 30s, 5m); 0=no limit")
+	// 子命令共享的节点选择 flags (cobra flag set 各自独立, 但语义一致)
+	for _, sub := range []*cobra.Command{tunnelLocalCmd, tunnelReverseCmd, tunnelDynamicCmd} {
+		f := sub.Flags()
+		f.StringSliceVar(&tunnelNodesFlag, "node", nil,
+			"Node name (exact). For tunnel, must select exactly one node.")
+		f.StringVar(&tunnelAlias, "alias", "", "Node alias (exact)")
+		f.StringVar(&tunnelHost, "host", "", "Node host (combine with -u/-p)")
+		f.StringVarP(&tunnelUser, "user", "u", "", "User for --host selector")
+		f.IntVarP(&tunnelPort, "port", "p", 0, "Port for --host selector (0=any)")
+	}
+
+	// local 子命令专属 flag
+	localF := tunnelLocalCmd.Flags()
+	localF.String("local", "", "Local listen address (e.g. 127.0.0.1:8080)")
+	localF.String("remote", "", "Remote address reachable from SSH server (e.g. 127.0.0.1:80)")
+	localF.String("idle-timeout", "0", "Per-connection idle timeout (e.g. 30s)")
+
+	// reverse 子命令专属 flag
+	revF := tunnelReverseCmd.Flags()
+	revF.String("bind", "", "Bind address on the SSH server (e.g. 0.0.0.0:8080)")
+	revF.String("remote", "", "Client-side target (e.g. 127.0.0.1:80)")
+
+	// dynamic 子命令专属 flag
+	dynF := tunnelDynamicCmd.Flags()
+	dynF.String("local", "", "Local SOCKS5 listen address (e.g. 127.0.0.1:1080)")
+
+	tunnelCmd.AddCommand(tunnelLocalCmd, tunnelReverseCmd, tunnelDynamicCmd)
 	rootCmd.AddCommand(tunnelCmd)
 }
 
-func runTunnel(cmd *cobra.Command, args []string) error {
-	if cfgPath, _ := cmd.Flags().GetString("cfg"); cfgPath != "" {
-		config.CFG_PATH = cfgPath
-	}
-	if err := config.LoadViperConfig(config.CFG_PATH); err != nil {
-		return WrapExit(ExitConfig, fmt.Errorf("load config: %w", err))
-	}
+// --- subcommands dispatcher ---
 
-	// 参数校验
-	if tunnelLocal == "" {
+func runTunnelLocal(cmd *cobra.Command, args []string) error {
+	if err := loadTunnelConfig(); err != nil {
+		return err
+	}
+	localBind, _ := cmd.Flags().GetString("local")
+	remote, _ := cmd.Flags().GetString("remote")
+	idleStr, _ := cmd.Flags().GetString("idle-timeout")
+
+	if localBind == "" {
 		return NewExitError(ExitUsage, "missing --local (e.g. --local 127.0.0.1:8080)")
 	}
-	if tunnelRemote == "" {
+	if remote == "" {
 		return NewExitError(ExitUsage, "missing --remote (e.g. --remote 127.0.0.1:80)")
 	}
-	if !strings.Contains(tunnelLocal, ":") {
-		return NewExitError(ExitUsage, "--local must include port (e.g. 127.0.0.1:8080 or :8080)")
+	if _, _, err := net.SplitHostPort(remote); err != nil {
+		return NewExitError(ExitUsage, "--remote invalid (expected host:port): %v", err)
 	}
-	if _, _, err := net.SplitHostPort(tunnelRemote); err != nil {
+	idle, err := parseDuration(idleStr)
+	if err != nil {
+		return NewExitError(ExitUsage, "invalid --idle-timeout: %v", err)
+	}
+
+	node, err := resolveSingleTunnelNode(cmd)
+	if err != nil {
+		return err
+	}
+
+	t, err := ssh.NewTunnel(node, ssh.TunnelOptions{
+		LocalBind:   localBind,
+		RemoteAddr:  remote,
+		IdleTimeout: idle,
+	})
+	if err != nil {
+		return WrapExit(ExitUsage, err)
+	}
+	runTunnelWithSignal(cmd, t, fmt.Sprintf("local %s ↔ ssh://%s@%s → %s", localBind, node.SetUser(), node.Host, remote))
+	return nil
+}
+
+func runTunnelReverse(cmd *cobra.Command, args []string) error {
+	if err := loadTunnelConfig(); err != nil {
+		return err
+	}
+	bind, _ := cmd.Flags().GetString("bind")
+	remote, _ := cmd.Flags().GetString("remote")
+
+	if bind == "" {
+		return NewExitError(ExitUsage, "missing --bind (e.g. --bind 0.0.0.0:8080)")
+	}
+	if remote == "" {
+		return NewExitError(ExitUsage, "missing --remote (e.g. --remote 127.0.0.1:80)")
+	}
+	if _, _, err := net.SplitHostPort(remote); err != nil {
 		return NewExitError(ExitUsage, "--remote invalid (expected host:port): %v", err)
 	}
 
-	idle, err := parseDuration(tunnelIdle)
+	node, err := resolveSingleTunnelNode(cmd)
 	if err != nil {
-		return NewExitError(ExitUsage, "invalid --idle-timeout %q: %v", tunnelIdle, err)
+		return err
 	}
 
+	rt, err := ssh.NewReverseTunnel(node, ssh.ReverseTunnelOptions{
+		BindAddr:   bind,
+		TargetAddr: remote,
+	})
+	if err != nil {
+		return WrapExit(ExitUsage, err)
+	}
+	runTunnelWithSignal(cmd, rt, fmt.Sprintf("reverse ssh://%s:%s ↔ client → %s", node.Host, bind, remote))
+	return nil
+}
+
+func runTunnelDynamic(cmd *cobra.Command, args []string) error {
+	if err := loadTunnelConfig(); err != nil {
+		return err
+	}
+	local, _ := cmd.Flags().GetString("local")
+	if local == "" {
+		return NewExitError(ExitUsage, "missing --local (e.g. --local 127.0.0.1:1080)")
+	}
+
+	node, err := resolveSingleTunnelNode(cmd)
+	if err != nil {
+		return err
+	}
+
+	dt, err := ssh.NewDynamicTunnel(node, ssh.DynamicTunnelOptions{
+		ListenAddr: local,
+	})
+	if err != nil {
+		return WrapExit(ExitUsage, err)
+	}
+	runTunnelWithSignal(cmd, dt, fmt.Sprintf("dynamic SOCKS5 127.0.0.1:%s ↔ ssh://%s@%s (any target)", splitPort(local), node.SetUser(), node.Host))
+	return nil
+}
+
+// --- shared helpers ---
+
+func loadTunnelConfig() error {
+	return loadConfig()
+}
+
+// resolveSingleTunnelNode 解析节点选择; tunnel 系列命令必须 exactly 1 个
+func resolveSingleTunnelNode(cmd *cobra.Command) (*config.SSHNode, error) {
 	selector := ssh.NodeSelector{
-		Names: tunnelSelectorNames, // 从根命令同名 flag 读取
+		Names: tunnelNodesFlag,
 		Alias: tunnelAlias,
 		Host:  tunnelHost,
 		User:  tunnelUser,
@@ -102,30 +233,25 @@ func runTunnel(cmd *cobra.Command, args []string) error {
 	nodes, err := ssh.ResolveNodes(config.CFG, selector)
 	if err != nil && !isSoftErr(err) {
 		if isNodeNotFound(err) {
-			return WrapExit(ExitConfig, err)
+			return nil, WrapExit(ExitConfig, err)
 		}
-		return WrapExit(ExitConfig, err)
+		return nil, WrapExit(ExitConfig, err)
 	}
 	if len(nodes) != 1 {
-		// tunnel 暂只支持单节点
-		return NewExitError(ExitUsage,
-			"tunnel requires exactly one node, got %d (use --node/--alias/--host to disambiguate)",
+		return nil, NewExitError(ExitUsage,
+			"tunnel requires exactly one node, got %d (use --node/--alias/--host)",
 			len(nodes))
 	}
+	return nodes[0], nil
+}
 
-	t, err := ssh.NewTunnel(nodes[0], ssh.TunnelOptions{
-		LocalBind:   tunnelLocal,
-		RemoteAddr:  tunnelRemote,
-		IdleTimeout: idle,
-	})
-	if err != nil {
-		return WrapExit(ExitUsage, err)
-	}
-
+// runTunnelWithSignal 通用 signal handler + 输出 banner
+func runTunnelWithSignal(cmd *cobra.Command, t interface {
+	Close() error
+}, banner string) {
 	ctx, cancel := context.WithCancel(cmd.Context())
 	defer cancel()
 
-	// Ctrl+C / SIGTERM 优雅退出
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
@@ -134,79 +260,36 @@ func runTunnel(cmd *cobra.Command, args []string) error {
 		_ = t.Close()
 	}()
 
-	// 启动提示
-	fmt.Fprintf(cmd.ErrOrStderr(),
-		"mysshw:: tunnel started: local %s ↔ ssh://%s@%s → %s (Ctrl+C to stop)\n",
-		tunnelLocal, nodes[0].SetUser(), nodes[0].Host, tunnelRemote)
+	fmt.Fprintf(cmd.ErrOrStderr(), "mysshw:: tunnel started: %s (Ctrl+C to stop)\n", banner)
 
-	// 阻塞运行
-	if startErr := t.Start(ctx); startErr != nil {
-		// 区分错误类型
-		if isCancelLike(startErr) {
+	type starter interface {
+		Start(context.Context) error
+	}
+	st, ok := t.(starter)
+	if !ok {
+		fmt.Fprintln(cmd.ErrOrStderr(), "mysshw:: internal: tunnel does not implement Start")
+		return
+	}
+	if err := st.Start(ctx); err != nil {
+		if isCancelLike(err) {
 			fmt.Fprintln(cmd.ErrOrStderr(), "mysshw:: tunnel stopped")
-			return nil
+			return
 		}
-		if strings.Contains(startErr.Error(), "listen") {
-			return WrapExit(ExitCantCreate, startErr)
+		errStr := err.Error()
+		switch {
+		case strings.Contains(errStr, "listen"):
+			HandleExit(WrapExit(ExitCantCreate, err))
+		default:
+			HandleExit(WrapExit(ExitSSHError, err))
 		}
-		return WrapExit(ExitSSHError, startErr)
 	}
-
 	fmt.Fprintln(cmd.ErrOrStderr(), "mysshw:: tunnel stopped")
-	return nil
 }
 
-// --- 内部辅助 ---
-
-// 全局变量: tunnel 自己的 selector flags
-var (
-	tunnelSelectorNames []string
-	tunnelAlias         string
-	tunnelHost          string
-	tunnelUser          string
-	tunnelPort          int
-)
-
-func init() {
-	// 在 tunnel_cmd.go 内复用一份 selector flags
-	// 注: cobra 的 flag binding 用 cmd-local variable, 这里共享全局以避免每个子命令重复
-	tunnelCmd.Flags().StringSliceVar(&tunnelSelectorNames, "node", nil,
-		"Node name (exact). For tunnel, must select exactly one node.")
-	tunnelCmd.Flags().StringVar(&tunnelAlias, "alias", "", "Node alias (exact)")
-	tunnelCmd.Flags().StringVar(&tunnelHost, "host", "", "Node host (combine with -u/-p)")
-	tunnelCmd.Flags().StringVarP(&tunnelUser, "user", "u", "", "User for --host selector")
-	tunnelCmd.Flags().IntVarP(&tunnelPort, "port", "p", 0, "Port for --host selector (0=any)")
-}
-
-func isSoftErr(err error) bool {
-	if err == nil {
-		return false
+func splitPort(addr string) string {
+	_, p, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "?"
 	}
-	// ssh.ResolveNodes 对 Names 部分缺失返回 soft error (含 matches)
-	return strings.Contains(err.Error(), "continuing with")
-}
-
-func isNodeNotFound(err error) bool {
-	if err == nil {
-		return false
-	}
-	return strings.Contains(err.Error(), "node not found")
-}
-
-func isCancelLike(err error) bool {
-	if err == nil {
-		return false
-	}
-	s := err.Error()
-	return strings.Contains(s, "context canceled") ||
-		strings.Contains(s, "use of closed network connection") ||
-		strings.Contains(s, "closed pipe")
-}
-
-// parseDuration 解析 --idle-timeout
-func parseDuration(s string) (time.Duration, error) {
-	if s == "" || s == "0" {
-		return 0, nil
-	}
-	return time.ParseDuration(s)
+	return p
 }
