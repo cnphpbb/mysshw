@@ -25,6 +25,7 @@ var (
 	execParallel    int
 	execNoPTY       bool
 	execStopOnError bool
+	execDryRun      bool
 )
 
 // execCmd 非交互 SSH 命令执行（AI / 脚本友好）
@@ -67,6 +68,9 @@ Examples:
   # Disable PTY (pure pipe)
   mysshw exec --no-pty --node prod-1 -- "tar czf - /var/log" > out.tgz
 
+  # Dry-run: print the plan without connecting
+  mysshw exec --dry-run --node prod-1 -- "rm -rf /"   # 不会实际连接!
+
 Exit codes (BSD sysexits):
   0    成功
   1    批量场景下部分/全部失败
@@ -95,6 +99,9 @@ func init() {
 		"Disable PTY (default: PTY enabled for sudo/progress)")
 	f.BoolVar(&execStopOnError, "stop-on-error", false,
 		"Abort batch on first node failure (default: wait all)")
+	f.BoolVar(&execDryRun, "dry-run", false,
+		"Print the resolved plan (nodes, auth, command) without actually connecting. "+
+			"Useful for verifying AI-generated commands are pointing at the right nodes.")
 	rootCmd.AddCommand(execCmd)
 }
 
@@ -140,12 +147,72 @@ func runExec(cmd *cobra.Command, args []string) error {
 
 	usePTY := !execNoPTY
 
+	// --dry-run: 打印计划, 不实际连接
+	if execDryRun {
+		return runExecDryRun(cmd, selector, nodes, command, usePTY)
+	}
+
 	// 单节点: 直接透传命令 exit code
 	if len(nodes) == 1 {
 		return runExecSingle(cmd, nodes[0], command, usePTY)
 	}
 	// 批量: 任一失败 → 1
 	return runExecBatch(cmd, nodes, command, usePTY)
+}
+
+// execPlan 是 --dry-run 输出的 JSON-safe 结构
+type execPlan struct {
+	DryRun   bool           `json:"dry_run"`
+	Selector execPlanSelect `json:"selector"`
+	Nodes    []execPlanNode `json:"nodes"`
+	Command  string         `json:"command"`
+	UsePTY   bool           `json:"use_pty"`
+	Timeout  string         `json:"timeout"`
+	Parallel int            `json:"parallel,omitempty"`
+	Warning  string         `json:"warning,omitempty"`
+}
+
+type execPlanSelect struct {
+	Names []string `json:"names,omitempty"`
+	Alias string   `json:"alias,omitempty"`
+	Host  string   `json:"host,omitempty"`
+	User  string   `json:"user,omitempty"`
+	Port  int      `json:"port,omitempty"`
+}
+
+type execPlanNode struct {
+	Name string `json:"name"`
+	User string `json:"user"`
+	Host string `json:"host"`
+	Port int    `json:"port"`
+	Auth string `json:"auth"` // key/password/env/bcrypt/empty/...
+}
+
+func runExecDryRun(cmd *cobra.Command, selector ssh.NodeSelector,
+	nodes []*config.SSHNode, command string, usePTY bool) error {
+
+	plan := execPlan{
+		DryRun:   true,
+		Selector: execPlanSelect{Names: selector.Names, Alias: selector.Alias, Host: selector.Host, User: selector.User, Port: selector.Port},
+		Nodes:    make([]execPlanNode, 0, len(nodes)),
+		Command:  command,
+		UsePTY:   usePTY,
+		Timeout:  execTimeout.String(),
+	}
+	if len(nodes) > 1 {
+		plan.Parallel = execParallel
+	}
+	for _, n := range nodes {
+		plan.Nodes = append(plan.Nodes, execPlanNode{
+			Name: n.Name, User: n.SetUser(), Host: n.Host, Port: n.SetPort(),
+			Auth: classifyAuth(n),
+		})
+	}
+	if len(nodes) == 0 {
+		plan.Warning = "no nodes would be targeted"
+	}
+
+	return WriteOut(cmd.OutOrStdout(), plan, GetOutputFormat(cmd))
 }
 
 func runExecSingle(cmd *cobra.Command, node *config.SSHNode, command string, usePTY bool) error {
