@@ -362,7 +362,90 @@ echo "$RESULT" | jq '.stdout'
 # 3) 批量检查
 mysshw exec -o json --node prod-1 --node prod-2 -- "uptime" \
   | jq '[.[] | {name: .node, ok: (.exit_code == 0)}]'
+
+# 4) AI 生成危险命令前, 先 dry-run 检查节点/认证是否正确
+mysshw exec --dry-run --node prod-1 -o json -- "rm -rf /var/log/*.tmp"
 ```
+
+### `exec --dry-run` 安全预演
+
+```bash
+# JSON 模式: AI 可结构化检查
+mysshw exec --dry-run -o json --node prod-1 -- "systemctl restart nginx" | jq '
+  .nodes[].name, .command, .use_pty
+'
+
+# plain 模式: fallback 为单行 JSON
+mysshw exec --dry-run --node prod-1 -- "uptime"
+```
+
+输出 example:
+
+```json
+{
+  "dry_run": true,
+  "selector": { "names": ["prod-1"] },
+  "nodes": [{
+    "name": "prod-1", "user": "app", "host": "10.0.0.1", "port": 22,
+    "auth": "env"
+  }],
+  "command": "systemctl restart nginx",
+  "use_pty": true,
+  "timeout": "30s"
+}
+```
+
+`--dry-run` 不会建立任何 SSH 连接，仅打印「将要做什么」。
+
+### `copy` — 非交互文件传输
+
+```bash
+# 上传 (同一文件 → 多个节点并发)
+mysshw copy --node prod-1 --node prod-2 --node prod-3 \
+            -U --local ./deploy.sh --remote /tmp/deploy.sh
+
+# 下载 (仅单节点)
+mysshw copy --node prod-1 -d --local ./backup.sql --remote /var/db/backup.sql
+
+# 自定义远端文件权限 (仅 upload)
+mysshw copy --node prod-1 -U --mode 0755 --local ./run.sh --remote /opt/run.sh
+
+# JSON 输出 (错误也能解析)
+mysshw copy -o json --node prod-1 --node prod-2 -U --local ./f.txt --remote /tmp/f.txt
+```
+
+JSON schema：
+
+```json
+[
+  {
+    "node": "prod-1",
+    "action": "upload",
+    "local": "./deploy.sh",
+    "remote": "/tmp/deploy.sh",
+    "bytes": 1234,
+    "duration": "234ms"
+  }
+]
+```
+
+> ⚠️ `--upload` 用 `-U` (大写)，避免与 `-u/--user` 冲突。
+
+### `tunnel` — 本地端口转发
+
+```bash
+# 转发 本地 :8080 → prod-1 上的 127.0.0.1:80 (看 web 服务)
+mysshw tunnel --node prod-1 --local 127.0.0.1:8080 --remote 127.0.0.1:80
+
+# 监听所有接口, 转发到内网服务
+mysshw tunnel --node bastion --local :2222 --remote internal-host:22
+
+# 连接空闲超时 5min
+mysshw tunnel --node prod-1 --local 127.0.0.1:8080 --remote internal:80 \
+             --idle-timeout 5m
+```
+
+Ctrl+C / SIGTERM 优雅退出。`tunnel` 是长连接，不输出 JSON。
 
 ## TODO
 
