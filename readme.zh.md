@@ -473,21 +473,52 @@ JSON schema：
 
 > ⚠️ `--upload` 用 `-U` (大写)，避免与 `-u/--user` 冲突。
 
-### `tunnel` — 本地端口转发
+### `tunnel` — SSH 端口转发 (local / reverse / dynamic)
+
+子命令式接口，三个子命令对应 OpenSSH 三个转发模式:
+
+#### `tunnel local` — 本地转发 (`-L` 等价)
 
 ```bash
 # 转发 本地 :8080 → prod-1 上的 127.0.0.1:80 (看 web 服务)
-mysshw tunnel --node prod-1 --local 127.0.0.1:8080 --remote 127.0.0.1:80
+mysshw tunnel local --node prod-1 --local 127.0.0.1:8080 --remote 127.0.0.1:80
 
-# 监听所有接口, 转发到内网服务
-mysshw tunnel --node bastion --local :2222 --remote internal-host:22
+# 转发到 bastion 后接的内部主机
+mysshw tunnel local --node bastion --local :2222 --remote internal-host:22
 
 # 连接空闲超时 5min
-mysshw tunnel --node prod-1 --local 127.0.0.1:8080 --remote internal:80 \
-             --idle-timeout 5m
+mysshw tunnel local --node prod-1 --local 127.0.0.1:8080 --remote internal:80 \
+                   --idle-timeout 5m
 ```
 
-Ctrl+C / SIGTERM 优雅退出。`tunnel` 是长连接，不输出 JSON。
+#### `tunnel reverse` — 反向转发 (`-R` 等价)
+
+```bash
+# 让 SSH server 在 8080 上监听, 把连接转回 client 侧
+mysshw tunnel reverse --node bastion --bind 0.0.0.0:8080 --remote 10.0.0.5:80
+
+# 反向跳到另一个跳板 / 跳点
+mysshw tunnel reverse --node bastion --bind :8080 --remote db.internal:5432 \
+                     --config /path/to/config.toml
+```
+
+典型用例: 通过 bastion 把内网服务暴露给外网。
+
+#### `tunnel dynamic` — Dynamic 转发 (SOCKS5 / `-D` 等价)
+
+```bash
+# 在 client 侧 :1080 起 SOCKS5 代理, 透过 SSH 拨号任何目标
+mysshw tunnel dynamic --node bastion --local 127.0.0.1:1080
+
+# 使用: 浏览器/系统代理指向上面 1080
+#   curl --socks5 127.0.0.1:1080 http://internal.example/
+```
+
+Ctrl+C / SIGTERM 优雅退出 (三个子命令都一样)。`tunnel` 是长连接，不输出 JSON。
+
+适用 Proxy 跳板 (`SSHNode.Proxy`):
+  `tunnel` 系列都自动走 ssh/client.go 的 connect() → resolveProxyChain + dialViaProxyChain
+  对用户透明, 无需额外配置。
 
 ## TODO
 
