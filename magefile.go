@@ -74,8 +74,13 @@ func Test() error {
 // build to target (cross build)
 // createTar is an optional parameter (default: false) that controls whether to create a tar archive
 func buildTarget(OS, arch string, envs map[string]string, createTar bool) error {
-	branchName := branch()
-	name := fmt.Sprintf("mysshw-%s-%s-%s", OS, arch, branchName)
+	// 目录名: release 时用 MYSISHW_VERSION (例: mysshw-darwin-amd64-v26.07.04.0)
+	// 非 release: 用 git branch name (例: mysshw-darwin-amd64-main)
+	nameTag := branch()
+	if v := os.Getenv("MYSISHW_VERSION"); v != "" {
+		nameTag = v
+	}
+	name := fmt.Sprintf("mysshw-%s-%s-%s", OS, arch, nameTag)
 	dir := fmt.Sprintf("dist/%s", name)
 	target_unix := fmt.Sprintf("%s/mysshw", dir)
 	target_win := fmt.Sprintf("%s/mysshw.exe", dir)
@@ -112,23 +117,29 @@ func buildTarget(OS, arch string, envs map[string]string, createTar bool) error 
 	if err := sh.RunWith(env, mg.GoCmd(), args...); err != nil {
 		return err
 	}
-	// 根据操作系统选择合适的复制命令
-	if runtime.GOOS == "windows" {
-		// Windows系统使用copy命令
-		sh.Run("copy", "/Y", "example\\mysshw.toml", fmt.Sprintf("%s\\mysshw.toml", dir))
+	// 根据目标操作系统选择合适的复制命令
+	if OS == "windows" {
+		// Windows 目标使用copy命令 (host 可能是 Linux/macOS)
+		sh.Run("cp", "-a", "example/mysshw.toml", fmt.Sprintf("%s/mysshw.toml", dir))
 	} else {
-		// 非Windows系统使用cp命令
+		// 非Windows目标使用cp命令
 		sh.Run("cp", "-a", "example/mysshw.toml", fmt.Sprintf("%s/mysshw.toml", dir))
 	}
 
 	// Only create archive if requested
 	if shouldCreateTar == true {
-		if runtime.GOOS == "windows" {
-			// Windows系统使用PowerShell的Compress-Archive命令
-			// 使用单引号包裹路径，避免复杂的转义问题
-			sh.Run("powershell", "-Command", fmt.Sprintf("Compress-Archive -Path '%s\\*' -DestinationPath '%s.zip'", dir, dir))
+		if OS == "windows" {
+			// Windows 目标 → zip 格式
+			// host 可能是 Windows / Linux / macOS; 都尝试 zip + tar
+			// Windows 通常自带 zip; Linux 上需要 apt install zip
+			if err := sh.Run("zip", "-r", fmt.Sprintf("%s.zip", dir), "."); err != nil {
+				// 退到 tar (所有 Unix 系统可用)
+				_ = err
+				// 切到 dist dir 上 tar
+				sh.Run("tar", "-czf", fmt.Sprintf("%s.tar.gz", dir), "-C", "dist", name)
+			}
 		} else {
-			// 非Windows系统使用tar命令
+			// 非Windows目标 → tar.gz
 			sh.Run("tar", "-czf", fmt.Sprintf("%s.tar.gz", dir), "-C", "dist", name)
 		}
 	}
@@ -191,23 +202,13 @@ func genCheckSum() error {
 	}
 	defer file.Close()
 
-	// 根据操作系统类型决定要处理的文件类型
-	isWindows := runtime.GOOS == "windows"
-
+	// checksum file: 所有 platform 共用; 接受 .tar.gz + .zip
+	// (Windows PowerShell Compress-Archive 不可用时 fallback tar.gz)
 	for _, f := range fs {
 		if f.IsDir() {
 			continue
 		}
-
-		// Windows平台处理.zip文件，其他平台处理.tar.gz文件
-		isTargetFile := false
-		if isWindows {
-			isTargetFile = strings.HasSuffix(f.Name(), ".zip")
-		} else {
-			isTargetFile = strings.HasSuffix(f.Name(), ".tar.gz")
-		}
-
-		if isTargetFile {
+		if strings.HasSuffix(f.Name(), ".tar.gz") || strings.HasSuffix(f.Name(), ".zip") {
 			sum, _ := fileHash(fmt.Sprintf("dist/%s", f.Name()))
 			fmt.Println(sum, f.Name())
 			file.WriteString(fmt.Sprintf("%s  %s\n", sum, f.Name()))
@@ -236,9 +237,12 @@ func buildTime() string {
 }
 
 func versionStr() string {
-	// 使用time包获取当前时间，避免调用外部命令
+	// release 专用: MYSISHW_VERSION 环境变量优先 (例: v26.07.04.0)
+	if v := os.Getenv("MYSISHW_VERSION"); v != "" {
+		return v
+	}
+	// 默认: 取构建当日 (vYY.MM.DD)
 	now := time.Now()
-	// 所有平台使用统一格式
 	return "v" + now.Format("06.01.02")
 }
 
