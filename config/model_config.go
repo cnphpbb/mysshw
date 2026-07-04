@@ -128,6 +128,14 @@ type (
 		// true = 启用严格校验
 		// false = 跳过主机指纹校验 (不推荐, 测试环境可临时使用)
 		StrictHostKeyChecking *bool `toml:"strict_host_key_checking,omitempty" mapstructure:"strict_host_key_checking"`
+		// RotateKnownHosts 当检测到主机指纹 mismatch (key 已变更) 时:
+		//   自动删除 known_hosts 中该 host 的旧条目, 并写入新 key
+		// 适用场景: 服务器密钥轮换 (legitimate key rotation)
+		// ⚠️ 安全警告: 此选项无法区分 "合法轮换" 与 "MITM 攻击 (伪造 key)"
+		//   一旦误用, 等价于 OpenSSH StrictHostKeyChecking=no, 永久失去防 MITM 能力
+		// 推荐用法: 仅在 --rotate-known-hosts flag 显式开启时由 cmd 层临时设置,
+		//           不建议在 TOML 中持久开启
+		RotateKnownHosts bool `toml:"rotate_known_hosts,omitempty" mapstructure:"rotate_known_hosts"`
 	}
 )
 

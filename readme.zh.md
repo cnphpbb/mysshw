@@ -520,6 +520,35 @@ Ctrl+C / SIGTERM 优雅退出 (三个子命令都一样)。`tunnel` 是长连接
   `tunnel` 系列都自动走 ssh/client.go 的 connect() → resolveProxyChain + dialViaProxyChain
   对用户透明, 无需额外配置。
 
+### 主机指纹 mismatch 处理 (`--rotate-known-hosts`)
+
+mysshw 默认对主机指纹严格校验（防 MITM）。服务器密钥轮换是合法的运维操作，
+但客户端**无法区分** "密钥轮换" 与 "MITM 攻击"。
+
+提供 opt-in flag `--rotate-known-hosts` 单独覆盖本次连接:
+
+```bash
+# 服务器密钥轮换后第一次连接:
+mysshw exec --node prod-1 --rotate-known-hosts -- "uptime"
+# 输出应含警告:
+#   ⚠️ mysshw:: ROTATING known_hosts (--rotate-known-hosts): \
+#        host=prod-1 old=SHA256:... new=SHA256:... at=2026-07-04T09:59:55Z
+
+# 批量上传到多节点时也可以:
+mysshw copy --node prod-1 --node prod-2 -U \
+            --rotate-known-hosts \
+            --local ./f.txt --remote /tmp/f.txt
+```
+
+安全注意事项:
+- **与 OpenSSH `-o StrictHostKeyChecking=no` 行为不同** —— 仅对本次连接生效,
+  下次不带 flag 仍走默认严格校验
+- 实际生产中, 推荐做法:**管理员先通过 SSH `ssh-keyscan`** 在 trusted machine 上拿到新指纹,
+  通过 `mysshw hostkey update`（后续工作）显式更新; `--rotate-known-hosts` 只作为应急通道
+- 与现有的 `MYSSHW_SKIP_HOST_KEY_CHECK=true` 的区别:
+  - **SKIP**: 整个 process 内禁用校验（适合 CI/测试环境）
+  - **rotate**: 仅本次连接遭遇 mismatch 时, 自动替换为新 key（适合 admins 知道自己做了什么）
+
 ## TODO
 
 简要状态 — 完整列表见 [TODO.md](TODO.md)。

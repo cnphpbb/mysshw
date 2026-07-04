@@ -2,6 +2,7 @@ package ssh
 
 import (
 	"crypto/rand"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -117,7 +118,7 @@ func TestTrustOnFirstUseCallback_CreatesEmpty(t *testing.T) {
 	// 验证 callback 能基于空文件正常构造
 	withMockHome(t)
 
-	_, err := trustOnFirstUseCallback()
+	_, err := trustOnFirstUseCallback(&config.SSHNode{Name: "x"})
 	assert.NoError(t, err)
 }
 
@@ -133,7 +134,7 @@ func TestTrustOnFirstUseCallback_LoadsExistingFile(t *testing.T) {
 	assert.NoError(t, err)
 
 	// callback 应该能正常加载已有内容
-	_, err = trustOnFirstUseCallback()
+	_, err = trustOnFirstUseCallback(&config.SSHNode{Name: "x"})
 	assert.NoError(t, err)
 }
 
@@ -304,4 +305,250 @@ func TestGetHostKeyCallback_DefaultTOFU(t *testing.T) {
 	cb, err := getHostKeyCallback(node)
 	assert.NoError(t, err)
 	assert.NotNil(t, cb)
+}
+
+// ============================================================
+// rotate_known_hosts related tests
+// ============================================================
+
+func TestRotateKnownHost_NoExistingFile(t *testing.T) {
+	withMockHome(t)
+
+	path, err := getKnownHostsPath()
+	assert.NoError(t, err)
+
+	// 文件不存在时应成功 (等同于先 add)
+	pubKey := generateTestPublicKey(t)
+	err = rotateKnownHost(path, "new.example.com", pubKey)
+	assert.NoError(t, err)
+
+	content, err := os.ReadFile(path)
+	assert.NoError(t, err)
+	assert.Contains(t, string(content), "new.example.com")
+}
+
+func TestRotateKnownHost_RemovesOldKeepsOthers(t *testing.T) {
+	withMockHome(t)
+
+	path, err := getKnownHostsPath()
+	assert.NoError(t, err)
+
+	pubKeyA := generateTestPublicKey(t)
+	pubKeyB := generateTestPublicKey(t)
+	pubKeyC := generateTestPublicKey(t)
+
+	// 初始状态: host A,B,C 都有 entries
+	assert.NoError(t, appendKnownHost(path, "host-a.example.com", pubKeyA))
+	assert.NoError(t, appendKnownHost(path, "host-b.example.com", pubKeyB))
+	assert.NoError(t, appendKnownHost(path, "host-c.example.com", pubKeyC))
+
+	// rotate host-b (用新 key 替换)
+	pubKeyNewB := generateTestPublicKey(t)
+	assert.NoError(t, rotateKnownHost(path, "host-b.example.com", pubKeyNewB))
+
+	content, err := os.ReadFile(path)
+	assert.NoError(t, err)
+	body := string(content)
+
+	// host-a 和 host-c 应保留
+	assert.Contains(t, body, "host-a.example.com")
+	assert.Contains(t, body, "host-c.example.com")
+	// host-b 新 key 应写入
+	assert.Contains(t, body, "host-b.example.com")
+	// 验证 old key 被删除: 不允许同名多行 (这里 host-b 只出现一行)
+	lines := strings.Split(strings.TrimSpace(body), "\n")
+	count := 0
+	for _, ln := range lines {
+		if lineContainsHostToken(strings.Fields(ln)[0], "host-b.example.com") {
+			count++
+		}
+	}
+	assert.Equal(t, 1, count, "host-b 应该只保留一条; 旧被删除")
+}
+
+func TestRotateKnownHost_RemovesMultipleEntriesForSameHost(t *testing.T) {
+	withMockHome(t)
+
+	path, err := getKnownHostsPath()
+	assert.NoError(t, err)
+
+	pubKeyA1 := generateTestPublicKey(t)
+	pubKeyA2 := generateTestPublicKey(t)
+
+	// 模拟服务器 key 轮换历史: 已知 2 个旧 key entry 都应删
+	assert.NoError(t, appendKnownHost(path, "rotated.example.com", pubKeyA1))
+	assert.NoError(t, appendKnownHost(path, "rotated.example.com", pubKeyA2))
+
+	pubKeyNew := generateTestPublicKey(t)
+	assert.NoError(t, rotateKnownHost(path, "rotated.example.com", pubKeyNew))
+
+	content, err := os.ReadFile(path)
+	assert.NoError(t, err)
+	body := string(content)
+
+	// 只应有 1 条 rotated.example.com (新 key)
+	lines := strings.Split(strings.TrimSpace(body), "\n")
+	count := 0
+	for _, ln := range lines {
+		if strings.HasPrefix(ln, "|1|") {
+			continue // hashed entries 跳过
+		}
+		if lineContainsHostToken(strings.Fields(ln)[0], "rotated.example.com") {
+			count++
+		}
+	}
+	assert.Equal(t, 1, count, "旧 key 全部删除，只保留新 key")
+}
+
+func TestRotateKnownHost_KeepsComments(t *testing.T) {
+	withMockHome(t)
+
+	path, err := getKnownHostsPath()
+	assert.NoError(t, err)
+
+	// 预先写入一行注释
+	assert.NoError(t, os.WriteFile(path, []byte("# header\n"), 0600))
+
+	pubKey := generateTestPublicKey(t)
+	assert.NoError(t, rotateKnownHost(path, "fresh.example.com", pubKey))
+
+	content, err := os.ReadFile(path)
+	assert.NoError(t, err)
+	body := string(content)
+
+	assert.Contains(t, body, "# header", "注释应保留")
+	assert.Contains(t, body, "fresh.example.com")
+}
+
+func TestRotateKnownHost_NoMatchIsNoOp(t *testing.T) {
+	withMockHome(t)
+
+	path, err := getKnownHostsPath()
+	assert.NoError(t, err)
+
+	// 预先写入无关 host
+	pubKey := generateTestPublicKey(t)
+	assert.NoError(t, appendKnownHost(path, "other.example.com", pubKey))
+
+	// rotate 不存在的 host: 等同于 add
+	pubKey2 := generateTestPublicKey(t)
+	assert.NoError(t, rotateKnownHost(path, "fresh.example.com", pubKey2))
+
+	content, err := os.ReadFile(path)
+	assert.NoError(t, err)
+	body := string(content)
+	assert.Contains(t, body, "other.example.com", "无关 host 应保留")
+	assert.Contains(t, body, "fresh.example.com")
+}
+
+func TestTrustOnFirstUseCallback_RotateOnMismatch(t *testing.T) {
+	withMockHome(t)
+
+	// 预先写一条 host example.com 的"旧" key
+	path, err := getKnownHostsPath()
+	assert.NoError(t, err)
+	oldKey := generateTestPublicKey(t)
+	oldEncoded := knownhosts.Line([]string{"example.com"}, oldKey)
+	assert.NoError(t, os.WriteFile(path, []byte(oldEncoded+"\n"), 0600))
+
+	// node 开启 rotate
+	node := &config.SSHNode{Name: "x", RotateKnownHosts: true}
+	cb, err := trustOnFirstUseCallback(node)
+	assert.NoError(t, err)
+
+	newKey := generateTestPublicKey(t)
+	newEncoded := knownhosts.Line([]string{"example.com"}, newKey)
+	remote := &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 22}
+	cbErr := cb("example.com", remote, newKey)
+	// rotate 路径应返回 nil (接受)
+	assert.NoError(t, cbErr, "rotate 路径应接受新 key (返回 nil)")
+
+	// 验证文件已被 rotate:
+	content, err := os.ReadFile(path)
+	assert.NoError(t, err)
+	body := string(content)
+
+	assert.NotContains(t, body, oldEncoded, "旧 key line 应被删除")
+	assert.Contains(t, body, newEncoded, "新 key line 应被写入")
+
+	// 唯一一条以 example.com 开头的 line
+	count := countHostLines(t, body, "example.com")
+	assert.Equal(t, 1, count, "example.com 应仅有一行 (rotate 后)")
+}
+
+func TestTrustOnFirstUseCallback_NoRotateByDefault(t *testing.T) {
+	withMockHome(t)
+
+	// 预先写一条 host 的 key
+	path, err := getKnownHostsPath()
+	assert.NoError(t, err)
+	oldKey := generateTestPublicKey(t)
+	oldEncoded := knownhosts.Line([]string{"example.com"}, oldKey)
+	assert.NoError(t, os.WriteFile(
+		path,
+		[]byte(oldEncoded+"\n"),
+		0600,
+	))
+
+	// node 不开启 rotate (默认值)
+	node := &config.SSHNode{Name: "x"}
+	cb, err := trustOnFirstUseCallback(node)
+	assert.NoError(t, err)
+
+	newKey := generateTestPublicKey(t)
+	newEncoded := knownhosts.Line([]string{"example.com"}, newKey)
+	remote := &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 22}
+	cbErr := cb("example.com", remote, newKey)
+	// 默认严格拒绝
+	assert.Error(t, cbErr, "默认应对 fingerprint mismatch 拒绝")
+
+	// 验证旧 key 还在, 新 key 未写入
+	content, err := os.ReadFile(path)
+	assert.NoError(t, err)
+	body := string(content)
+	assert.Contains(t, body, oldEncoded, "旧 key line 应保留")
+	assert.NotContains(t, body, newEncoded, "默认不写新 key")
+}
+
+// countHostLines 辅助: 数 known_hosts body 中以 host 字段开头的明文行数 (hashed 跳过)
+func countHostLines(t *testing.T, body, host string) int {
+	t.Helper()
+	n := 0
+	for _, ln := range strings.Split(body, "\n") {
+		if ln == "" || strings.HasPrefix(ln, "|1|") {
+			continue
+		}
+		fields := strings.Fields(ln)
+		if len(fields) == 0 {
+			continue
+		}
+		if lineContainsHostToken(fields[0], host) {
+			n++
+		}
+	}
+	return n
+}
+
+func TestLineContainsHostToken(t *testing.T) {
+	cases := []struct {
+		name     string
+		field    string
+		target   string
+		expected bool
+	}{
+		{"simple match", "example.com", "example.com", true},
+		{"no match", "other.com", "example.com", false},
+		{"with port", "example.com:2222", "example.com", true},
+		{"bracketed + port", "[example.com]:2222", "example.com", true},
+		{"comma list match", "a.example.com,b.example.com", "b.example.com", true},
+		{"comma list no match", "a.example.com,b.example.com", "c.example.com", false},
+		{"empty field", "", "example.com", false},
+		{"partial match", "xexample.com", "example.com", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := lineContainsHostToken(tc.field, tc.target)
+			assert.Equal(t, tc.expected, got, "field=%q target=%q", tc.field, tc.target)
+		})
+	}
 }

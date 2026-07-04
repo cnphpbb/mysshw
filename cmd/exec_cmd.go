@@ -16,16 +16,17 @@ import (
 )
 
 var (
-	execNodesFlag   []string
-	execAlias       string
-	execHost        string
-	execUser        string
-	execPort        int
-	execTimeout     time.Duration
-	execParallel    int
-	execNoPTY       bool
-	execStopOnError bool
-	execDryRun      bool
+	execNodesFlag        []string
+	execAlias            string
+	execHost             string
+	execUser             string
+	execPort             int
+	execTimeout          time.Duration
+	execParallel         int
+	execNoPTY            bool
+	execStopOnError      bool
+	execDryRun           bool
+	execRotateKnownHosts bool
 )
 
 // execCmd 非交互 SSH 命令执行（AI / 脚本友好）
@@ -102,6 +103,11 @@ func init() {
 	f.BoolVar(&execDryRun, "dry-run", false,
 		"Print the resolved plan (nodes, auth, command) without actually connecting. "+
 			"Useful for verifying AI-generated commands are pointing at the right nodes.")
+	f.BoolVar(&execRotateKnownHosts, "rotate-known-hosts", false,
+		"On key fingerprint mismatch, auto-rotate known_hosts (delete old + add new). "+
+			"Equivalent to OpenSSH StrictHostKeyChecking=no for THIS call only. "+
+			"\u26a0\ufe0f Cannot distinguish MITM from legitimate key rotation. "+
+			"Use only when the server key has actually been rotated by an admin.")
 	rootCmd.AddCommand(execCmd)
 }
 
@@ -138,6 +144,13 @@ func runExec(cmd *cobra.Command, args []string) error {
 		return WrapExit(ExitConfig,
 			fmt.Errorf("no nodes matched (--node=%v --alias=%q --host=%q -u=%q -p=%s)",
 				execNodesFlag, execAlias, execHost, execUser, portOrEmpty(execPort)))
+	}
+
+	// --rotate-known-hosts: 临时设到本调用涉及的所有节点上 (不跨调用泄露)
+	if execRotateKnownHosts {
+		for _, n := range nodes {
+			n.RotateKnownHosts = true
+		}
 	}
 
 	command := strings.Join(args, " ")

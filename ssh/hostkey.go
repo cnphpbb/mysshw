@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"mysshw/config"
 
@@ -85,14 +86,17 @@ func resolveKnownHostsPath(path string) (string, error) {
 
 // trustOnFirstUseCallback 创建一个带回退机制的主机指纹校验回调
 // 行为:
-//  1. 主机在 known_hosts 中: 严格校验, 指纹不匹配则拒绝连接（防中间人）
+//  1. 主机在 known_hosts 中: 严格校验
+//     - key 匹配: 通过
+//     - key 不匹配: 报错拒绝 (默认), 或 rotate (node.RotateKnownHosts=true)
 //  2. 主机不在 known_hosts 中:
 //     - 终端交互 (stdin 是 TTY): 提示用户确认, 信任后追加写入
 //     - 非交互 (stdin 不是 TTY / pipe): 自动 trust 并写入 known_hosts
 //     (OpenSSH StrictHostKeyChecking=accept-new 的语义；供 AI/脚本场景使用)
 //
-// 注意: 指纹不匹配始终拒绝 (防中间人), 不受交互模式影响。
-func trustOnFirstUseCallback() (ssh.HostKeyCallback, error) {
+// node 参数用于读取 RotateKnownHosts 标志 (是否在 fingerprint 不匹配时自动 rotate)。
+// 传入 nil 等价于 node.RotateKnownHosts=false (默认严格行为)。
+func trustOnFirstUseCallback(node *config.SSHNode) (ssh.HostKeyCallback, error) {
 	path, err := getKnownHostsPath()
 	if err != nil {
 		return nil, err
@@ -113,9 +117,25 @@ func trustOnFirstUseCallback() (ssh.HostKeyCallback, error) {
 		return nil, fmt.Errorf("mysshw:: failed to load known_hosts: %w", err)
 	}
 
-	// 包装: 处理"未知主机"分支
+	// 捕获 rotate 标志 (避免 callback 内闭包变量, 让 func 决定)
+	rotateOnMismatch := node != nil && node.RotateKnownHosts
+
+	// 包装: 处理"未知主机" + "mismatch + rotate" 分支
 	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
-		err := baseCallback(hostname, remote, key)
+		// knownhosts 内部 addr.check 调用 net.SplitHostPort(hostname),
+		// 对不含 :port 的 hostname 返回 generic 'missing port in address' 错误
+		// (不是 *knownhosts.KeyError), 导致 errors.As(&keyErr) 失败。
+		//
+		// 解决: 手动确保 hostname 含 :port 再传给 baseCallback。
+		//   - ssh callback 给的 hostname 可能无 port (server 报告的 server host)
+		//   - known_hosts 文件中的明文条目通常也只列 host (无 port)
+		//   - 我们用 :22 fallback; 若实际 port 不是 22 但 known_hosts 已含 :port 条目会找不到,
+		//     走 accept-new 即可追加新 port 条目 (SSH 默认行为)
+		normalized := hostname
+		if _, _, e := net.SplitHostPort(normalized); e != nil {
+			normalized = net.JoinHostPort(hostname, "22")
+		}
+		err := baseCallback(normalized, remote, key)
 		if err == nil {
 			return nil
 		}
@@ -123,7 +143,7 @@ func trustOnFirstUseCallback() (ssh.HostKeyCallback, error) {
 		// 区分"未知主机"和"指纹不匹配"
 		var keyErr *knownhosts.KeyError
 		if !errors.As(err, &keyErr) {
-			// 非 KeyError, 直接返回（如 host key not provided 等）
+			// 非 KeyError, 直接返回（如 host key not provided / 未知 transport error 等）
 			return err
 		}
 
@@ -142,8 +162,31 @@ func trustOnFirstUseCallback() (ssh.HostKeyCallback, error) {
 			return nil
 		}
 
-		// 指纹不匹配: 详细诊断信息 (不受交互模式影响, 始终拒绝)
-		// 注意: knownhosts.KeyError 没有 Got 字段, 实际收到的 key 通过 callback 参数 key 传入
+		// 指纹不匹配: 默认严格拒绝; rotate flag 开启则覆盖
+		if rotateOnMismatch {
+			// 计算 known_hosts 中该 host 的旧指纹列表 (for audit message)
+			var wantFPs []string
+			for _, k := range keyErr.Want {
+				wantFPs = append(wantFPs, ssh.FingerprintSHA256(k.Key))
+			}
+			// 5. ⚠️ 安全警告: rotate 会删除旧 key, 等价于降低了防 MITM 防护
+			// 用户通过 --rotate-known-hosts flag 显式申请; 仍然关键盘写明 warning
+			now := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+			fmt.Fprintf(os.Stderr,
+				"⚠️ mysshw:: ROTATING known_hosts (--rotate-known-hosts): host=%s old=%s new=%s at=%s\n",
+				hostname,
+				strings.Join(wantFPs, ", "),
+				ssh.FingerprintSHA256(key),
+				now,
+			)
+			if err := rotateKnownHost(path, hostname, key); err != nil {
+				return fmt.Errorf("mysshw:: rotate known_hosts failed for %s: %w", hostname, err)
+			}
+			return nil // 接受新 key
+		}
+
+		// 默认严格拒绝 (不受交互模式影响)
+		// knownhosts.KeyError 没有 Got 字段, 实际收到的 key 通过 callback 参数 key 传入
 		var wantFPs []string
 		for _, k := range keyErr.Want {
 			wantFPs = append(wantFPs, ssh.FingerprintSHA256(k.Key))
@@ -172,7 +215,7 @@ func getHostKeyCallback(node *config.SSHNode) (ssh.HostKeyCallback, error) {
 	}
 
 	// 默认: TOFU (Trust On First Use)
-	return trustOnFirstUseCallback()
+	return trustOnFirstUseCallback(node)
 }
 
 // promptAndAddHost 提示用户确认新主机的指纹, 确认后追加到 known_hosts
@@ -236,4 +279,106 @@ func appendKnownHost(path, hostname string, key ssh.PublicKey) error {
 		return fmt.Errorf("mysshw:: failed to write known_hosts: %w", err)
 	}
 	return nil
+}
+
+// removeKnownHost 删除 known_hosts 文件中 hostname 匹配的所有条目
+//
+// "匹配" 的语义: 同时匹配 host 字段 (含端口的 host 名)
+// hashed entries (|1|salt|hash) 因为无法在不重新计算的情况下判断,
+// 这里采用保守策略: 只删除与 hostname 字段完全匹配的明文条目 (含 [host]:port 形式)
+//
+// 并发安全: 内部上 knownHostsMu
+func removeKnownHost(path, hostname string) error {
+	knownHostsMu.Lock()
+	defer knownHostsMu.Unlock()
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // 文件不存在视为"无旧条目可删"
+		}
+		return fmt.Errorf("mysshw:: failed to read known_hosts: %w", err)
+	}
+
+	// 重新组织文件: 保留未匹配的明文条目 (hashed entry 因无法判断保留)
+	keepLines := []string{}
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "#") || strings.HasPrefix(line, "|1|") {
+			// 注释行 / hashed entry: 不动
+			keepLines = append(keepLines, line)
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			keepLines = append(keepLines, line)
+			continue
+		}
+		// fields[0] 是 hostname 部分 (含可能的 [host]:port / pattern1,pattern2)
+		// 简化匹配: 检查 fields[0] 是否含 hostname 作为独立 token
+		// (这是一个保守的字符串匹配, 不会误删无关条目)
+		if !lineContainsHostToken(fields[0], hostname) {
+			keepLines = append(keepLines, line)
+		}
+	}
+
+	newContent := strings.Join(keepLines, "\n")
+	if len(keepLines) > 0 && !strings.HasSuffix(newContent, "\n") && len(newContent) > 0 {
+		newContent += "\n"
+	}
+
+	// 原子写: tmp + rename
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, []byte(newContent), 0600); err != nil {
+		return fmt.Errorf("mysshw:: failed to write tmp known_hosts: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("mysshw:: failed to rename tmp known_hosts: %w", err)
+	}
+	return nil
+}
+
+// lineContainsHostToken 检查 known_hosts line 的 hostname 字段是否含 target
+//
+// known_hosts hostname 字段格式 (per RFC 4255):
+//   - 单 hostname: "example.com"
+//   - hostname:port: "example.com:2222"
+//   - bracketed host:port: "[example.com]:2222"
+//   - pattern list (multiple names / wildcards): "a.example.com,b.example.com"
+//
+// 简化: 先去掉括号 + port, 再按 ',' 分隔, 任一分隔项 == target 则 true。
+func lineContainsHostToken(hostField, target string) bool {
+	cleaned := hostField
+	// 1. [host]:port 形式: 保留方括号内, 去掉 :port
+	if strings.HasPrefix(cleaned, "[") && strings.Contains(cleaned, "]") {
+		cleaned = strings.TrimPrefix(cleaned, "[")
+		if idx := strings.Index(cleaned, "]"); idx >= 0 {
+			cleaned = cleaned[:idx]
+		}
+	} else if idx := strings.Index(cleaned, ":"); idx >= 0 {
+		// 2. host:port 形式
+		cleaned = cleaned[:idx]
+	}
+	// 3. 按 ',' 分隔 (多个备用名 / wildcards)
+	for _, p := range strings.Split(cleaned, ",") {
+		if p == target {
+			return true
+		}
+	}
+	return false
+}
+
+// rotateKnownHost 在 known_hosts 中 replace hostname 的所有旧条目为新 key
+// 原子操作: 写 tmp 文件 + rename
+func rotateKnownHost(path, hostname string, key ssh.PublicKey) error {
+	// 1. 删除旧条目
+	if err := removeKnownHost(path, hostname); err != nil {
+		return err
+	}
+	// 2. 追加新 key
+	return appendKnownHost(path, hostname, key)
 }

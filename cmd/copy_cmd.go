@@ -16,17 +16,18 @@ import (
 )
 
 var (
-	copyNodesFlag []string
-	copyAlias     string
-	copyHost      string
-	copyUser      string
-	copyPort      int
-	copyDirection string // "upload" | "download", 由 --upload/--download 解析
-	copyLocal     string
-	copyRemote    string
-	copyMode      string
-	copyTimeout   time.Duration
-	copyParallel  int
+	copyNodesFlag        []string
+	copyAlias            string
+	copyHost             string
+	copyUser             string
+	copyPort             int
+	copyDirection        string // "upload" | "download", 由 --upload/--download 解析
+	copyLocal            string
+	copyRemote           string
+	copyMode             string
+	copyTimeout          time.Duration
+	copyParallel         int
+	copyRotateKnownHosts bool
 )
 
 var copyCmd = &cobra.Command{
@@ -100,6 +101,8 @@ func init() {
 		"Per-node transfer timeout")
 	f.IntVar(&copyParallel, "parallel", 5,
 		"Max concurrent uploads (download always single-node)")
+	f.BoolVar(&copyRotateKnownHosts, "rotate-known-hosts", false,
+		"On key fingerprint mismatch, auto-rotate known_hosts (delete old + add new). \u26a0\ufe0f Use only on legitimate server key rotation.")
 	rootCmd.AddCommand(copyCmd)
 }
 
@@ -154,6 +157,13 @@ func runCopy(cmd *cobra.Command, args []string) error {
 		return NewExitError(ExitUsage,
 			"--download requires exactly one node (got %d); use --node to disambiguate",
 			len(nodes))
+	}
+
+	// --rotate-known-hosts: 临时设到 matched nodes 上
+	if copyRotateKnownHosts {
+		for _, n := range nodes {
+			n.RotateKnownHosts = true
+		}
 	}
 
 	// 准备本地端前置校验
