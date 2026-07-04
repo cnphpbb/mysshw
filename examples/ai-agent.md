@@ -125,8 +125,9 @@ mysshw exec --dry-run -o json --node prod-1 -- "rm -rf /var/log/*.tmp"
 - `nodes[]` 是预期的目标吗？
 - `auth` 类别是否合理？（`env` 或 `key` 优于 `password`）
 - `command` 字符串是否被正确解析为单条命令（避免 shell 注入）
+| --download | --local ./backup.sql --remote /var/db/backup.sql |
 
-确认后，**显式剥离 dry-run flag 重新调用**才会真正连接。
+```
 
 ### 2.4 单节点 vs 批量的退出码差异
 
@@ -134,6 +135,33 @@ mysshw exec --dry-run -o json --node prod-1 -- "rm -rf /var/log/*.tmp"
 - **批量 exec**: 任一失败 → exit 1，详情在 JSON `exit_code` 字段
 
 AI 应同时读 `$?` 和 JSON `exit_code`，不要假设 0 即成功。
+
+### 2.5 主机密钥轮换（合法运维 & 防 MITM）
+
+服务器管理员在常规运维中轮换 host key 是合法的。但 **AI 无法区分 "合法轮换" 与 "MITM 攻击"**。
+
+mysshw 提供两层工具：
+
+**A. 单调用 opt-in (应急): `--rotate-known-hosts`**
+- `mysshw exec --node prod-1 --rotate-known-hosts -- uptime`
+- 当 fingerprint 不匹配时自动 rotate known_hosts (刪旧 + 加新 + stderr warning)
+- 等价单次调用的 `StrictHostKeyChecking=no`，但仍写 stdout 警告供 audit
+
+**B. 显式 audit 工具: `mysshw hostkey` 子命令**
+- `mysshw hostkey list`               列出所有 known_hosts 条目 (JSON)
+- `mysshw hostkey show HOST`          查询某 host 的 fingerprints
+- `mysshw hostkey remove HOST`        刪除某 host
+- `mysshw hostkey update HOST --node NODE [--confirm] [--expect-fingerprint SHA256:...]`
+  拨号连上 NODE, 主动获取 server key, 替换 HOST 的条目
+  - 默认 dry-run: 打印 plan, 不写盘
+  - `--confirm` 才实际写入
+  - `--expect-fingerprint` 进一步验证 (MITM 保护): 与 server 实际指纹不匹配时拒绝写入
+
+**AI 推荐用法:**
+- **合格制 update** (admin 主动告知新指纹后): AI 调 `hostkey update --expect-fingerprint SHA256:new --confirm`
+- **不要启用** `--rotate-known-hosts` flag 在常规脚本中, 除非 admin 说“可以”
+
+`MYSSHW_KNOWN_HOSTS_UPDATE=always` (永久自更新) 存在项目设计为不实现,以防 AI Agent 丢失防 MITM 能力。
 
 ## 3. 不推荐的用法
 

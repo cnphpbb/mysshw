@@ -48,10 +48,16 @@
             "type": "string",
             "description": "必传, 要执行的 shell 命令"
           },
+          "command": { "type": "string", "description": "必传, 要执行的 shell 命令" },
           "timeout": { "type": "string", "default": "30s" },
           "no_pty": { "type": "boolean", "default": false },
           "dry_run": { "type": "boolean", "default": false },
-          "parallel": { "type": "integer", "default": 10 }
+          "parallel": { "type": "integer", "default": 10 },
+          "rotate_known_hosts": {
+            "type": "boolean",
+            "default": false,
+            "description": "⚠️ Opt-in: 主机指纹 mismatch 时自动 rotate known_hosts。无法区分 MITM 与合法 key rotation, 仅在 admin 明确告知后方可启用"
+          }
         },
         "required": ["command"],
         "additionalProperties": false
@@ -81,7 +87,12 @@
             "description": "仅 upload; 远端文件权限 (4 位八进制字符串)"
           },
           "timeout": { "type": "string", "default": "5m" },
-          "parallel": { "type": "integer", "default": 5 }
+          "parallel": { "type": "integer", "default": 5 },
+          "rotate_known_hosts": {
+            "type": "boolean",
+            "default": false,
+            "description": "⚠️ Opt-in: 主机指纹 mismatch 时自动 rotate known_hosts (刪旧+加新)。与 OpenSSH StrictHostKeyChecking=no 等效, 但仅限本调用。 无法区分 MITM 与合法 key rotation, 仅在 admin 明确告知后方可启用"
+          }
         },
         "required": ["direction", "local", "remote"],
         "additionalProperties": false
@@ -115,6 +126,47 @@
         "required": ["local_bind", "remote_addr"],
         "additionalProperties": false
       }
+    },
+    {
+      "name": "ssh_hostkey",
+      "description": "List / inspect / update / remove known_hosts entries. 比 --rotate-known-hosts flag 更可控: 显式 audit + dry-run by default.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["list", "show", "update", "remove"],
+            "description": "必传"
+          },
+          "host": {
+            "type": "string",
+            "description": "show/update/remove 需要目标 host (list 不需要)"
+          },
+          "node": {
+            "type": "string",
+            "description": "update 需要: 连哪个节点拿 server key (与 host 语义上对应)"
+          },
+          "confirm": {
+            "type": "boolean",
+            "default": false,
+            "description": "update: 实际修改 known_hosts (默认 dry-run)"
+          },
+          "expect_fingerprint": {
+            "type": "string",
+            "description": "update 可选: 期望服务器指纹 (MITM-protected); 不匹配则拒绝写入"
+          },
+          "timeout": { "type": "string", "default": "30s" }
+        },
+        "required": ["action", "host"],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "exit_codes": {
+        },
+        "required": ["local_bind", "remote_addr"],
+        "additionalProperties": false
+      }
     }
   ],
   "exit_codes": {
@@ -143,6 +195,12 @@
       "Claude 审查 nodes 列表是否正确",
       "确认后去掉 --dry-run 重跑"
     ],
-    "batch_health_check": "mysshw exec -o json --node prod-1 --node prod-2 -- \"uptime\" | jq '[.[] | {n: .node, ok: (.exit_code == 0)}]'"
+    "batch_health_check": "mysshw exec -o json --node prod-1 --node prod-2 -- \"uptime\" | jq '[.[] | {name: .node, ok: (.exit_code == 0)}]'",
+    "host_key_rotation": [
+      "admin 告知 Claude 新 fingerprint",
+      "Claude 调用 ssh_hostkey update prod-1 --expect_fingerprint SHA256:new...",
+      "AI 检查 lint: --expect_fingerprint 与 server 实际一致才生效",
+      "下次 exec/copy 不需 --rotate-known-hosts, 自动 go through"
+    ]
   }
 }

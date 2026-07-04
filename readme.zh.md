@@ -545,9 +545,44 @@ mysshw copy --node prod-1 --node prod-2 -U \
   下次不带 flag 仍走默认严格校验
 - 实际生产中, 推荐做法:**管理员先通过 SSH `ssh-keyscan`** 在 trusted machine 上拿到新指纹,
   通过 `mysshw hostkey update`（后续工作）显式更新; `--rotate-known-hosts` 只作为应急通道
-- 与现有的 `MYSSHW_SKIP_HOST_KEY_CHECK=true` 的区别:
+与现有的 `MYSSHW_SKIP_HOST_KEY_CHECK=true` 的区别:
   - **SKIP**: 整个 process 内禁用校验（适合 CI/测试环境）
   - **rotate**: 仅本次连接遭遇 mismatch 时, 自动替换为新 key（适合 admins 知道自己做了什么）
+
+### `hostkey` 子命令 — 主动管理 known_hosts
+
+比 `--rotate-known-hosts` flag 更可控、显式、可 audit。默认为 dry-run。
+
+```bash
+# 列出全部条目 (JSON, AI 友好)
+mysshw hostkey list -o json
+
+# 查询某 host
+mysshw hostkey show prod-1.example.com -o json
+
+# 删除某 host (类似 ssh-keygen -R)
+mysshw hostkey remove prod-1.example.com -o json
+
+# 主动 update (推荐用于 admin 告知新指纹后):
+mysshw hostkey update prod-1.example.com --node prod-1 --confirm \
+                   --expect-fingerprint SHA256:abc... -o json
+```
+
+子命令退出码 (BSD sysexits):
+  0    成功
+  64   缺 flag
+  66   known_hosts 路径不可读
+  78   节点未找到
+  124  超时 / `--expect-fingerprint` 不匹配
+  255  SSH 错误
+
+### 主机指纹 rotate 与 update 的使用区别
+
+| 场景 | 推荐方式 | 安全 |
+|------|---------|------|
+| CI 测试，节点 key 已固定但不关心指纹 | `MYSSHW_SKIP_HOST_KEY_CHECK=true` |  低 (易被 MITM, 仅测试用) |
+| 紧急一次性连接 (admin 告知 key 已换) | `mysshw exec --rotate-known-hosts` | 中 (opt-in, 但下个连接又变成 严格) |
+| 主动管理 (admin 通过安全渠道告知新指纹) | `mysshw hostkey update --expect-fingerprint --confirm` | 高 (显式 + fingerprint 验证) |
 
 ## TODO
 

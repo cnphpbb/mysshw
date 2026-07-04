@@ -34,6 +34,17 @@ var currentHomeDir = func() (string, error) {
 	return u.HomeDir, nil
 }
 
+// GetKnownHostsPath 返回 known_hosts 文件的绝对路径 (公开版本)
+//
+// 调度 hostkey 列表 / 重删 / 更新等需求的对外 API。
+// 与 getKnownHostsPath 逻辑相同 (以下是前者 alias),
+// 路径解析逻辑: MYSSHW_KNOWN_HOSTS env > config.CFG.KnownHostsPath > ~/.ssh/known_hosts.
+//
+// 如果需要修改逻辑, 同步本函数。
+func GetKnownHostsPath() (string, error) {
+	return getKnownHostsPath()
+}
+
 // getKnownHostsPath 返回 known_hosts 文件的绝对路径
 // 优先级: MYSSHW_KNOWN_HOSTS 环境变量 > config.CFG.KnownHostsPath > ~/.ssh/known_hosts
 func getKnownHostsPath() (string, error) {
@@ -257,6 +268,14 @@ func promptAndAddHost(knownHostsPath, hostname string, remote net.Addr, key ssh.
 	return nil
 }
 
+// AppendKnownHost 将主机指纹追加到 known_hosts 文件 (公开 API)
+//
+// 使用 knownhosts.Line 标准化格式 (含端口信息)，用于 hostkey update 子命令。
+// 并发安全: 内部上 knownHostsMu。
+func AppendKnownHost(path, hostname string, key ssh.PublicKey) error {
+	return appendKnownHost(path, hostname, key)
+}
+
 // appendKnownHost 将主机指纹追加到 known_hosts 文件
 // 使用 knownhosts.Line 标准化格式（含端口信息）
 func appendKnownHost(path, hostname string, key ssh.PublicKey) error {
@@ -279,6 +298,13 @@ func appendKnownHost(path, hostname string, key ssh.PublicKey) error {
 		return fmt.Errorf("mysshw:: failed to write known_hosts: %w", err)
 	}
 	return nil
+}
+
+// RemoveKnownHost 删除 known_hosts 文件中 hostname 匹配的所有条目 (公开 API)
+//
+// 用于 hostkey remove/update 子命令。原子写 (tmp + rename)。
+func RemoveKnownHost(path, hostname string) error {
+	return removeKnownHost(path, hostname)
 }
 
 // removeKnownHost 删除 known_hosts 文件中 hostname 匹配的所有条目
