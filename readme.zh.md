@@ -566,6 +566,9 @@ mysshw hostkey remove prod-1.example.com -o json
 # 主动 update (推荐用于 admin 告知新指纹后):
 mysshw hostkey update prod-1.example.com --node prod-1 --confirm \
                    --expect-fingerprint SHA256:abc... -o json
+
+# 全面审计 (文件状态 + algorithm 分布 + 与 config 对齐):
+mysshw hostkey audit --check-config -o json
 ```
 
 子命令退出码 (BSD sysexits):
@@ -583,6 +586,44 @@ mysshw hostkey update prod-1.example.com --node prod-1 --confirm \
 | CI 测试，节点 key 已固定但不关心指纹 | `MYSSHW_SKIP_HOST_KEY_CHECK=true` |  低 (易被 MITM, 仅测试用) |
 | 紧急一次性连接 (admin 告知 key 已换) | `mysshw exec --rotate-known-hosts` | 中 (opt-in, 但下个连接又变成 严格) |
 | 主动管理 (admin 通过安全渠道告知新指纹) | `mysshw hostkey update --expect-fingerprint --confirm` | 高 (显式 + fingerprint 验证) |
+| 全面安全审查 / 运维对账 | `mysshw hostkey audit --check-config` | (只读, 不会改任何东西) |
+
+### `hostkey audit` — 安全审查输出
+
+`audit` 子命令可读但不改 known_hosts，给运维/AI agent 安全对账:
+
+```json
+{
+  "file": {
+    "path": "/home/user/.ssh/known_hosts",
+    "size_bytes": 1234,
+    "modified_at": "2026-07-04T11:00:00Z",
+    "exists": true
+  },
+  "total_entries": 92,
+  "plain_entries": 92,
+  "hashed_entries": 0,
+  "algorithm_distribution": {
+    "ssh-ed25519": 23,
+    "ecdsa-sha2-nistp256": 11,
+    "ssh-rsa": 58
+  },
+  "repeated_hosts": ["github.com"],            // 同一 host 多 entry (可能 rotate 遗留)
+  "warnings": [
+    "ssh-rsa present (58 entries); RFC 8332 recommends Ed25519 or ECDSA",
+    "1 hosts have multiple entries (possible stale rotations): [github.com]"
+  ],
+  "configured_hosts": ["prod-1", "prod-2"],
+  "missing_in_known_hosts": ["prod-3"]      // --check-config 时才有
+}
+```
+
+AI 工作流:
+- 建议定期 `hostkey audit` 审查; ssh-rsa / ssh-dss / hashed-only 给出 warning
+- `--check-config` 帮 agent 检查 config 里的节点是否都有 fingerprint
+- plain 模式表格友好 (debug); -o json AI 友好
+
+e2e 测试: 6 个用例覆盖 list/dry-run/confirm/show/mismatch/remove 路径。
 
 ## TODO
 

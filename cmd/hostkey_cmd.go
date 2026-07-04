@@ -36,7 +36,7 @@ import (
 
 var hostkeyCmd = &cobra.Command{
 	Use:   "hostkey",
-	Short: "Manage known_hosts entries (list / show / remove / update)",
+	Short: "Manage known_hosts entries (list / show / remove / update / audit)",
 	Long: `Inspect and modify the host key trust database (known_hosts).
 
 Unlike --rotate-known-hosts flag (which silently replaces keys on mismatch),
@@ -47,12 +47,14 @@ Override via MYSSHW_KNOWN_HOSTS env or config.known_hosts_path.
 
 All subcommands accept -o plain|json for machine parsing.
 
-Examples:
+	Examples:
   mysshw hostkey list
   mysshw hostkey list -o json | jq '.[] | select(.host=="prod-1")'
   mysshw hostkey show prod-1.example.com
   mysshw hostkey remove prod-1.example.com
   mysshw hostkey update prod-1.example.com --node prod-1
+  mysshw hostkey audit                       # 检查 known_hosts 健康度 + 与 config 对齐
+  mysshw hostkey audit --check-config       # 比对 ~/.mysshw.toml 节点覆盖情况
 
 Exit codes (BSD sysexits):
   0    成功
@@ -173,17 +175,59 @@ func init() {
 	updateF.StringVar(&hostkeyUpdateExpectFP, "expect-fingerprint", "",
 		"Expected server fingerprint (SHA256:base64). If set and mismatch, exit 124 without modifying.")
 
-	hostkeyCmd.AddCommand(hostkeyListCmd, hostkeyShowCmd, hostkeyRemoveCmd, hostkeyUpdateCmd)
+	hostkeyCmd.AddCommand(hostkeyListCmd, hostkeyShowCmd, hostkeyRemoveCmd, hostkeyUpdateCmd, hostkeyAuditCmd)
 	rootCmd.AddCommand(hostkeyCmd)
+
+	// hostkey audit flag
+	auditF := hostkeyAuditCmd.Flags()
+	auditF.BoolVar(&hostkeyAuditCheckConfig, "check-config", false,
+		"Cross-check with ~/.mysshw.toml nodes; report hosts that are in config but missing from known_hosts")
 }
 
 // hostkeyUpdate 子命令 flag 变量
 var (
-	hostkeyUpdateNode     string
-	hostkeyUpdateTimeout  time.Duration
-	hostkeyUpdateConfirm  bool
-	hostkeyUpdateExpectFP string
+	hostkeyUpdateNode       string
+	hostkeyUpdateTimeout    time.Duration
+	hostkeyUpdateConfirm    bool
+	hostkeyUpdateExpectFP   string
+	hostkeyAuditCheckConfig bool
 )
+
+// hostkeyAuditCmd 综合审查 known_hosts
+//   - 文件健康 (路径 / 大小 / 修改时间)
+//   - algorithm 分布
+//   - 重复 host (同一 host 多 entry, 可能 rotate 后未清理)
+//   - 与 config.toml 节点覆盖: --check-config 开启时列出 missing hosts
+var hostkeyAuditCmd = &cobra.Command{
+	Use:   "audit [--check-config]",
+	Short: "Audit known_hosts health: algorithm distribution, repeated hosts, config coverage",
+	Long: `Comprehensive audit of known_hosts.
+
+Output JSON schema:
+  {
+    "file": {
+      "path": "/home/user/.ssh/known_hosts",
+      "size_bytes": 1234,
+      "modified_at": "2026-07-04T..."
+    },
+    "total_entries": 5,
+    "plain_entries": 3,
+    "hashed_entries": 2,
+    "algorithm_distribution": {"ssh-ed25519": 2, "ecdsa-sha2-nistp256": 1},
+    "repeated_hosts": ["10.0.0.5"],        // 出现多于 1 次的 host
+    "configured_hosts": ["prod-1", "prod-2"],
+    "missing_in_known_hosts": ["prod-3"], // config 里有但 known_hosts 无
+    "warnings": ["..."]                   // 可读警告
+  }
+
+Useful for:
+  - 安全审查: 老算法 (ssh-rsa) / hashed entries (无法对账)
+  - 运维同步: 发现 config 新增节点但 known_hosts 缺失
+  - 轮换清理: 找出 rotate 后留下的 old entries (repeated hosts)
+`,
+	Args: cobra.NoArgs,
+	RunE: runHostkeyAudit,
+}
 
 // ============================================================
 // list / show / remove / update handlers
@@ -315,7 +359,10 @@ func runHostkeyUpdate(cmd *cobra.Command, args []string) error {
 	}
 
 	// 拨号拿 server keys
-	cli, hostKeys, dialErr := ssh.DialCaptureHostKeys(node[0])
+	// 用 DialVerifyHostKeys (不写 known_hosts) — 这允许 --expect-fingerprint 不匹配时
+	// 我们拒绝写入且不污染 known_hosts; 之前的 DialCaptureHostKeys 会触发 accept-new
+	// 自动信任并写入 known_hosts, 与 expect-fingerprint 的 "不一致就拒" 语义冲突
+	cli, hostKeys, dialErr := ssh.DialVerifyHostKeys(node[0])
 	if dialErr != nil {
 		return WrapExit(ExitSSHError, fmt.Errorf("dial %s: %w", node[0].Name, dialErr))
 	}
@@ -417,6 +464,143 @@ func oldEntriesFor(all []knownhostsEntry, host string) []knownhostsEntry {
 		}
 	}
 	return out
+}
+
+// ============================================================
+// audit 子命令
+// ============================================================
+
+func runHostkeyAudit(cmd *cobra.Command, args []string) error {
+	path, err := ssh.GetKnownHostsPath()
+	if err != nil {
+		return WrapExit(ExitConfig, fmt.Errorf("locate known_hosts: %w", err))
+	}
+
+	entries, err := parseKnownHosts(path)
+	if err != nil {
+		return WrapExit(ExitIOErr, fmt.Errorf("parse known_hosts: %w", err))
+	}
+
+	// 文件 metadata
+	var fileMeta struct {
+		Path       string `json:"path"`
+		SizeBytes  int64  `json:"size_bytes"`
+		ModifiedAt string `json:"modified_at,omitempty"`
+		Exists     bool   `json:"exists"`
+	}
+	fileMeta.Path = path
+	if info, statErr := os.Stat(path); statErr == nil {
+		fileMeta.SizeBytes = info.Size()
+		fileMeta.ModifiedAt = info.ModTime().UTC().Format(time.RFC3339)
+		fileMeta.Exists = true
+	}
+
+	// algorithm distribution
+	algoDist := map[string]int{}
+	hashedCount := 0
+	plainCount := 0
+	hostCount := map[string]int{}
+	for _, e := range entries {
+		algoDist[e.Algorithm]++
+		if e.IsHashed {
+			hashedCount++
+		} else {
+			plainCount++
+		}
+		for _, h := range e.HostNames {
+			hostCount[h]++
+		}
+	}
+
+	// repeated hosts: 出现多次 = 可能 rotate 后未清理 + 正常多算法
+	var repeatedHosts []string
+	for h, c := range hostCount {
+		if c > 1 {
+			repeatedHosts = append(repeatedHosts, h)
+		}
+	}
+	sort.Strings(repeatedHosts)
+
+	// warnings: 老算法建议下线 (实际 ssh-rsa 1024 / DSA 都不安全)
+	var warnings []string
+	if algoDist["ssh-rsa"] > 0 {
+		warnings = append(warnings, fmt.Sprintf("ssh-rsa present (%d entries); RFC 8332 recommends Ed25519 or ECDSA", algoDist["ssh-rsa"]))
+	}
+	if algoDist["ssh-dss"] > 0 {
+		warnings = append(warnings, fmt.Sprintf("ssh-dss present (%d entries); insecure, should be removed", algoDist["ssh-dss"]))
+	}
+	if len(repeatedHosts) > 0 {
+		warnings = append(warnings, fmt.Sprintf("%d hosts have multiple entries (possible stale rotations): %v", len(repeatedHosts), repeatedHosts))
+	}
+	if hashedCount == len(entries) && len(entries) > 0 {
+		warnings = append(warnings, "all entries are hashed; unhash with `ssh-keygen -r <host>` for individual audit")
+	}
+
+	result := struct {
+		File                  map[string]any `json:"file"`
+		TotalEntries          int            `json:"total_entries"`
+		PlainEntries          int            `json:"plain_entries"`
+		HashedEntries         int            `json:"hashed_entries"`
+		AlgorithmDistribution map[string]int `json:"algorithm_distribution"`
+		RepeatedHosts         []string       `json:"repeated_hosts"`
+		Warnings              []string       `json:"warnings"`
+		ConfiguredHosts       []string       `json:"configured_hosts,omitempty"`
+		MissingInKnownHosts   []string       `json:"missing_in_known_hosts,omitempty"`
+	}{
+		File: map[string]any{
+			"path":        fileMeta.Path,
+			"size_bytes":  fileMeta.SizeBytes,
+			"modified_at": fileMeta.ModifiedAt,
+			"exists":      fileMeta.Exists,
+		},
+		TotalEntries:          len(entries),
+		PlainEntries:          plainCount,
+		HashedEntries:         hashedCount,
+		AlgorithmDistribution: algoDist,
+		RepeatedHosts:         repeatedHosts,
+		Warnings:              warnings,
+	}
+
+	// 配置覆盖 (--check-config)
+	if hostkeyAuditCheckConfig {
+		cfgPath, _ := cmd.Flags().GetString("cfg")
+		if err := config.LoadViperConfig(cfgPath); err != nil {
+			return WrapExit(ExitConfig, fmt.Errorf("load config: %w", err))
+		}
+
+		// 收集 config 中所有节点的 Host (去 name -> host)
+		var configuredHosts []string
+		seen := map[string]bool{}
+		for _, g := range config.CFG.Nodes {
+			for _, n := range g.SSHNodes {
+				if n == nil || n.Host == "" {
+					continue
+				}
+				if seen[n.Host] {
+					continue
+				}
+				seen[n.Host] = true
+				configuredHosts = append(configuredHosts, n.Host)
+			}
+		}
+		sort.Strings(configuredHosts)
+		result.ConfiguredHosts = configuredHosts
+
+		// 检查 configured hosts 是否在 known_hosts 里
+		var missing []string
+		for _, h := range configuredHosts {
+			if hostCount[h] == 0 {
+				missing = append(missing, h)
+			}
+		}
+		result.MissingInKnownHosts = missing
+		if len(missing) > 0 {
+			warnings = append(warnings, fmt.Sprintf("%d configured hosts missing from known_hosts: %v", len(missing), missing))
+			result.Warnings = warnings
+		}
+	}
+
+	return WriteOut(cmd.OutOrStdout(), result, GetOutputFormat(cmd))
 }
 
 // ============================================================
