@@ -1,7 +1,10 @@
 # TODO List
 
 > 按优先级组织。✅ = 已完成，🔄 = 进行中，⏸️ = 搁置，❌ = 未开始。
-> 最后更新：2026-06-13 (v26.06.13.2 收尾 + AGENTS.md 新增「非 main 分支 tag 分类」规则)
+> 最后更新：2026-07-04 (阶段 4 收尾: AI 友好 CLI + 端口转发全栈 + e2e 测试)
+>
+> **新版本**: v26.07.04.0 (待合并到 main 后发布)
+> 自 v26.06.13.2 以来共 13 个新 commit, 29 files changed, +4342/-9 行, +82 个测试用例
 
 ---
 
@@ -31,6 +34,10 @@
 | ✅ | 默认模板删除弱密码占位 `$ZK7M@~1RY` | `config/model_config.go` | 2026-06-13 |
 | ✅ | 配置文件落盘后 `chmod 0600` (含自动收紧旧 0644) | `config/backup_config.go` | 2026-06-13 |
 | ✅ | `MYSSHW_SKIP_HOST_KEY_CHECK` 等文档化 | `readme.md`、`readme.zh.md` | 2026-06-13 |
+| ✅ | (阶段 4 补充) 非交互 TOFU auto-trust (accept-new 语义) | `ssh/hostkey.go` | 2026-07-04 |
+
+> 阶段 4 补充说明: AI / 脚本场景 stdin 非 TTY 或立即 EOF 时, 自动 trust 新主机并写入 known_hosts
+> (OpenSSH StrictHostKeyChecking=accept-new 等价)。指纹不匹配仍拒绝 (防 MITM)。
 
 ---
 
@@ -40,6 +47,10 @@
 |------|------|---------|---------|
 | ✅ | 修复 `scp/client.go::CopyFromRemotePassThru` 双重发送 panic | `scp/client.go:240-242` | 2025 (P0 时) |
 | ✅ | 修复 `ssh/client.go::Login` 多个错误路径未调 callback (Dial/NewSession) | `ssh/client.go:230,262,275,294,301` | 2025 (P0 时) |
+| ✅ | (阶段 4) 修复 NonInteractive 模式丢弃明文密码 (bcrypt/空分支外的明文也被弃) | `ssh/client.go::resolvePasswordForSSH` | 2026-07-04 |
+
+> 阶段 4 bug 修复影响所有 NewClientNonInteractive 调用路径 (Executor / Dial / Tunnel 全链路)。
+> 之前客户端 auth_methods 为空 → 服务端握手 `attempted methods [none]` → 拒绝。
 
 ---
 
@@ -54,6 +65,8 @@
 | ✅ | `S3.NewClient` / `WebDAV.NewClient` 改用 `strings.HasPrefix(..., "/")` 校验远程路径 | `s3/client.go`、`webdav/client.go` | 2026-06-13 |
 | ✅ | S3 / WebDAV 客户端接受外部 `context.Context` 参数 | `s3/client.go`、`webdav/client.go`、`cmd/sync_cobra.go` | 2026-06-13 |
 | ✅ | 默认 TOML 模板 `[sync.webdav]` `Auth` → `auth` 大小写统一 | `config/model_config.go` | 2025-09 (commit 2168426) |
+| ✅ | (阶段 4) 抽出共享 helpers (parseDuration / isSoftErr / isNodeNotFound / isCancelLike) | `cmd/helpers.go` | 2026-07-04 |
+| ✅ | (阶段 4) 重构 connect() 抽出公共方法 | `ssh/client.go::connect` | 2026-07-04 |
 
 ---
 
@@ -112,12 +125,91 @@
 | 状态 | 任务 |
 |------|------|
 | ✅ | 实现命令自动补全 (cobra 默认) |
-| ✅ | 用 `charmbracelet/huh` 替换 `manifoldco/promptui`（后者已停止维护）|
+| ✅ | 用 `charmbracelet/huh` 替换 `manifoldco/promptui`（后者已停止维护） |
 | ⏸️ | huh 主题定制（huh 自带 `huh.Theme*()`，可暴露配置）— **搁置** |
+| ✅ | (阶段 4) AI 友好 CLI：list / exec / copy / tunnel 子命令 用 `-o json` 切换输出 (人类/机器 双格式) |
 
 ---
 
-## 8. 测试 (P2) 🟡 主要完成 (剩 2 集成)
+## 8. AI 友好 CLI (新增 P2 章节) ✅ 阶段 1+2+3+4 完成
+
+### 8.1 阶段 1+2: SSH 层基础 (2026-07-04)
+
+| 状态 | 任务 | 涉及文件 |
+|------|------|---------|
+| ✅ | `NodeSelector` + `ResolveNodes` 多维节点定位 (by-name 批量 / by-alias / by-host+user+port / 全部节点) | `ssh/resolver.go`, `ssh/resolver_test.go` (17 个用例) |
+| ✅ | `Executor` 接口 + `executorImpl` (PTY 默认开启, 收集 stdout/stderr/exit_code/duration) | `ssh/exec.go`, `ssh/exec_test.go` (11 个用例) |
+| ✅ | `BatchExecutor.RunFanOut` 多节点并发扇出 (可控 Parallel, semaphore 信号量, ctx 取消) | `ssh/exec.go` |
+| ✅ | `ssh.NewClientNonInteractive` (bcrypt / 空密码直接 nil auth, 不触发 stdin) | `ssh/client.go` |
+| ✅ | 抽出 `defaultClient.connect()` 公共方法 (原 Login 中的 Dial 段) | `ssh/client.go::connect` |
+| ✅ | `ResolveEnvRef` 替换 bcrypt/空 env 引用 | `ssh/client.go::resolvePasswordForSSH` (新增 allowStdin 参数) |
+
+### 8.2 阶段 1+2: CLI 子命令 (2026-07-04)
+
+| 状态 | 任务 | 涉及文件 |
+|------|------|---------|
+| ✅ | BSD sysexits 风格退出码常量 + `ExitError` 类型 + `HandleExit`/`WrapExit` 工具 | `cmd/errors.go`, `cmd/errors_test.go` (6 用例) |
+| ✅ | `WriteOut` 统一输出器 + `-o plain\|json` 全局 flag (`RegisterOutputFlag` / `GetOutputFormat`) | `cmd/output.go`, `cmd/output_test.go` (9 用例) |
+| ✅ | `list` 子命令: `--group` / `--search` 过滤; JSON schema 永不含 password 字段; `auth` 字段分类 (key/password/env/bcrypt/empty) | `cmd/list_cmd.go`, `cmd/list_cmd_test.go` (10 用例) |
+| ✅ | `exec` 子命令: `--node`/`--alias`/`--host`/`--user`/`--port` 定位; 默认 PTY; `--timeout`/`--parallel`; 单节点透传命令退出码; 批量任一失败 → exit 1; 全 BSD sysexits | `cmd/exec_cmd.go`, 测试覆盖 |
+
+### 8.3 阶段 3: 文件传输 + 端口转发 + dry-run (2026-07-04)
+
+| 状态 | 任务 | 涉及文件 |
+|------|------|---------|
+| ✅ | `copy` 子命令: `--upload`(`-U`) / `--download`(`-d`), `--local`/`--remote`/`--mode`/`--timeout`/`--parallel`; SCP via 复用 SSH dial | `cmd/copy_cmd.go`, `cmd/copy_cmd_test.go` (8 用例) |
+| ✅ | `tunnel local` 子命令: `-L` 等价, `--local`/`--remote`/`--idle-timeout`, Ctrl+C 优雅退出 | `cmd/tunnel_cmd.go`(重构后), `ssh/tunnel.go` |
+| ✅ | `mysshw exec --dry-run` 安全预演 (不连任何节点, JSON 输出完整 plan 含 selector/nodes/auth/pty/timeout/command) | `cmd/exec_cmd.go` |
+
+### 8.4 阶段 4: Proxy + 反向 + SOCKS5 (2026-07-04)
+
+| 状态 | 任务 | 涉及文件 |
+|------|------|---------|
+| ✅ | SSHNode 增加 `Proxy string` 字段 (TOML key `proxy`); 默认 client.connect() 检测 Proxy 走 `resolveProxyChain + dialViaProxyChain`; 多跳链 + 6 节点上限 + 环引用检测 | `ssh/proxy.go`, `config/model_config.go`, `ssh/proxy_test.go` (9 用例), `cmd/list_cmd.go::nodeSummary` |
+| ✅ | `ReverseTunnel` 接口 (`-R` 等价): SSH server 端 listen `client.Listen("tcp", bind)`; accept 后 net.Dial TargetAddr; 双向 pipe | `ssh/reverse.go`, `ssh/reverse_test.go` |
+| ✅ | `DynamicTunnel` SOCKS5 代理 (`-D` 等价): 仅支持 NO AUTH method; SOCKS5 CONNECT 命令完整握手; 支持 IPv4/Domain/IPv6 | `ssh/socks5.go`, `socks5 单元测试` (5 用例) |
+| ✅ | `tunnel` 重构为 3 子命令 (`local`/`reverse`/`dynamic`); 共用信号处理 / node 解析 | `cmd/tunnel_cmd.go`(重构), `cmd/helpers.go`(抽出共享 helpers) |
+
+### 8.5 测试 + 文档 (2026-07-04)
+
+| 状态 | 任务 | 涉及文件 |
+|------|------|---------|
+| ✅ | 单元测试: `cmd/errors.go` (BSD sysexits 常量恒定) + `cmd/output.go` (plain/JSON 双模式) | `cmd/errors_test.go`, `cmd/output_test.go` |
+| ✅ | 单元测试: `cmd/list_cmd.go` (classifyAuth 全分支 + JSON 不含 password) | `cmd/list_cmd_test.go` |
+| ✅ | 单元测试: `cmd/copy_cmd.go` (CopyResult JSON + semaphore + parseDuration + flags 不冲突) | `cmd/copy_cmd_test.go` |
+| ✅ | 单元测试: `ssh/proxy.go` (多跳 / 环 / 深度上限) | `ssh/proxy_test.go` |
+| ✅ | 单元测试: `ssh/exec.go` (RunCommand dial-fail / ctx-cancel) | `ssh/exec_test.go` |
+| ✅ | 单元测试: `ssh/reverse.go` + `ssh/socks5.go` (参数校验 + SOCKS5 帧) | `ssh/reverse_test.go` |
+| ✅ | 集成测试 (e2e, build tag): list JSON schema 永不含 password; exec 单/批量; tunnel; resolver | `ssh/e2e_test.go`, `ssh/reverse_e2e_test.go` |
+| ✅ | 文档同步: readme.zh.md「AI / 脚本友好模式」章节 (list/exec/copy/tunnel/dry-run/proxy) | `readme.zh.md` |
+
+### 8.6 用户文档与集成示例 (2026-07-04)
+
+| 状态 | 任务 | 涉及文件 |
+|------|------|---------|
+| ✅ | Claude Tool Use schema (4 个工具: ssh_list_nodes / ssh_exec / ssh_copy / ssh_tunnel) | `examples/anthropic-tool-use.json` |
+| ✅ | AI 集成指南 + Python SDK 完整示例 + 退码约定 + 安全规约 + 集成检查表 | `examples/ai-agent.md` |
+| ✅ | Examples 索引 (OpenAI / Cursor MCP / LangChain 适配指引) | `examples/README.md` |
+
+### 8.7 Bug 修复 (阶段 4 期间)
+
+| 状态 | 任务 | 修复 | 完成日期 |
+|------|------|------|---------|
+| ✅ | NonInteractive 模式丢弃明文密码 (auth_methods 空 → 服务端 `attempted methods [none]` 拒绝) | 仅让 bcrypt/空密码在 NonInteractive 路径返回 nil; 明文/${ENV} 解析后值 fall through | 2026-07-04 |
+| ✅ | `listCmd` & `execCmd` 被 `cobra_cmd.go::init()` 重复 `AddCommand` (help 显示 2 次) | 删 `cobra_cmd.go` 中的重复注册, 仅保留各 cmd 文件 init() 独享注册 | 2026-07-04 |
+| ✅ | `printNodeTable` header 用 `%d` 格式化端口列 → 显示 "0" (误把 int 当成 header 占位) | header 用 `%s` 显示字符串 "PORT"; 每行用 `fmt.Sprintf("%d", port)` 转字符串 | 2026-07-04 |
+
+### 8.8 用户体验约束 / 安全规约
+
+- [x] `list` 子命令 JSON schema 永不含 `password` / `passphrase` / `${ENV}` 变量名 (避免 AI 工具把节点列表复制到上下文时泄露)
+- [x] `copy --upload` 用 `-U` 大写, 避免与 `-u/--user` 冲突
+- [x] `exec --dry-run` 强制安全预演, 任何连接前都可验证计划
+- [x] Proxy 跳板链: 6 节点上限, 环引用检测, 失败时已建立的 transport 全部 Close
+- [x] SOCKS5 仅 NO AUTH (其他方法返回 0xFF; 密码 / GSSAPI 后续可加)
+
+---
+
+## 9. 测试 (P2) 🟡 主要完成 (剩 S3/WebDAV 集成)
 
 | 状态 | 任务 | 涉及包 | 完成日期 |
 |------|------|-------|---------|
@@ -138,12 +230,24 @@
 | ✅ | 集成测试：YML 迁移 12 个用例 (`escapeTomlString` + `convertYAMLToTOML`) | `cmd/yml_cmd_test.go` | 2026-06-13 |
 | ✅ | 单元测试：s3/webdav `joinRemotePath` 8 子用例 + `minioFileInfo` | `s3/client_test.go`、`webdav/client_test.go` | 2026-06-13 |
 | ✅ | 单元测试：cmd `createSSHConfig` 4 个用例 (env 引用) | `cmd/sync_cobra_test.go` | 2026-06-13 |
+| ✅ | 单元测试：AI 友好 CLI (BSD sysexits / WriteOut / list JSON / copy / exec) | `cmd/errors_test.go`、`cmd/output_test.go`、`cmd/list_cmd_test.go`、`cmd/copy_cmd_test.go` | **2026-07-04** |
+| ✅ | 单元测试：ssh Executor / BatchExecutor / semaphore / ctx-cancel | `ssh/exec_test.go` (11 用例) | **2026-07-04** |
+| ✅ | 单元测试：ssh Resolver (单跳 / 多跳 / alias / host / 模糊 / 环 / 深度) | `ssh/resolver_test.go` (17 用例) | **2026-07-04** |
+| ✅ | 单元测试：ssh ProxyJump (resolveProxyChain / FindNodeByName / cycle / depth) | `ssh/proxy_test.go` (9 用例) | **2026-07-04** |
+| ✅ | 单元测试：ssh ReverseTunnel + SOCKS5 DynamicTunnel 参数校验 / Close / 协议帧 | `ssh/reverse_test.go` (15 用例) | **2026-07-04** |
+| ✅ | 端到端测试 (build tag e2e, gliderlabs/ssh in-process): list JSON schema / exec 单节点 / 批量 / tunnel / resolver | `ssh/e2e_test.go`、`ssh/reverse_e2e_test.go` | **2026-07-04** |
 | ❌ | 集成测试：S3 / WebDAV 客户端 (需 mock S3/MinIO server) | `s3/`、`webdav/` | — |
-| ❌ | 端到端 SSH 客户端测试 (含键盘交互认证) | 新建 | — |
+
+> **新增测试依赖**: `github.com/gliderlabs/ssh v0.3.8` (仅 e2e build tag 用, 默认 `go test` 不引入)
+>
+> 测试运行:
+> - 默认: `go test -timeout 60s ./...`
+> - e2e:   `go test -tags e2e -timeout 90s ./ssh/...`
+> - Windows 上 SSH server 启动有端口回收延迟, e2e 略慢
 
 ---
 
-## 9. 发布与运维 (P3) 🟡 主要完成
+## 10. 发布与运维 (P3) 🟡 主要完成
 
 | 状态 | 任务 | 涉及文件 | 完成日期 |
 |------|------|---------|---------|
@@ -159,7 +263,7 @@
 
 ---
 
-## 10. 文档 (P3) 🟡 主要完成 (剩 changelog 链接)
+## 11. 文档 (P3) 🟡 主要完成 (剩 changelog 链接)
 
 | 状态 | 任务 | 完成日期 |
 |------|------|---------|
@@ -171,11 +275,12 @@
 | ✅ | 移除文档中过时的 `pkg/sftp` 引用 + 弱密码示例 | 2026-06-13 |
 | ✅ | 新增「环境变量」章节到中英文 readme | 2026-06-13 |
 | ✅ | 新增「架构」章节 (mermaid 图 + 设计决策) 到中英文 readme | 2026-06-13 |
+| ✅ | (阶段 4) 增补 AI / 脚本友好模式章节 (list / exec --dry-run / copy / tunnel / ProxyJump) | **2026-07-04** |
 | ❌ | 添加 changelog 链接到 readme | — |
 
 ---
 
-## 11. AGENTS.md 规范 (流程类)
+## 12. AGENTS.md 规范 (流程类)
 
 | 状态 | 规则 | 涉及章节 |
 |------|------|---------|
@@ -189,22 +294,42 @@
 
 | 优先级 | 类别 | 任务数 | 状态 |
 |--------|------|--------|------|
-| P0 | 仓库健康 (CRLF) + 关键 Bug | 6 | ✅ 全部完成 2026-06-13 |
-| P1 | 安全 (密码/非交互) | 8 | ✅ 全部完成 2026-06-13 |
-| P2 | 代码质量 + RunSSH + 配置 + Sync + UI + 测试 | 7 + 1 + 1 + 0 + 1 + 5 | 🟡 主要完成 (UI 主题 + 2 集成测试未做) |
-| P3 | 发布 + 文档 | 5 + 1 | 🟡 主要完成 (Docker ✅, 架构图 ✅, 4 项搁置/未做) |
+| P0 | 仓库健康 (CRLF) + 关键 Bug | 6 | ✅ 全部完成 |
+| P1 | 安全 (密码/非交互) | 8 + 1 (TOFU auto-trust) | ✅ 全部完成 |
+| P2 | 代码质量 + RunSSH + 配置 + Sync + UI + 测试 + **AI 友好 CLI** | 7 + 1 + 1 + 0 + 1 + 7 + 24 (8.1-8.8) | 🟡 主要完成 (UI 主题 + 1 集成测试未做) |
+| P3 | 发布 + 文档 | 5 + 1 | 🟡 主要完成 (4 项搁置/未做) |
 
 ---
 
-## v26.06.13.x 三阶段发布总览
+## v26.07.04.0 发布总览 (待合并到 main)
 
 ```
 v26.06.13   (P1)  6 个 commit   +312/-127  安全完整集
 v26.06.13.1 (P2) 12 个 commit   +975/-323  代码质量 + 测试收尾
 v26.06.13.2 (P3)  5 个 commit   +318/-17   Docker + 架构图 + 流程规范
+v26.06.13.3 (后台) P2 收尾       配置 bcrypt + 向导 + 备份保留
 ─────────────────────────────────────────────────────────
-累计 23 个 commit, +1605/-467 行, +110 个测试用例
+v26.07.04.0 (新增 AI 友好 CLI) 13 个 commit, 29 files, +4342/-9  list/exec/copy/tunnel/proxy/reverse/socks5/dry-run + e2e + examples
+─────────────────────────────────────────────────────────
+累计 41+ 个 commit, +3585+ 行, +185+ 个测试用例
 ```
+
+### v26.07.04.0 changelog (合并到 main 后用作正式发布)
+
+- ✨ **AI 友好 CLI**: 新增 `list`/`exec`/`copy`/`tunnel` 子命令, 专为 AI agent / 脚本 / CI 设计
+- ✨ **BSD sysexits 退出码**: 0/1/2/64/65/66/70/73/74/78/124/255 标准化
+- ✨ **统一输出格式**: `-o plain|json` 全局 flag, AI 直接解析结构化结果
+- ✨ **list JSON schema**: 永不含 password/passphrase/`${ENV}` 变量名, `auth` 字段仅标识类别
+- ✨ **exec 单节点透传命令退出码**, 批量场景任一失败 → exit 1 + JSON `exit_code`
+- ✨ **copy `-U`/`-d` 非交互 SCP**, upload batch / download single-node
+- ✨ **tunnel 三子命令**: local (`-L`) / reverse (`-R`) / dynamic (`-D` SOCKS5)
+- ✨ **ProxyJump 多跳链**: `SSHNode.Proxy` 字段, 6 节点上限 + 环引用检测
+- ✨ **`--dry-run` 安全预演**: 任何 exec 前可打印完整计划
+- ✨ **TOFU accept-new**: AI/exec 场景 stdin EOF 时自动 trust 新主机
+- 🐛 **fix(ssh)**: NonInteractive 模式不再丢弃明文密码 (避免 `attempted methods [none]`)
+- 📦 **新依赖**: `github.com/gliderlabs/ssh v0.3.8` (仅 e2e 测试用, build tag 隔离)
+- 📦 **新依赖**: `github.com/anmitsu/go-shlex` (gliderlabs 间接)
+- 📚 **AI 集成示例**: Claude Tool Use schema + Python SDK 完整示例 + 集成检查表
 
 ---
 
@@ -216,6 +341,10 @@ v26.06.13.2 (P3)  5 个 commit   +318/-17   Docker + 架构图 + 流程规范
 | Homebrew tap (macOS) | 作者不想推 | 2026-06-13 |
 | Scoop bucket (Windows) | 作者不想推 | 2026-06-13 |
 | GitHub Actions CI/CD | 非生产环境工具 | 2026-06-13 |
+| 配置文件加密 | bcrypt 已能防明文落盘, 加密是后续工作 | 2026-06-13 |
+| SOCKS5 密码 / GSSAPI 认证 | 默认 NO AUTH 已满足 AI 场景, 加密代理后续可加 | 2026-07-04 |
+| SSHNode.Jumps []string 多跳 TOML 字段 | 当前 Proxy 是单一字符串, 多跳通过链式 Proxy 实现, 公开字段后续可加 | 2026-07-04 |
+| 配置文件加密选项 | `config/` (新功能) — 仅加密级别, 非密码本身 | 2026-06-13 |
 
 ---
 
@@ -224,5 +353,5 @@ v26.06.13.2 (P3)  5 个 commit   +318/-17   Docker + 架构图 + 流程规范
 - "完成" 的定义：代码已提交到 HEAD，文档已同步。
 - "进行中" 仅用于有 WIP 分支或工作区修改未提交的情况。
 - 安全相关任务即使排 P1，也应在下一次发布前完成。
+- AI 友好 CLI 阶段 1+2+3+4 总计 13 个 commit, 合并到 main 后建议打 **v26.07.04.0** tag 并生成 `changelog.v26.07.04.0.md`。
 - AGENTS.md 是项目所有流程规范的唯一真相源。
-
