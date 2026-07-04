@@ -156,9 +156,12 @@ mysshw 提供两层工具：
   - 默认 dry-run: 打印 plan, 不写盘
   - `--confirm` 才实际写入
   - `--expect-fingerprint` 进一步验证 (MITM 保护): 与 server 实际指纹不匹配时拒绝写入
+- `mysshw hostkey audit [--check-config]`  审查 known_hosts (文件状态 + algorithm 分布 +
+  重复 host 警告 + 与 config 跨底对齐). read-only, 不会动任何东西
 
 **AI 推荐用法:**
 - **合格制 update** (admin 主动告知新指纹后): AI 调 `hostkey update --expect-fingerprint SHA256:new --confirm`
+- **定期审查** (运维自动任务): AI 调 `hostkey audit --check-config` 定期检查老算法 + 缺失 host
 - **不要启用** `--rotate-known-hosts` flag 在常规脚本中, 除非 admin 说“可以”
 
 `MYSSHW_KNOWN_HOSTS_UPDATE=always` (永久自更新) 存在项目设计为不实现,以防 AI Agent 丢失防 MITM 能力。

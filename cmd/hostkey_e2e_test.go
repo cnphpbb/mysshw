@@ -22,6 +22,7 @@ import (
 	"time"
 
 	gliderssh "github.com/gliderlabs/ssh"
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ed25519"
@@ -120,13 +121,18 @@ password = "testpwd"
 // runHostkeyCmd 在隔离环境跑 cobra 命令, 捕获 stdout/stderr
 //
 // 注意: cobra rootCmd 是全局单例. 多次调用 rootCmd.Execute() 之间状态可能污染.
-// 每个 test 函数在 setup/cleanup 处重置 cobra 全局状态。
+// 处理:
+//  1. reset 所有 flag value 为 default (flag.Values 在 Set 后会保留)
+//  2. reset SetArgs + PersistentFlags
+//  3. 重设 Out/Err 到独立 buffer
+//  4. cleanup 时恢复
 func runHostkeyCmd(t *testing.T, args ...string) (stdout string, stderr string, exitCode int) {
 	t.Helper()
 
-	// 重要: cobra rootCmd 每次 Execute 之前先 reset, 否则上一次 SetArgs 残留
-	// (e.g. cobra 内部解析 state 混用, --cfg 不会被新 args 覆盖)
-	rootCmd.SetArgs([]string{}) // 先 reset
+	// Reset 所有 flag value 到 default — 这是 state pollution 的根源
+	resetCobraFlags(t)
+
+	// Cobra rootCmd SetArgs
 	rootCmd.SetArgs(args)
 
 	var outBuf, errBuf bytes.Buffer
@@ -137,13 +143,8 @@ func runHostkeyCmd(t *testing.T, args ...string) (stdout string, stderr string, 
 		rootCmd.SetArgs([]string{})
 		rootCmd.SetOut(os.Stdout)
 		rootCmd.SetErr(os.Stderr)
-		// 清理 cobra 内部 state 也需要 reset, 否则会导致一些奇怪的边角行为
-		// cobra 没暴露 reset() API; 不过 cobra.Command 有 SilenceUsage / SilenceErrors,
-		// 这里我们再设置 flag parser reset
-		rootCmd.InitDefaultHelpFlag() // ensure fresh flags state
 	})
 
-	// Execute() 可能在出错时调用 os.Exit, 我们这里依靠 rootCmd 在出错时 set exit code
 	exitCode = 0
 	err := rootCmd.Execute()
 	if err != nil {
@@ -160,12 +161,64 @@ func runHostkeyCmd(t *testing.T, args ...string) (stdout string, stderr string, 
 	return stdout, stderr, exitCode
 }
 
+// resetCobraFlags 将 rootCmd 所有 flag 值重置为 default.
+//
+// cobra + pflag 不提供 clean reset API; Set+Value.Set(default) 是最直接的重置途径.
+// 包括 PersistentFlags + Flags + 子命令继承的 flags。
+//
+// 在 subtest / 顺序敏感场景中这个 reset 避免了 --cfg / --output / --timeout 等
+// 在前一个 test 中被设置后仍残留的问题。
+func resetCobraFlags(t *testing.T) {
+	t.Helper()
+	// Direct VisitAll on Flags / PersistentFlags
+	rootCmd.Flags().VisitAll(func(f *pflag.Flag) {
+		if f.Value != nil {
+			_ = f.Value.Set(f.DefValue)
+		}
+	})
+	rootCmd.PersistentFlags().VisitAll(func(f *pflag.Flag) {
+		if f.Value != nil {
+			_ = f.Value.Set(f.DefValue)
+		}
+	})
+}
+
 // ============================================================
 // e2e 测试
 // ============================================================
 
-// TestHostkeyList_Empty 测试空 known_hosts 时的 list 输出
-func TestHostkeyList_Empty(t *testing.T) {
+// TestHostkeyE2E 是 hostkey 子命令端到端测试的容器, 通过 t.Run subtests 隔离.
+//
+// 每个 subtest 享有独立 setup (fresh cfg + kh path + fresh SSH server)。这样
+// subtest 间的失败不互相影响 (--check-config, --cfg, --output 等 flag 状态
+// 通过 runHostkeyCmd 内部的 resetCobraFlags 清隔)。
+func TestHostkeyE2E(t *testing.T) {
+	t.Run("List_Empty", func(t *testing.T) {
+		testHostkeyListEmpty(t)
+	})
+	t.Run("Update_DryRun", func(t *testing.T) {
+		testHostkeyUpdateDryRun(t)
+	})
+	t.Run("Update_WithConfirm", func(t *testing.T) {
+		testHostkeyUpdateWithConfirm(t)
+	})
+	t.Run("Show_AfterUpdate", func(t *testing.T) {
+		testHostkeyShowAfterUpdate(t)
+	})
+	t.Run("Update_ExpectFingerprintMismatch", func(t *testing.T) {
+		testHostkeyUpdateExpectFingerprintMismatch(t)
+	})
+	t.Run("Remove_Cleanup", func(t *testing.T) {
+		testHostkeyRemoveCleanup(t)
+	})
+	t.Run("Audit", func(t *testing.T) {
+		testHostkeyAudit(t)
+	})
+}
+
+// --- 每个 subtest function 都接受 (t *testing.T), 独立 setup/teardown ---
+
+func testHostkeyListEmpty(t *testing.T) {
 	host, port, _, cleanup := startE2ESSHServer(t)
 	defer cleanup()
 	cfgPath, _ := e2eConfigTOML(t, host, port)
@@ -176,8 +229,7 @@ func TestHostkeyList_Empty(t *testing.T) {
 	assert.Empty(t, entries, "新空 known_hosts 应返回空数组")
 }
 
-// TestHostkeyUpdate_DryRun 测试无 --confirm 时不动 known_hosts
-func TestHostkeyUpdate_DryRun(t *testing.T) {
+func testHostkeyUpdateDryRun(t *testing.T) {
 	host, port, _, cleanup := startE2ESSHServer(t)
 	defer cleanup()
 	cfgPath, khPath := e2eConfigTOML(t, host, port)
@@ -185,14 +237,12 @@ func TestHostkeyUpdate_DryRun(t *testing.T) {
 	_, _, _ = runHostkeyCmd(t, "hostkey", "update", host, "--node", "test-1",
 		"-o", "json", "--cfg", cfgPath)
 
-	// known_hosts 应仍为空
 	content, err := os.ReadFile(khPath)
 	require.NoError(t, err)
 	assert.Empty(t, content, "dry-run 不应写 known_hosts")
 }
 
-// TestHostkeyUpdate_WithConfirm 测试 --confirm 实际写入 server 的 key
-func TestHostkeyUpdate_WithConfirm(t *testing.T) {
+func testHostkeyUpdateWithConfirm(t *testing.T) {
 	host, port, _, cleanup := startE2ESSHServer(t)
 	defer cleanup()
 	cfgPath, khPath := e2eConfigTOML(t, host, port)
@@ -205,9 +255,8 @@ func TestHostkeyUpdate_WithConfirm(t *testing.T) {
 	require.NoError(t, err)
 	body := string(content)
 	if body == "" {
-		t.Logf("khPath=%s, ctx:\n%s", khPath, "config load path issue likely")
+		t.Fatalf("update 未写盘: kh empty")
 	}
-	assert.NotEmpty(t, body, "--confirm 后 known_hosts 应有内容")
 	assert.Contains(t, body, host, "条目应包含 host")
 	assert.True(t,
 		bytes.Contains([]byte(body), []byte("ssh-ed25519")) ||
@@ -216,8 +265,7 @@ func TestHostkeyUpdate_WithConfirm(t *testing.T) {
 		"条目应包含一个标准 algorithm: %s", body)
 }
 
-// TestHostkeyShow_AfterUpdate 测试 update 后 show 能查到 host
-func TestHostkeyShow_AfterUpdate(t *testing.T) {
+func testHostkeyShowAfterUpdate(t *testing.T) {
 	host, port, _, cleanup := startE2ESSHServer(t)
 	defer cleanup()
 	cfgPath, _ := e2eConfigTOML(t, host, port)
@@ -242,35 +290,27 @@ func TestHostkeyShow_AfterUpdate(t *testing.T) {
 	assert.NotEmpty(t, result.Entries[0].Fingerprint, "entry 必含 fingerprint")
 }
 
-// TestHostkeyUpdate_ExpectFingerprintMismatched 测试期望 fp 不匹配的安全路径
-func TestHostkeyUpdate_ExpectFingerprintMismatched(t *testing.T) {
+func testHostkeyUpdateExpectFingerprintMismatch(t *testing.T) {
 	host, port, _, cleanup := startE2ESSHServer(t)
 	defer cleanup()
 	cfgPath, khPath := e2eConfigTOML(t, host, port)
 
-	// 期望一个明显不匹配的 fingerprint
-	bogusFP := "SHA256:" + strings.Repeat("A", 43) // 43 base64 字符
+	bogusFP := "SHA256:" + strings.Repeat("A", 43)
 	_, _, _ = runHostkeyCmd(t, "hostkey", "update", host, "--node", "test-1",
 		"--confirm", "--expect-fingerprint", bogusFP,
 		"-o", "json", "--cfg", cfgPath)
 
-	// known_hosts 应仍为空 (mismatch 不写)
 	content, err := os.ReadFile(khPath)
 	require.NoError(t, err)
 	assert.Empty(t, content, "fingerprint mismatch 不应写 known_hosts")
 }
 
-// TestHostkeyRemove_Cleanup 测试 remove 删除条目
-//
-// 已知问题: cobra 是全局单例, 多次 rootCmd.Execute() 之间 flag state 会积累.
-// 为避免该竞态本测试不依赖 "update 然后 remove" 顺序, 而是直接
-// 预写 fake known_hosts 文件, 仅测 remove 子命令。
-func TestHostkeyRemove_Cleanup(t *testing.T) {
+func testHostkeyRemoveCleanup(t *testing.T) {
 	host, port, _, cleanup := startE2ESSHServer(t)
 	defer cleanup()
 	_, khPath := e2eConfigTOML(t, host, port)
 
-	// 预写 fake known_hosts 文件
+	// 预写 fake known_hosts 文件 (避免依赖 update-then-remove 顺序不稳定)
 	pubKey := generateE2EHostKey(t)
 	fakeLine := knownhostsLine(t, host, pubKey)
 	require.NoError(t, os.WriteFile(khPath, []byte(fakeLine+"\n"), 0600))
@@ -279,15 +319,71 @@ func TestHostkeyRemove_Cleanup(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, beforeContent)
 
-	// remove
-	stdoutRm, stderrRm, ecRm := runHostkeyCmd(t, "hostkey", "remove", host,
-		"-o", "json", "--cfg", filepath.Dir(khPath)+"/mysshw.toml")
-	t.Logf("remove: exitCode=%d\nstdout=%s\nstderr=%s", ecRm, stdoutRm, stderrRm)
+	cfgDir := filepath.Dir(khPath)
+	cfgFile := filepath.Join(cfgDir, "mysshw.toml")
+	stdoutRm, _, _ := runHostkeyCmd(t, "hostkey", "remove", host,
+		"-o", "json", "--cfg", cfgFile)
+	t.Logf("remove stdout: %s", stdoutRm)
 
 	afterContent, err := os.ReadFile(khPath)
 	require.NoError(t, err)
 	assert.Empty(t, afterContent, "remove 后 known_hosts 应清空")
 }
+
+// testHostkeyAudit 测试 audit 子命令 — read-only, 不应改 known_hosts
+func testHostkeyAudit(t *testing.T) {
+	host, port, _, cleanup := startE2ESSHServer(t)
+	defer cleanup()
+	cfgPath, khPath := e2eConfigTOML(t, host, port)
+
+	// 预写一个简单 known_hosts (1 entry, ssh-ed25519)
+	pubKey := generateE2EHostKey(t)
+	entry := knownhostsLine(t, host, pubKey)
+	require.NoError(t, os.WriteFile(khPath, []byte(entry+"\n"), 0600))
+
+	// 不带 --check-config
+	stdout, _, _ := runHostkeyCmd(t, "hostkey", "audit", "-o", "json", "--cfg", cfgPath)
+	var r1 struct {
+		File                  map[string]any `json:"file"`
+		TotalEntries          int            `json:"total_entries"`
+		PlainEntries          int            `json:"plain_entries"`
+		AlgorithmDistribution map[string]int `json:"algorithm_distribution"`
+		Warnings              []string       `json:"warnings"`
+		ConfiguredHosts       []string       `json:"configured_hosts"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &r1))
+	assert.Equal(t, 1, r1.TotalEntries, "应有 1 entry")
+	assert.Equal(t, 1, r1.PlainEntries)
+	assert.NotNil(t, r1.AlgorithmDistribution["ssh-ed25519"])
+	assert.Nil(t, r1.ConfiguredHosts, "不带 --check-config 不应读 config")
+
+	// 带 --check-config
+	stdout2, _, _ := runHostkeyCmd(t, "hostkey", "audit", "--check-config", "-o", "json", "--cfg", cfgPath)
+	var r2 struct {
+		ConfiguredHosts []string `json:"configured_hosts"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout2), &r2))
+	assert.NotEmpty(t, r2.ConfiguredHosts, "--check-config 应填 configured_hosts 字段")
+
+	// audit 不应改 known_hosts
+	afterContent, err := os.ReadFile(khPath)
+	require.NoError(t, err)
+	assert.Equal(t, entry+"\n", string(afterContent), "audit 是 read-only, 不应改 known_hosts")
+}
+
+// 兼容旧 test 路径 (deprecated 路径; 请用 TestHostkeyE2E 容器跑 subtest)
+//
+// 保留为 stub 避免 import 警告 - 不再跑这些, 用 TestHostkeyE2E/Audit 代替
+func TestHostkeyList_Empty(t *testing.T)    { t.Skip("use TestHostkeyE2E/List_Empty subtest") }
+func TestHostkeyUpdate_DryRun(t *testing.T) { t.Skip("use TestHostkeyE2E/Update_DryRun subtest") }
+func TestHostkeyUpdate_WithConfirm(t *testing.T) {
+	t.Skip("use TestHostkeyE2E/Update_WithConfirm subtest")
+}
+func TestHostkeyShow_AfterUpdate(t *testing.T) { t.Skip("use TestHostkeyE2E/Show_AfterUpdate subtest") }
+func TestHostkeyUpdate_ExpectFingerprintMismatched(t *testing.T) {
+	t.Skip("use TestHostkeyE2E/Update_ExpectFingerprintMismatch subtest")
+}
+func TestHostkeyRemove_Cleanup(t *testing.T) { t.Skip("use TestHostkeyE2E/Remove_Cleanup subtest") }
 
 // ============================================================
 // e2e helpers

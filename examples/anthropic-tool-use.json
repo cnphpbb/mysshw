@@ -129,18 +129,18 @@
     },
     {
       "name": "ssh_hostkey",
-      "description": "List / inspect / update / remove known_hosts entries. 比 --rotate-known-hosts flag 更可控: 显式 audit + dry-run by default.",
+      "description": "List / inspect / update / remove / audit known_hosts entries. read-only action: list/show/audit. write action: update/remove.",
       "input_schema": {
         "type": "object",
         "properties": {
           "action": {
             "type": "string",
-            "enum": ["list", "show", "update", "remove"],
+            "enum": ["list", "show", "update", "remove", "audit"],
             "description": "必传"
           },
           "host": {
             "type": "string",
-            "description": "show/update/remove 需要目标 host (list 不需要)"
+            "description": "show/update/remove 需要目标 host; list/audit 不需要"
           },
           "node": {
             "type": "string",
@@ -155,9 +155,14 @@
             "type": "string",
             "description": "update 可选: 期望服务器指纹 (MITM-protected); 不匹配则拒绝写入"
           },
+          "check_config": {
+            "type": "boolean",
+            "default": false,
+            "description": "audit 可选: 交叉检查 ~/.mysshw.toml 节点覆盖, 列出 missing_in_known_hosts"
+          },
           "timeout": { "type": "string", "default": "30s" }
         },
-        "required": ["action", "host"],
+        "required": ["action"],
         "additionalProperties": false
       }
     }
@@ -201,6 +206,11 @@
       "Claude 调用 ssh_hostkey update prod-1 --expect_fingerprint SHA256:new...",
       "AI 检查 lint: --expect_fingerprint 与 server 实际一致才生效",
       "下次 exec/copy 不需 --rotate-known-hosts, 自动 go through"
+    ],
+    "periodic_security_audit": [
+      "Claude 调用 ssh_hostkey audit --check_config",
+      "看 warnings 与 repeated_hosts 字段",
+      "如多 hashed entries: 建议 admin 干理已知 hosts (ssh-keygen -r host) "
     ]
   }
 }
