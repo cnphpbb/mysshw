@@ -333,7 +333,34 @@ v26.07.04.0 (新增 AI 友好 CLI) 13 个 commit, 29 files, +4342/-9  list/exec/
 
 ---
 
-## 显式搁置项 (P2/P3)
+## 13. AI 动态 CLI Schema (新增 P3) ✅ 完成
+
+| 状态 | 任务 | 涉及文件 | 完成日期 |
+|------|------|---------|----------|
+| ✅ | `completions` 子命令: `--flat` 展平模式 + 子命令筛选 (`completions tunnel`) | `cmd/completions_cmd.go` | 2026-07-06 |
+| ✅ | 动态输出完整 CLI JSON schema (从 cobra 运行时反射) | `cmd/completions_cmd.go::buildSchema` | 2026-07-06 |
+| ✅ | 包含字段: application / commands (递归) / flags (含 persistent/type/default) / exit_codes (BSD sysexits 全量) | `cmd/completions_cmd.go` | 2026-07-06 |
+| ✅ | Args policy 推断 (反射 PositionalArgs 函数名 → noargs/arbitrary/exact(N)/custom) | `cmd/completions_cmd.go::inferArgsPolicy` | 2026-07-06 |
+| ✅ | 敏感默认值 redact (password/passphrase/secret/token 类 flag 默认值不输出明文) | `cmd/completions_cmd.go::flagToSchema` | 2026-07-06 |
+| ✅ | 单元测试 14 个用例 (schema 字段/命令发现/嵌套展开/filter/扁平化/JSON 往返/hidden flag 过滤) | `cmd/completions_cmd_test.go` | 2026-07-06 |
+
+### 使用场景
+
+- AI agent 运行时发现当前 mysshw 版本支持的完整 CLI 结构，无需硬编码
+- 动态 tool 注册 (Tool Use schema 从二进制 query 生成)
+- 版本差异检测 (比对 schema_version = "1.0" 兼容性)
+- CLI 自动补全/文档生成
+
+### JSON schema 设计要点
+
+- **schema_version** = "1.0", 后续变更需递增
+- **commands** 树递归 (rootCmd.Commands → completionsCmd.Commands → ...), 按 path 字典序排序
+- **flags** 含 name/shorthand/type/default/usage/persistent, hidden flag 过滤, 敏感字段 redact
+- **args_policy** 反射推断: well-known 函数 (NoArgs/ArbitraryArgs) → 字面量; 带参函数 (ExactArgs/MinimumNArgs) → 抽象名 (exact(N))
+- **exit_codes** 14 个 BSD sysexits 全量, 与 `cmd/errors.go` 常量一致
+- **filter** `completions <subcmd>` 路径筛选, **flat** `--flat` 单层数组
+
+---
 
 | 项 | 原因 | 决定日期 |
 |---|---|---|

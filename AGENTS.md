@@ -49,6 +49,16 @@ mysshw/
 │   ├── sync_cobra.go          # sync 命令：SCP/WebDAV/S3 上传下载
 │   ├── version_cobra.go       # version 命令：打印版本信息
 │   ├── yml_cmd.go             # yml 命令：sshw YAML → mysshw TOML 迁移
+│   ├── init_cmd.go            # init 命令：首次运行向导
+│   ├── list_cmd.go            # list 子命令：AI 友好的节点列表
+│   ├── exec_cmd.go            # exec 子命令：非交互 SSH 命令执行
+│   ├── copy_cmd.go            # copy 子命令：SCP 文件传输
+│   ├── tunnel_cmd.go          # tunnel 子命令：本地/反向/SOCKS5 端口转发
+│   ├── hostkey_cmd.go         # hostkey 子命令：known_hosts 管理
+│   ├── completions_cmd.go     # completions 子命令：动态输出 CLI Schema (JSON)
+│   ├── output.go              # -o plain|json 全局输出器
+│   ├── errors.go              # BSD sysexits 退出码 + ExitError
+│   ├── helpers.go             # 共享 helpers (duration 解析等)
 │   └── messages.go            # 全局字符串常量
 │
 ├── config/                    # 配置管理层
@@ -231,13 +241,14 @@ mage build
 
 | 优先级 | 功能 | 涉及包 |
 |--------|------|--------|
-| 中 | 主界面支持主题 | ssh/cmd.go |
+| 低 | 主界面支持主题 | ssh/cmd.go |
 | 低 | 配置文件加密 | config/ |
-| 低 | Docker 镜像 | 新文件 |
-| 中 | 自动化 CI/CD | 新文件 |
-| 中 | 集成测试 | 各包 |
-| 低 | Github/Gitee Gist 同步 | 新包 |
-| 低 | API/RPC 同步 | 新包 |
+| 低 | MCP Server (Claude/Cursor 原生集成) | 新文件 cmd/mcp_cmd.go |
+| 低 | config 子命令 (节点 CRUD) | 新文件 cmd/config_cmd.go |
+| 低 | ping 子命令 (连通性检测) | 新文件 cmd/ping_cmd.go |
+| 低 | info 子命令 (系统发现) | 新文件 cmd/info_cmd.go |
+| 低 | export/import (配置可移植性) | 新文件 cmd/import_cmd.go |
+| 中 | exec --follow (流式输出) | cmd/exec_cmd.go |
 
 ---
 
