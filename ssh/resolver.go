@@ -65,7 +65,7 @@ func ResolveNodes(cfg *config.Configs, sel NodeSelector) ([]*config.SSHNode, err
 				continue
 			}
 			seen[name] = true
-			n := findByName(pool, name)
+			n := findByNameOrAlias(pool, name)
 			if n != nil {
 				matched = append(matched, n)
 			} else {
@@ -146,9 +146,26 @@ func flattenNodes(cfg *config.Configs) []*config.SSHNode {
 	return out
 }
 
-func findByName(pool []*config.SSHNode, name string) *config.SSHNode {
+// findByNameOrAlias 按 name 或 alias 精确查找节点
+//
+// 匹配优先级:
+//   - 先匹配 Name
+//   - Name 未匹配时改匹配 Alias
+//
+// 这样 --node 可以同时接受 name 或 alias 作为标识, 用户不需要纠结
+// 一个 TOML 节点是用 name 还是 alias 来识别的。
+// 如果某个值同时匹配多个节点 (name=A,alias=B 和 name=B,alias=A)，
+// 只有第一个(按原配置顺序)被返回。需要更精确匹配可用 --alias 参数。
+func findByNameOrAlias(pool []*config.SSHNode, nameOrAlias string) *config.SSHNode {
+	// 第一遍: 精确匹配 Name
 	for _, n := range pool {
-		if n.Name == name {
+		if n.Name == nameOrAlias {
+			return n
+		}
+	}
+	// 第二遍: 匹配 Alias (仅在 Name 未命中时)
+	for _, n := range pool {
+		if n.Alias == nameOrAlias {
 			return n
 		}
 	}

@@ -51,7 +51,7 @@ Designed for AI agents and scripts:
   - BSD sysexits-style exit codes
 
 Selectors (priority: --node > --alias > --host [+ -u / -p]):
-  --node <name>     Exact match of SSHNode.Name (repeatable for batch)
+  --node <name>     Match by Name or Alias (exact, repeatable for batch)
   --alias <alias>   Exact match of SSHNode.Alias
   --host <host>     Match by Host (combine with -u/-p to disambiguate)
 
@@ -87,7 +87,7 @@ Exit codes (BSD sysexits):
 func init() {
 	f := execCmd.Flags()
 	f.StringSliceVar(&execNodesFlag, "node", nil,
-		"Node name (exact). Repeat for batch: --node X --node Y --node Z")
+		"Node name or alias (exact). Repeat for batch: --node X --node Y --node Z")
 	f.StringVar(&execAlias, "alias", "", "Node alias (exact)")
 	f.StringVar(&execHost, "host", "", "Node host (combine with -u/-p)")
 	f.StringVarP(&execUser, "user", "u", "", "User for --host selector")
