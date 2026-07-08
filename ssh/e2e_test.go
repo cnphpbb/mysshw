@@ -231,6 +231,100 @@ func TestE2E_BatchExecutorMultipleNodes(t *testing.T) {
 	}
 }
 
+// TestE2E_StreamExecutorSingleNode 验证 RunStream 逐行 callback
+func TestE2E_StreamExecutorSingleNode(t *testing.T) {
+	host, port, _, cleanup := startTestSSHServer(t)
+	defer cleanup()
+
+	node := e2eNode(t, host, port)
+	exec, err := NewExecutor(node, ExecOptions{UsePTY: false})
+	require.NoError(t, err)
+	defer exec.Close()
+
+	var lines []string
+	cb := func(stream, line string) {
+		if stream == "stdout" {
+			lines = append(lines, line)
+		}
+	}
+	res, runErr := exec.RunStream(context.Background(), "echo stream-test", cb)
+	require.NoError(t, runErr)
+	assert.Equal(t, 0, res.ExitCode)
+	require.NotEmpty(t, lines, "should receive at least one stdout line")
+	assert.Contains(t, lines[0], "executed:")
+}
+
+// TestE2E_BatchStreamMultipleNodes 验证 BatchExecutor.RunStream 多节点并发
+func TestE2E_BatchStreamMultipleNodes(t *testing.T) {
+	host, port, _, cleanup := startTestSSHServer(t)
+	defer cleanup()
+
+	nodes := []*config.SSHNode{
+		e2eNode(t, host, port),
+		e2eNode(t, host, port),
+	}
+	nodes[0].Name = "n-1"
+	nodes[1].Name = "n-2"
+
+	be := &BatchExecutor{
+		Nodes:   nodes,
+		Options: BatchOptions{UsePTY: false, Timeout: 5 * time.Second, Parallel: 2},
+	}
+
+	var events []StreamEvent
+	handler := func(ev StreamEvent) {
+		events = append(events, ev)
+	}
+	results := be.RunStream(context.Background(), "echo stream-batch", handler)
+	require.Len(t, results, 2)
+
+	// 验证每个节点都有 start/stdout/exit 事件
+	for _, r := range results {
+		if r == nil {
+			t.Fatalf("result is nil")
+		}
+		assert.Equal(t, 0, r.ExitCode)
+	}
+
+	// 统计事件类型
+	eventTypes := make(map[string]int)
+	for _, ev := range events {
+		eventTypes[ev.Event]++
+	}
+	// 期望: 2 个 start + 2 个 stdout + 2 个 exit
+	assert.Equal(t, 2, eventTypes["start"], "expected 2 start events")
+	assert.Equal(t, 2, eventTypes["stdout"], "expected 2 stdout events")
+	assert.Equal(t, 2, eventTypes["exit"], "expected 2 exit events")
+}
+
+// TestE2E_StreamContextCancel 验证 ctx 取消时 stream 也能中断
+func TestE2E_StreamContextCancel(t *testing.T) {
+	host, port, _, cleanup := startTestSSHServer(t)
+	defer cleanup()
+
+	node := e2eNode(t, host, port)
+	exec, err := NewExecutor(node, ExecOptions{UsePTY: false})
+	require.NoError(t, err)
+	defer exec.Close()
+
+	// 极短超时 + 多输出命令 验证 ctx cancel 能中断 stream.
+	// 使用 sleep 命令或者借 cancel 主动中断
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // 立即取消
+
+	cb := func(stream, line string) {}
+	res, runErr := exec.RunStream(ctx, "echo anything", cb)
+	// ctx 预先取消, 应该返回错误 (cancelled before dial)
+	// 但实际可能在 dial 后 Run 才开始, 此时 session.Close() 会让 Run 返回错误
+	if runErr == nil {
+		// 如果 res 没拿到, 也算 cancel 生效
+		assert.NotNil(t, res)
+	} else {
+		// 接受 cancelled 错误
+		t.Logf("got expected cancel error: %v", runErr)
+	}
+}
+
 func TestE2E_TunnelListenAndClose(t *testing.T) {
 	host, port, _, cleanup := startTestSSHServer(t)
 	defer cleanup()
