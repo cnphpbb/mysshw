@@ -1,62 +1,171 @@
-# config example.
-# see URL: https://github.com/cnphpbb/mysshw/blob/master/readme.md#config
-cfg_dir = "./.mysshw.toml"   # default:  $HOME/.mysshw.toml
+# mysshw 配置示例 (v26.07.04.0+)
+# 完整字段参考: https://github.com/cnphpbb/mysshw/blob/master/readme.md#config
+# MCP 集成文档: https://github.com/cnphpbb/mysshw/blob/master/examples/mcp-integration.md
+#
+# 字段约定:
+#   - "必填" 字段不可省略, 省略会导致 LoadViperConfig 失败
+#   - "可选" 字段省略时使用默认值
+#   - 密码字段建议用 ${MYSSHW_PWD_xxx} env 引用, 避免明文落盘
+#   - 单个 SSH 节点在同一 group 内 name 必须唯一
+#   - alias 在全局配置中应唯一, 方便 --node <alias> 定位
+#   - keypath 指定后 validator 会检查文件存在; 示例中所有 keypath 都注释掉了
+#     用户启用密钥认证时, 请把 keypath 解开并改成自己的路径
 
-# 主机指纹校验 (可选, 留空使用默认 ~/.ssh/known_hosts)
-# 支持 ~ 和 $HOME 展开, 父目录不存在时会自动创建
+# ============================================================
+# 顶层字段
+# ============================================================
+
+# cfg_dir: 配置目录路径 (留空 → $HOME/.mysshw.toml)
+# cfg_dir = "~/.mysshw/"
+
+# known_hosts_path: 自定义主机指纹存储路径
+# 留空 → ~/.ssh/known_hosts (与 OpenSSH 共享)
+# 路径支持 ~ 和 $HOME 展开; 父目录不存在时会自动创建
 # known_hosts_path = "~/.mysshw/known_hosts"
 
+# backup_keep: 写 TOML 时保留的本地备份数量
+# 留空或 ≤0 → 默认 5
+# 备份命名: <name>.<YYYYMMDD_HHMMSS>.bak, atomic rename 保证原子性
+# backup_keep = 5
+
+
+# ============================================================
+# 同步配置 (sync 命令, 把本配置分发到远端)
+# ============================================================
+
 [sync]
-type = "scp" # type: ( scp || webdav || s3 ) default: scp
+# type: 同步协议, 必填
+#   scp     → 通过 SSH 通道 SCP 传输
+#   webdav  → WebDAV 协议
+#   s3      → S3 兼容存储 (AWS S3 / MinIO / RustFS)
+type = "scp"
+
 remote_uri = "127.0.0.1:22"
 remote_path = "/data/backup/mysshw/mysshw.toml" # remote file path
 
+# === scp 协议配置 ===
 [sync.scp]
 username = "root"
-password = "${MYSSHW_PWD_sync}"  # 支持 ${VAR} / ${VAR:-default} 引用环境变量
-keypath = "~/.ssh/id_rsa"
-passphrase = ""
+# password 支持 ${VAR} / ${VAR:-default} 引用环境变量
+# 推荐: export MYSSHW_PWD_sync='实际密码' 后用 ${MYSSHW_PWD_sync} 引用
+password = "${MYSSHW_PWD_sync}"
+# keypath = "~/.ssh/id_rsa"   # 启用时 validator 会校验文件存在
+# passphrase = "${MYSSHW_KEY_PASSPHRASE:-}"
 
+# === webdav 协议配置 ===
 [sync.webdav]
 auth = "Basic" # Basic || Digest
 username = "root"
 password = "${MYSSHW_PWD_webdav}"
 
+# === s3 协议配置 ===
 [sync.s3]
-access_key = "*******" # 访问密钥
-secret_key = "********" # 密钥
-bucket_name = "*******" # 桶名
-region = "********" # 区域
-endpoint = "********" # 终端节点 这个值为空，按 remote_uri 的值
+access_key = "${MYSSHW_S3_ACCESS_KEY}"   # 访问密钥
+secret_key = "${MYSSHW_S3_SECRET_KEY}"   # 密钥
+bucket_name = "mysshw-backup"            # 桶名
+region = "us-east-1"                     # 区域
+endpoint = ""                            # 终端节点; 留空按 remote_uri 解析
 
 
-# config example.
-# see URL: https://github.com/cnphpbb/mysshw/blob/master/readme.md#config
+# ============================================================
+# SSH 节点配置
+# ============================================================
+# 每个 [[nodes]] 块代表一个 group, group 内可定义多个 SSH 节点
+# --group 参数批量筛选, --node 重复用于批量操作
+
+# --- Group 1: Production (env 引用密码, 适合 K8s/容器) ---
 [[nodes]]
-groups = "Groups01"
+groups = "Production"
+
+# 节点 1.1: 密码认证 (env 引用, 不明文落盘)
+[[nodes.ssh]]
+name = "prod-web-1"                      # 必填
+alias = "Web01"                          # 可选
+host = "10.0.0.1"                        # 必填
+user = "app"                             # 必填, 留空默认 root
+port = 22                                # 可选, 默认 22
+password = "${MYSSHW_PWD_prod_web_1}"    # 密码 (env 引用) — 与 keypath 至少填一个
+
+# 节点 1.2: 通过 bastion 跳板访问的内网数据库
+[[nodes.ssh]]
+name = "prod-db-1"
+alias = "DB01"
+host = "10.0.0.5"                        # 内网 IP, 客户端不可直连
+user = "postgres"
+port = 5432                              # 非标端口
+password = "${MYSSHW_PWD_prod_db_1}"
+# proxy: 跳板节点 name (指向同一配置中的另一个 SSHNode)
+#   连接顺序: client -> Proxy 节点 -> 本节点
+#   典型场景: 通过 bastion 访问内网不可直连的机器
+#   限制: 仅支持单跳; 多跳 (A -> B -> C) 通过链式 Proxy 实现
+proxy = "bastion"
+
+# 节点 1.3: 临时跳过主机指纹校验 (仅测试环境)
+[[nodes.ssh]]
+name = "prod-test-1"
+host = "10.0.0.99"
+user = "app"
+password = "${MYSSHW_PWD_prod_test_1}"
+# strict_host_key_checking: 控制对当前节点的主机指纹校验策略
+#   nil (默认) → 启用严格校验 (推荐, 防 MITM)
+#   true       → 显式启用严格校验
+#   false      → 跳过主机指纹校验 (⚠️ 不推荐, 测试环境临时使用)
+strict_host_key_checking = false
+
+# --- Group 2: Staging (简化的内联写法) ---
+[[nodes]]
+groups = "Staging"
 
 [[nodes.ssh]]
-alias = 'Test'
-host = '127.0.0.1'
-name = 'vm-test-1'
-password = "${MYSSHW_PWD_vm_test_1}"
-user = 'root'
+name = "stag-web-1"
+alias = "StagWeb"
+host = "192.168.10.10"
+user = "deploy"
 
-[[nodes.ssh]]
-alias = "AllKey"  # 可以空, 可选
-name = "AllKey"
-host = "192.168.10.60" # 不可以空，必须
-user ="vm00" # 不可以空，必须
-port = 22  # 默认值:22, 不可以空, 如果是22端口, 可以忽略这个KEY
-password = "${MYSSHW_PWD_allkey:-}" # :- 空默认值, 留空走交互输入
-#keypath="~/.ssh/id_rsa" # 可以空, 可选
-#passphrase="${MYSSHW_KEY_PASSPHRASE}" # 密钥口令也支持 env 引用
-#strict_host_key_checking = false  # 测试环境临时跳过主机指纹校验 (不推荐生产环境使用)
-
+# --- Group 3: DevOps (跳板机集中管理) ---
 [[nodes]]
-groups = "Groups02"
+groups = "DevOps"
+
+# 节点 3.1: 跳板机 (其它节点的 proxy 引用此节点)
+[[nodes.ssh]]
+name = "bastion"
+host = "bastion.example.com"
+user = "ops"
+port = 2222
+
+# 节点 3.2: 通过 bastion 访问的内网机器
+[[nodes.ssh]]
+name = "internal-app-1"
+host = "172.16.0.5"
+user = "app"
+proxy = "bastion"
+
+# --- Group 4: Batch (内联数组写法, 节点多时方便) ---
+[[nodes]]
+groups = "Batch"
 ssh = [
-	# { name="no ssh conf", alias="", host="192.168.10.60", user="vm00", port=22, password="${MYSSHW_PWD_test}", keypath="~/.ssh/id_rsa", passphrase="${MYSSHW_KEY_PASSPHRASE}" },
-    { name="vm-test-1", alias="TestNode-1", host="127.0.0.1", user="root", port=22, password="${MYSSHW_PWD_vm_test_1}" },
-	{ name="vm-test-2", alias="TestNode", host="127.0.0.1", user="root", port=22, password="${MYSSHW_PWD_vm_test_2}" },
+    { name="batch-1", host="10.1.0.1", user="worker", password="${MYSSHW_PWD_batch}" },
+    { name="batch-2", host="10.1.0.2", user="worker", password="${MYSSHW_PWD_batch}" },
+    { name="batch-3", host="10.1.0.3", user="worker", password="${MYSSHW_PWD_batch}" },
 ]
+
+
+# ============================================================
+# 主机指纹管理说明
+# ============================================================
+# mysshw 默认在 ~/.ssh/known_hosts 校验主机指纹 (与 OpenSSH 共享)
+# 推荐: `mysshw hostkey` 子命令 (MCP 也暴露为 ssh_hostkey_*)
+#   list                                  列出全部条目
+#   show <host>                           查看指定 host 指纹
+#   remove <host>                         删除条目
+#   update <host> --node <name>           主动重取并更新 (合法 key rotation)
+#   audit [--check-config]                健康度审计
+#
+# 合法 key rotation 推荐流程:
+#   1. admin 通过安全渠道告知新 fingerprint (SHA256:xxx)
+#   2. AI 调 hostkey update <host> --node <name> \
+#            --expect-fingerprint SHA256:xxx --confirm
+#   3. 验证更新成功
+#   4. 后续 ssh_exec/copy 走严格校验, 无需额外 flag
+#
+# ⚠️ rotate_known_hosts 字段已弃用, 保留仅为兼容; 新代码请用 hostkey update
