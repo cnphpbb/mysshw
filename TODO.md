@@ -301,18 +301,25 @@
 | P2 | 代码质量 + RunSSH + 配置 + Sync + UI | ✅ 全部完成 |
 | P2 | AI 友好 CLI (list/exec/copy/tunnel/hostkey/completions) | ✅ 全部完成 |
 | P2 | SSH 代理链 + 端口转发 (local/reverse/SOCKS5) | ✅ 全部完成 |
+| **P0** | **MCP Server (Phase 1+2)** | **✅ 完成** (ssh_list_nodes + ssh_exec) |
 | P3 | 发布 + 文档 + 测试 | 🟡 主要完成 |
 
 ### 🆕 待实现新功能
 
 | 优先级 | 功能 | 价值说明 | 预估工作量 |
 |--------|------|---------|-----------|
-| **P0** | **MCP Server** | 直接让 mysshw 成为 AI 原生工具，生态位最高 | 1-2 天 |
 | **P1** | **config 子命令 (CRUD)** | AI 可自主管理节点配置 | 2-3 天 |
-| **P1** | **ping 子命令** | AI 最基础的连通性检测，高频使用 | 0.5 天 |
-| **P2** | **info 子命令** | 系统发现，AI 决策前置信息 | 1 天 |
 | **P2** | **export/import** | 配置可移植性 | 0.5 天 |
 | **P2** | **exec --follow/--stream** | 流式输出，长时间命令友好 | 1 天 |
+
+### ✅ 已完成 (v26.07.04.0+)
+
+| 优先级 | 功能 | 涉及文件 | 完成日期 |
+|--------|------|---------|----------|
+| P0 | MCP Server (Phase 1+2): stdio transport + `ssh_list_nodes` + `ssh_exec` | `cmd/mcp_cmd.go` | 2026-07-06 |
+| P1 | MCP Server (Phase 3): + `ssh_copy` + 5 个 `ssh_hostkey_*` + `ssh_completions` | `cmd/mcp_cmd.go` | 2026-07-06 |
+| P1 | `ping` 子命令 (TCP 连通性检测, 不需 ICMP/root) | `cmd/ping_cmd.go` | 2026-07-06 |
+| P2 | `info` 子命令 (hostname/OS/kernel/CPU/memory/disk/uptime) | `cmd/info_cmd.go` | 2026-07-06 |
 
 ---
 

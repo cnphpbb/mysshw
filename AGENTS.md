@@ -56,6 +56,9 @@ mysshw/
 │   ├── tunnel_cmd.go          # tunnel 子命令：本地/反向/SOCKS5 端口转发
 │   ├── hostkey_cmd.go         # hostkey 子命令：known_hosts 管理
 │   ├── completions_cmd.go     # completions 子命令：动态输出 CLI Schema (JSON)
+│   ├── ping_cmd.go            # ping 子命令：TCP 连通性检测
+│   ├── info_cmd.go            # info 子命令：远程系统信息收集
+│   ├── mcp_cmd.go             # mcp 子命令：MCP server (stdio)
 │   ├── output.go              # -o plain|json 全局输出器
 │   ├── errors.go              # BSD sysexits 退出码 + ExitError
 │   ├── helpers.go             # 共享 helpers (duration 解析等)
@@ -243,12 +246,44 @@ mage build
 |--------|------|--------|
 | 低 | 主界面支持主题 | ssh/cmd.go |
 | 低 | 配置文件加密 | config/ |
-| 低 | MCP Server (Claude/Cursor 原生集成) | 新文件 cmd/mcp_cmd.go |
 | 低 | config 子命令 (节点 CRUD) | 新文件 cmd/config_cmd.go |
-| 低 | ping 子命令 (连通性检测) | 新文件 cmd/ping_cmd.go |
-| 低 | info 子命令 (系统发现) | 新文件 cmd/info_cmd.go |
 | 低 | export/import (配置可移植性) | 新文件 cmd/import_cmd.go |
 | 中 | exec --follow (流式输出) | cmd/exec_cmd.go |
+
+## 8.1 已完成 ✅ MCP Server (Phase 1+2+3)
+
+| 状态 | 任务 | 涉及文件 |
+|------|------|---------|
+| ✅ | `mcp` 子命令: stdio transport, 启动 MCP server | `cmd/mcp_cmd.go` |
+| ✅ | `ssh_list_nodes` tool: 列出节点 (走 mysshw list -o json) | `cmd/mcp_cmd.go` |
+| ✅ | `ssh_exec` tool: 执行命令 (走 mysshw exec -o json, 支持 alias 匹配) | `cmd/mcp_cmd.go` |
+| ✅ | `ssh_copy` tool: SCP 传输 (走 mysshw copy -o json) | `cmd/mcp_cmd.go` |
+| ✅ | `ssh_hostkey_list/show/remove/update/audit` tool: known_hosts 管理 | `cmd/mcp_cmd.go` |
+| ✅ | `ssh_completions` tool: 动态 CLI schema 查询 | `cmd/mcp_cmd.go` |
+| ✅ | 工具 schema 静态注册, 不暴露 password/passphrase/env 变量名 | `cmd/mcp_cmd.go` |
+| ✅ | ExitError → MCP isError + 退出码透传 | `cmd/mcp_cmd.go::runSubcommandCaptured` |
+| ✅ | 30+ 个单元测试 (tool schema + handler + alias/dry-run/error/state 隔离) | `cmd/mcp_cmd_test.go` |
+| ✅ | 集成验证: JSON-RPC over stdio 端到端 (initialize / tools/list / tools/call) | 手工测试 |
+
+## 8.2 已完成 ✅ ping 子命令
+
+| 状态 | 任务 | 涉及文件 |
+|------|------|---------|
+| ✅ | `ping` 子命令: TCP 端口连通性检测 (不需 ICMP/root) | `cmd/ping_cmd.go` |
+| ✅ | 单节点 / 批量 / 直接 host 三种入口 | `cmd/ping_cmd.go` |
+| ✅ | JSON 输出: reachable/latency_ms/attempts/error | `cmd/ping_cmd.go` |
+| ✅ | --node/--alias/--host 互斥 (MarkFlagsMutuallyExclusive) | `cmd/ping_cmd.go` |
+| ✅ | 单元测试: 本地连接/超时/无效域名/count/JSON shape | `cmd/ping_cmd_test.go` |
+
+## 8.3 已完成 ✅ info 子命令
+
+| 状态 | 任务 | 涉及文件 |
+|------|------|---------|
+| ✅ | `info` 子命令: 远程节点系统信息收集 | `cmd/info_cmd.go` |
+| ✅ | 字段: hostname/os/kernel/arch/cpu/memory/disk/uptime | `cmd/info_cmd.go` |
+| ✅ | 跨平台: Linux (/proc) + macOS (sysctl) | `cmd/info_cmd.go` |
+| ✅ | 并发采集 (10 条命令并行, semaphore 控制) | `cmd/info_cmd.go` |
+| ✅ | 单元测试: humanDuration/humanBytes/parseBootTimeEpoch/JSON shape | `cmd/info_cmd_test.go` |
 
 ---
 
