@@ -300,7 +300,21 @@ mage build
 3. 在 `config/validated_config.go` 添加类型校验
 4. 在 `cmd/sync_cobra.go` 添加 case 分支
 
-### 9.3 配置变更
+### 9.3 AI Agent 集成
+
+mysshw 提供 **2 种 AI Agent 集成模式**，详见 `examples/`：
+
+| 文档 | 模式 | 推荐度 |
+|------|------|--------|
+| `examples/mcp-integration.md` | MCP (stdio transport), 9 个工具 | **首选** |
+| `examples/ai-agent.md` | CLI subprocess + `-o json` | 备选 |
+
+**修改 AI 集成文档时**:
+- MCP 工具定义变更 → 同步更新 `cmd/mcp_cmd.go` 描述 + `examples/mcp-integration.md`
+- 子命令新增/改名 → 同时更新 `ai-agent.md` 中的 Python SDK 示例
+- 退出码语义变更 → 同时更新 `mcp-integration.md` § 3.2 和 `ai-agent.md` § 2.1
+
+### 9.4 配置变更
 - 所有配置结构体在 `config/model_config.go`
 - 默认配置模板也在同一文件 `DefaultTomlConfig` 常量
 - 校验逻辑在 `config/validated_config.go`
