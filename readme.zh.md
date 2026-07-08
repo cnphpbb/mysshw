@@ -4,14 +4,14 @@
 **Go 1.23.0 及以上版本**  
 **支持 Linux、macOS、Windows 平台（Windows 强烈推荐使用 Docker）**
 
-[English Documentation](readme.md) · [更新日志](changelog.v26.06.13.2.md)
+[English Documentation](readme.md) · [更新日志](changelog.v26.07.08.0.md)
 
 > 🐳 **Docker 用户**：官方镜像（`mysshw:latest`）是 Windows 以及任何终端行为与 Unix 不一致的运行环境下的**推荐运行方式**。详见 [Docker](#docker)。
 
 ## 功能特性
 
 - 🚀 **SSH 2.0 协议全功能** — 终端会话（Raw 模式）、窗口自适应、KeepAlive 保活
-- 🔑 **灵活认证方式** — 密码、密钥、带密码短语密钥、键盘交互
+- 🔑 **灵活认证方式** — 密码、密钥、带密码短语密钥、键盘交互、bcrypt-pepper
 - 🛡 **主机指纹校验 (TOFU)** — Trust On First Use，共享 `~/.ssh/known_hosts`
 - 🛠 **TOML 配置管理** — 节点分组、`${ENV_VAR}` 密码引用（避免明文落盘）
 - 🖥 **huh 交互式菜单** — Lipgloss 颜色高亮、虚拟"返回上级"节点
@@ -19,6 +19,14 @@
 - 🔁 **会话可循环** — 退出 SSH 自动返回主菜单，无需重启进程
 - 🐳 **Docker 镜像** — 多阶段构建，~21 MB，非 root 用户
 - 📦 **静态二进制** — `CGO_ENABLED=0`，跨平台直接运行
+- 🔐 **文件级加密** — AES-256-GCM + Argon2id，`mysshw encrypt` 子命令
+- 🧩 **配置 CRUD** — `mysshw config list/get/add/remove/update/diff`，无需手写 TOML
+- 🛡 **密码哈希工具** — `mysshw hash gen/verify/pepper` 支持 bcrypt / bcrypt-pepper / argon2id
+- 🌐 **TCP ping** — `mysshw ping` 连通性检测（无需 root）
+- 📊 **系统信息** — `mysshw info` 远程节点信息采集
+- 🤖 **MCP 服务器** — `mysshw mcp` 通过 stdio transport 将 SSH 操作暴露为 AI 工具
+- 🗂 **known_hosts 管理** — `mysshw hostkey list/show/remove/update/audit`
+- 🔍 **非交互命令** — `mysshw exec` / `list` / `copy` / `tunnel` 支持 JSON 输出
 
 ## 安装指南
 
@@ -41,8 +49,8 @@ mage build
 ```bash
 # 构建
 docker build -t mysshw:latest .
-docker build -t mysshw:v26.06.13.2 \
-  --build-arg VERSION=v26.06.13.2 \
+docker build -t mysshw:v26.07.08.0 \
+  --build-arg VERSION=v26.07.08.0 \
   --build-arg BUILD=$(git rev-parse --short HEAD) \
   --build-arg BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) .
 
@@ -631,12 +639,12 @@ e2e 测试: 6 个用例覆盖 list/dry-run/confirm/show/mismatch/remove 路径�
 
 - ✅ P0：仓库健康（`.gitattributes`、`analysis.md` 忽略、filter-repo 清理）
 - ✅ P0/P1：关键 Bug 修复（SCP panic、Login 回调）
-- ✅ P1：安全（TOFU、env vars、chmod 0600、`${VAR}` 密码引用）
+- ✅ P1：安全（TOFU、env vars、chmod 0600、`${VAR}` 密码引用、bcrypt-pepper、文件级加密）
 - ✅ P2：代码质量（auth 删除、tag 统一、context 传播等）
+- ✅ P2：`ping` / `info` / `hostkey` / `config` CRUD / `hash` / `encrypt` 子命令
+- ✅ P3：MCP server (AI 集成)、completions schema
 - 🟡 P2：UI 主题（搁置）、S3/WebDAV mock 测试、端到端 SSH 测试
-- ✅ P3：Dockerfile、架构图、changelog 规则
 - ⏸️ P3：CI/CD、Homebrew、Scoop（非目标）
-- ❌ P3：`go install` 文档化、readme 中的 changelog 链接
 
 ## Go Packages 依赖
 
@@ -664,9 +672,10 @@ mage test          # 含覆盖率报告
 
 使用 [testify](http://github.com/stretchr/testify) 作为 Go 测试框架。测试覆盖包括：
 
-- **110+ 个测试用例**，分布于 13 个测试文件
+- **230+ 个测试用例**，分布于 20+ 个测试文件
 - SCP 协议层：100% 覆盖
-- `ValidateConfig`：27 个用例覆盖全部分支
+- `ValidateConfig`：30+ 个用例覆盖全部分支
+- MCP server：30+ 单元测试（tool schema + handler + alias/dry-run/error/state 隔离）
 - `ssh/hostkey.go` TOFU + env var + callback 策略
 - Mock SSH server（用 `golang.org/x/crypto/ssh`）端到端传输测试
 
@@ -742,4 +751,4 @@ function mysshw {
 
 ## 更新日志
 
-最新发布见 [changelog.v26.06.13.2.md](changelog.v26.06.13.2.md)。流程规则：每次在 `main` 分支打版本 tag 前必须生成 `changelog.${tag}.md`（详见 [AGENTS.md](AGENTS.md)）。
+最新发布见 [changelog.v26.07.08.0.md](changelog.v26.07.08.0.md)。流程规则：每次在 `main` 分支打版本 tag 前必须生成 `changelog.${tag}.md`（详见 [AGENTS.md](AGENTS.md)）。
