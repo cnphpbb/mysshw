@@ -92,6 +92,39 @@
 
 
 # ============================================================
+# 文件级加密 (Phase C, v26.07.04.0+)
+# ============================================================
+# 整个 mysshw.toml 支持 passphrase 加密, 防止配置文件泄露后
+# 明文 password / keypath / proxy 等敏感字段被读取.
+#
+# 加密格式 (二进制, 37-byte header + N-byte ciphertext):
+#   magic(4 'MSEC') | kdf_id(1) | salt(16) | nonce(12) | ct_len(4) | ciphertext(N)
+#
+# 算法: Argon2id (time=3, memory=64MB, threads=4) + AES-256-GCM
+#       魔数 'MSEC' (mysshw Encrypted Config) 用于自动检测
+#
+# Workflow:
+#   # 加密 (in-place, 默认行为)
+#   echo "$passphrase" | mysshw encrypt -c ~/.mysshw.toml
+#
+#   # 加密到新文件
+#   echo "$passphrase" | mysshw encrypt -c in.toml --out encrypted.toml
+#
+#   # 使用加密文件 (load 时自动 prompt passphrase)
+#   echo "$passphrase" | mysshw list -c encrypted.toml -o json
+#
+#   # 解密回明文
+#   echo "$passphrase" | mysshw encrypt decrypt -c encrypted.toml --out plain.toml
+#
+# 安全提示:
+#   - passphrase 丢失 = 数据丢失 (服务器没有任何方式恢复)
+#   - 加密文件本身可以共享 (KDF salt 公开), 但 passphrase 绝对不能
+#   - 错 passphrase / 篡改 ciphertext → AES-GCM auth tag 验证失败 → 报错
+#   - Argon2id (64MB) 单次派生 ~300-500ms, 防 GPU 暴力
+#   - 旧版无 magic header 的明文 .toml 仍然兼容 (LoadViperConfig 自动检测)
+
+
+# ============================================================
 # 同步配置 (sync 命令, 把本配置分发到远端)
 # ============================================================
 

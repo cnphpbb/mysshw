@@ -320,6 +320,9 @@
 | P1 | MCP Server (Phase 3): + `ssh_copy` + 5 个 `ssh_hostkey_*` + `ssh_completions` | `cmd/mcp_cmd.go` | 2026-07-06 |
 | P1 | `ping` 子命令 (TCP 连通性检测, 不需 ICMP/root) | `cmd/ping_cmd.go` | 2026-07-06 |
 | P2 | `info` 子命令 (hostname/OS/kernel/CPU/memory/disk/uptime) | `cmd/info_cmd.go` | 2026-07-06 |
+| P1 | **bcrypt-pepper 字段级加密** (Phase B.1) | `config/password.go` + `ssh/client.go` | 2026-07-08 |
+| P2 | **`mysshw hash` 工具** (gen/verify/pepper) | `cmd/hash_cmd.go` | 2026-07-08 |
+| P2 | **文件级加密 Phase C** (Argon2id + AES-256-GCM) | `config/encrypt.go` + `cmd/encrypt_cmd.go` | 2026-07-08 |
 
 ---
 

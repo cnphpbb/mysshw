@@ -58,6 +58,8 @@ mysshw/
 │   ├── completions_cmd.go     # completions 子命令：动态输出 CLI Schema (JSON)
 │   ├── ping_cmd.go            # ping 子命令：TCP 连通性检测
 │   ├── info_cmd.go            # info 子命令：远程系统信息收集
+│   ├── hash_cmd.go            # hash 子命令：密码哈希生成/验证/pepper 生成
+│   ├── encrypt_cmd.go         # encrypt 子命令：配置文件加密/解密
 │   ├── mcp_cmd.go             # mcp 子命令：MCP server (stdio)
 │   ├── output.go              # -o plain|json 全局输出器
 │   ├── errors.go              # BSD sysexits 退出码 + ExitError
@@ -284,6 +286,30 @@ mage build
 | ✅ | 跨平台: Linux (/proc) + macOS (sysctl) | `cmd/info_cmd.go` |
 | ✅ | 并发采集 (10 条命令并行, semaphore 控制) | `cmd/info_cmd.go` |
 | ✅ | 单元测试: humanDuration/humanBytes/parseBootTimeEpoch/JSON shape | `cmd/info_cmd_test.go` |
+
+## 8.4 已完成 ✅ 加密功能 (Phase B + C)
+
+### Phase B.1: bcrypt-pepper (字段级)
+| 状态 | 任务 | 涉及文件 |
+|------|------|---------|
+| ✅ | `encryption_algorithm` / `secret_key` schema 字段 (forward-compat) | `config/model_config.go` |
+| ✅ | `config.HashPasswordWithPepper` / `VerifyPasswordWithPepper` | `config/password.go` |
+| ✅ | `ssh/client.go::resolvePasswordForSSH` bcrypt-pepper 验证分支 | `ssh/client.go` |
+| ✅ | `list -o json` 输出 `auth="bcrypt-pepper"` | `cmd/list_cmd.go` |
+| ✅ | e2e 测试 (3 cases) | `ssh/e2e_test.go` |
+
+### Phase B.3: mysshw hash 工具
+| ✅ | `mysshw hash gen/verify/pepper` | `cmd/hash_cmd.go` |
+| ✅ | `--algo` 支持 (bcrypt / bcrypt-pepper / argon2id 占位 / pbkdf2-sha256 占位) | `cmd/hash_cmd.go` |
+| ✅ | 20 单元测试 | `cmd/hash_cmd_test.go` |
+
+### Phase C: 文件级加密
+| ✅ | `EncryptConfig` / `DecryptConfig` (Argon2id + AES-256-GCM) | `config/encrypt.go` |
+| ✅ | `MSEC` magic 头自动检测 | `config/encrypt.go` |
+| ✅ | `LoadViperConfig` 自动检测加密文件并 prompt passphrase | `config/config.go` |
+| ✅ | `mysshw encrypt` / `mysshw encrypt decrypt` 子命令 | `cmd/encrypt_cmd.go` |
+| ✅ | 34 单元 + 集成测试 (config 18 + cmd 12 + load 4) | `config/encrypt*_test.go`, `cmd/encrypt_cmd_test.go` |
+| ✅ | example/mysshw.toml 增加文件级加密章节 | `example/mysshw.toml` |
 
 ---
 
