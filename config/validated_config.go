@@ -15,11 +15,7 @@ func ValidateConfig(cfg *Configs) error {
 		return err
 	}
 
-	// 验证节点配置
-	if len(cfg.Nodes) == 0 {
-		return fmt.Errorf("no nodes configured")
-	}
-
+	// 验证节点配置 (允许 0 个节点: 删除所有节点后空配置也是合法状态)
 	for i, nodeGroup := range cfg.Nodes {
 		if err := validateNodeGroup(nodeGroup, i); err != nil {
 			return err

@@ -4,14 +4,14 @@
 **Go 1.23.0 and above**  
 **Supports Linux, macOS, and Windows platforms (Docker recommended for Windows)**
 
-[中文文档](readme.zh.md) · [Changelog](changelog.v26.06.13.2.md)
+[中文文档](readme.zh.md) · [Changelog](changelog.v26.07.08.0.md)
 
 > 🐳 **Docker users**: The official image (`mysshw:latest`) is the recommended way to run on Windows and any environment where terminal semantics differ from Unix. See [Docker](#docker).
 
 ## Features
 
 - 🚀 **SSH 2.0 full protocol** — terminal session with raw mode, adaptive window resize, KeepAlive
-- 🔑 **Flexible authentication** — password, public key, key with passphrase, keyboard-interactive
+- 🔑 **Flexible authentication** — password, public key, key with passphrase, keyboard-interactive, bcrypt-pepper
 - 🛡 **TOFU host key verification** — Trust On First Use with `~/.ssh/known_hosts` (shared with OpenSSH)
 - 🛠 **TOML configuration** — node group organization, `${ENV_VAR}` password references (no plain-text)
 - 🖥 **huh-based interactive menu** — Lipgloss colors, virtual "返回上级" node
@@ -19,6 +19,14 @@
 - 🔁 **Loop-back main menu** — exit SSH session returns to the picker (no process restart)
 - 🐳 **Docker image** — multi-stage build, ~21 MB, non-root user
 - 📦 **Static binary** — `CGO_ENABLED=0`, runs anywhere
+- 🔐 **File-level encryption** — AES-256-GCM + Argon2id, `mysshw encrypt` subcommand
+- 🧩 **Config CRUD** — `mysshw config list/get/add/remove/update/diff` manage nodes without editing TOML
+- 🛡 **Password hashing** — `mysshw hash gen/verify/pepper` supports bcrypt / bcrypt-pepper / argon2id
+- 🌐 **TCP ping** — `mysshw ping` connectivity check (no root required)
+- 📊 **System info** — `mysshw info` remote node information collection
+- 🤖 **MCP server** — `mysshw mcp` exposes SSH operations as AI tools via stdio transport
+- 🗂 **known_hosts management** — `mysshw hostkey list/show/remove/update/audit`
+- 🔍 **Non-interactive commands** — `mysshw exec` / `list` / `copy` / `tunnel` with JSON output
 
 ## Installation
 
@@ -41,8 +49,8 @@ Download the latest binary from [releases](https://github.com/cnphpbb/mysshw/rel
 ```bash
 # Build
 docker build -t mysshw:latest .
-docker build -t mysshw:v26.06.13.2 \
-  --build-arg VERSION=v26.06.13.2 \
+docker build -t mysshw:v26.07.08.0 \
+  --build-arg VERSION=v26.07.08.0 \
   --build-arg BUILD=$(git rev-parse --short HEAD) \
   --build-arg BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) .
 
@@ -279,12 +287,12 @@ Quick status — see [TODO.md](TODO.md) for full list.
 
 - ✅ P0: Repository hygiene (`.gitattributes`, `analysis.md` ignored, filter-repo cleanup)
 - ✅ P0/P1: Critical bug fixes (SCP panic, Login callback)
-- ✅ P1: Security (TOFU, env vars, chmod 0600, `${VAR}` password refs)
+- ✅ P1: Security (TOFU, env vars, chmod 0600, `${VAR}` password refs, bcrypt-pepper, file-level encryption)
 - ✅ P2: Code quality (auth removed, tag unified, context propagation, etc.)
+- ✅ P2: `ping` / `info` / `hostkey` / `config` CRUD / `hash` / `encrypt` subcommands
+- ✅ P3: MCP server (AI integration), completions schema
 - 🟡 P2: UI theme (deferred), S3/WebDAV mock tests, end-to-end SSH tests
-- ✅ P3: Dockerfile, architecture diagram, changelog rule
 - ⏸️ P3: CI/CD, Homebrew, Scoop (not goals)
-- ❌ P3: `go install` docs, changelog link in readme
 
 ## Go Packages
 
@@ -312,9 +320,10 @@ mage test          # with coverage report
 
 We use [testify](http://github.com/stretchr/testify) as our Go testing framework. Test coverage includes:
 
-- **110+ test cases** across 13 test files
+- **230+ test cases** across 20+ test files
 - SCP protocol layer: 100% covered
-- `ValidateConfig`: 27 cases covering all branches
+- `ValidateConfig`: 30+ cases covering all branches
+- MCP server: 30+ unit tests (tool schema + handler + alias/dry-run/error/state isolation)
 - `ssh/hostkey.go` TOFU + env var + callback strategy
 - Mock SSH server (using `golang.org/x/crypto/ssh`) for end-to-end transfer tests
 
@@ -389,4 +398,4 @@ Restart PowerShell to activate.
 
 ## Changelog
 
-See [changelog.v26.06.13.2.md](changelog.v26.06.13.2.md) for the latest release. Process rule: every version tag on `main` must have a corresponding `changelog.${tag}.md` (see [AGENTS.md](AGENTS.md)).
+See [changelog.v26.07.08.0.md](changelog.v26.07.08.0.md) for the latest release. Process rule: every version tag on `main` must have a corresponding `changelog.${tag}.md` (see [AGENTS.md](AGENTS.md)).

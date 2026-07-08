@@ -47,6 +47,35 @@ func TestResolveNodes_ByName_Single(t *testing.T) {
 	assert.Equal(t, "prod-1", nodes[0].Name)
 }
 
+func TestResolveNodes_ByName_MatchesAlias(t *testing.T) {
+	// prod-3 的 alias="DB01", --node DB01 也应能匹配
+	nodes, err := ResolveNodes(fixtures(), NodeSelector{Names: []string{"DB01"}})
+	require.NoError(t, err)
+	require.Len(t, nodes, 1)
+	assert.Equal(t, "prod-3", nodes[0].Name)
+	assert.Equal(t, "DB01", nodes[0].Alias)
+}
+
+func TestResolveNodes_ByName_MixedNameAndAlias(t *testing.T) {
+	// 批量 --node 可以同时混用 name 和 alias
+	nodes, err := ResolveNodes(fixtures(), NodeSelector{Names: []string{"prod-1", "Web02"}})
+	require.NoError(t, err)
+	require.Len(t, nodes, 2)
+	assert.Equal(t, "prod-1", nodes[0].Name)
+	assert.Equal(t, "prod-2", nodes[1].Name)
+}
+
+func TestResolveNodes_ByName_NamePrecedesAlias(t *testing.T) {
+	// 验证 Name 匹配优先于 Alias
+	// fixtures 中 "prod-3" 的 Name="prod-3" 且 Alias="DB01"
+	// --node prod-3: Name 精确匹配 → 找到 prod-3
+	nodes, err := ResolveNodes(fixtures(), NodeSelector{Names: []string{"prod-3"}})
+	require.NoError(t, err)
+	require.Len(t, nodes, 1)
+	assert.Equal(t, "prod-3", nodes[0].Name)
+	assert.Equal(t, "DB01", nodes[0].Alias)
+}
+
 func TestResolveNodes_ByName_Batch_AllFound(t *testing.T) {
 	nodes, err := ResolveNodes(fixtures(), NodeSelector{Names: []string{"prod-1", "prod-3"}})
 	require.NoError(t, err)

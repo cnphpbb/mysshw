@@ -22,8 +22,19 @@ import (
 //   - 失败时同时返回 error 与 ExecResult.Error 字段；命令执行成功但 exit≠0 时仅 result.ExitCode!=0
 type Executor interface {
 	RunCommand(ctx context.Context, cmd string) (*ExecResult, error)
+	RunStream(ctx context.Context, cmd string, onLine StreamCallback) (*ExecResult, error)
 	Close() error
 }
+
+// StreamCallback 流式输出回调函数
+//
+//	stream  = "stdout" | "stderr"
+//	line    = 不含换行符的一行
+//	命令退出后会被调用一次 (stream="exit", line="") 传达结束信号
+type StreamCallback func(stream, line string)
+
+// 内部使用, 避免在 RunStream 接口外暴露 io.Writer 类型
+var _ = io.Discard
 
 // ExecResult 一次命令执行的结构化记录（JSON-safe）
 type ExecResult struct {
@@ -223,6 +234,168 @@ func (e *executorImpl) Close() error {
 	return nil
 }
 
+// RunStream 边输出边回调, 不 buffer
+//
+// 适用场景:
+//   - 长命令 (e.g. tail -f, journalctl -f, journal logs, apt upgrade)
+//   - 实时管道 (管道 | xargs | tee)
+//
+// 行为保证:
+//   - 每一行输出都通过 onLine 回调送出 (newline 分隔)
+//   - onLine 不会被并发调用 (单 goroutine 按顺序调用)
+//   - ctx 取消时 session 强制关闭, 后续 output 不会再送出
+//   - 命令结束后不发出 exit 事件 (由 BatchExecutor.RunStream 统一发出)
+func (e *executorImpl) RunStream(ctx context.Context, cmd string, onLine StreamCallback) (*ExecResult, error) {
+	start := time.Now()
+	res := &ExecResult{
+		Node:    safeNodeName(e.underlying.node),
+		Command: cmd,
+	}
+
+	type dialResult struct {
+		client *ssh.Client
+		err    error
+	}
+	dialDone := make(chan dialResult, 1)
+	go func() {
+		c, err := e.ensureDialed()
+		dialDone <- dialResult{client: c, err: err}
+	}()
+
+	var client *ssh.Client
+	select {
+	case <-ctx.Done():
+		res.Error = fmt.Sprintf("cancelled before dial: %v", ctx.Err())
+		res.Duration = time.Since(start).String()
+		go func() {
+			dr := <-dialDone
+			if dr.client != nil {
+				_ = dr.client.Close()
+			}
+		}()
+		return res, fmt.Errorf("mysshw:: exec cancelled: %w", ctx.Err())
+	case dr := <-dialDone:
+		if dr.err != nil {
+			res.Error = fmt.Sprintf("dial failed: %v", dr.err)
+			res.Duration = time.Since(start).String()
+			return res, fmt.Errorf("mysshw:: dial failed: %w", dr.err)
+		}
+		client = dr.client
+	}
+
+	session, err := client.NewSession()
+	if err != nil {
+		res.Error = fmt.Sprintf("new session: %v", err)
+		res.Duration = time.Since(start).String()
+		return res, fmt.Errorf("mysshw:: new session: %w", err)
+	}
+	defer session.Close()
+
+	// streaming 模式下需要 PTY (sudo / 进度条 / 交互) 还是 pure pipe 取决于参数 usePTY
+	if e.usePTY {
+		modes := ssh.TerminalModes{
+			ssh.ECHO:          0,
+			ssh.TTY_OP_ISPEED: defaultSpeed,
+			ssh.TTY_OP_OSPEED: defaultSpeed,
+		}
+		if err := session.RequestPty(execPTYType, execPTYRows, execPTYCols, modes); err != nil {
+			res.Error = fmt.Sprintf("request pty: %v", err)
+			res.Duration = time.Since(start).String()
+			return res, fmt.Errorf("mysshw:: request pty: %w", err)
+		}
+	}
+	session.Stdin = strings.NewReader("")
+
+	// stdout/stderr 各接一个 line splitter
+	stdoutR, stdoutW := io.Pipe()
+	stderrR, stderrW := io.Pipe()
+	session.Stdout = stdoutW
+	session.Stderr = stderrW
+
+	// 启动两个 splitter goroutine 读 line-by-line
+	var streamWg sync.WaitGroup
+	streamWg.Add(2)
+
+	go func() {
+		defer streamWg.Done()
+		emitLines(stdoutR, "stdout", onLine)
+	}()
+	go func() {
+		defer streamWg.Done()
+		emitLines(stderrR, "stderr", onLine)
+	}()
+
+	runDone := make(chan error, 1)
+	go func() {
+		runDone <- session.Run(cmd)
+	}()
+
+	var runErr error
+	select {
+	case <-ctx.Done():
+		session.Close()
+		runErr = fmt.Errorf("mysshw:: exec cancelled: %w", ctx.Err())
+	case runErr = <-runDone:
+		// 让 stdout/stderr 写入端关闭, 触发 reader EOF
+		_ = stdoutW.Close()
+		_ = stderrW.Close()
+		streamWg.Wait()
+	}
+
+	// 解析 exit code
+	switch v := runErr.(type) {
+	case nil:
+		res.ExitCode = 0
+	case *ssh.ExitError:
+		res.ExitCode = v.ExitStatus()
+	case *ssh.ExitMissingError:
+		res.ExitCode = -1
+	default:
+		if runErr == io.EOF {
+			res.ExitCode = 0
+		} else {
+			res.Error = runErr.Error()
+			res.Duration = time.Since(start).String()
+			return res, runErr
+		}
+	}
+
+	res.Duration = time.Since(start).String()
+	return res, nil
+}
+
+// emitLines 从 r 逐行读, 调 onLine(stream, line). 遇到 EOF/错误退出.
+func emitLines(r io.Reader, stream string, onLine StreamCallback) {
+	br := make([]byte, 4096)
+	var pending []byte
+	for {
+		n, err := r.Read(br)
+		if n > 0 {
+			pending = append(pending, br[:n]...)
+			// 按 \n 拆分
+			for {
+				idx := bytes.IndexByte(pending, '\n')
+				if idx < 0 {
+					break
+				}
+				line := string(pending[:idx])
+				pending = pending[idx+1:]
+				if onLine != nil {
+					onLine(stream, line)
+				}
+			}
+		}
+		if err != nil {
+			// 读完后将残余部分也送出 (未以 \n 结尾的尾部)
+			if len(pending) > 0 && onLine != nil {
+				onLine(stream, string(pending))
+				pending = nil
+			}
+			return
+		}
+	}
+}
+
 // BatchOptions 多节点扇出配置
 type BatchOptions struct {
 	UsePTY   bool          // 单节点 PTY 开关
@@ -280,6 +453,143 @@ func (be *BatchExecutor) RunFanOut(ctx context.Context, cmd string) []*ExecResul
 
 			r, _ := exec.RunCommand(runCtx, cmd)
 			results[idx] = r
+		}(i, node)
+	}
+	wg.Wait()
+	return results
+}
+
+// StreamEvent 流式事件 (output layer 调 onStream)
+// 事件名: "start" | "stdout" | "stderr" | "exit" | "error"
+type StreamEvent struct {
+	Event     string `json:"event"`          // start/stdout/stderr/exit/error
+	Node      string `json:"node"`           // 节点名
+	Line      string `json:"line,omitempty"` // stdout/stderr 内容 (不含换行)
+	ExitCode  int    `json:"exit_code"`      // 总是输出 (exit event 必需)
+	Duration  string `json:"duration,omitempty"`
+	Timestamp string `json:"ts"` // RFC3339
+}
+
+// StreamHandler 流式事件处理函数
+// 同步调用, 需及时返回以免拼出口
+type StreamHandler func(ev StreamEvent)
+
+// RunStream 边输出边以事件流形式回调, 不 buffer stdout/stderr.
+//
+// 适用场景:
+//   - 长命令 (tail -f, journalctl -f, apt upgrade progress)
+//   - AI agent 实时处理 (进度条 / 增量输出 / 交互式 prompt)
+//
+// 语义:
+//   - 每节点先发出 "start" 事件
+//   - 之后每行 stdout/stderr 以 "stdout" / "stderr" 事件同步回调
+//   - 节点退出后发出 "exit" 事件 (含 ExitCode + Duration)
+//   - 节点错误 (dial 失败 / session 异常) 发出 "error" 事件
+//   - 回调同步调用, 调用方应避免阻塞
+//   - 总体返回所有节点的 *ExecResult (含汇总 Duration)
+func (be *BatchExecutor) RunStream(ctx context.Context, cmd string, onEvent StreamHandler) []*ExecResult {
+	n := len(be.Nodes)
+	results := make([]*ExecResult, n)
+
+	if be.Options.Parallel <= 0 {
+		be.Options.Parallel = 10
+	}
+	sem := make(chan struct{}, be.Options.Parallel)
+	var wg sync.WaitGroup
+
+	for i, node := range be.Nodes {
+		if node == nil {
+			results[i] = &ExecResult{Node: "<nil>", Command: cmd, Error: "nil node", ExitCode: -1}
+			if onEvent != nil {
+				onEvent(StreamEvent{
+					Event:     "error",
+					Node:      "<nil>",
+					Line:      "nil node",
+					Timestamp: time.Now().UTC().Format(time.RFC3339),
+				})
+			}
+			continue
+		}
+		wg.Add(1)
+		go func(idx int, nd *config.SSHNode) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			runCtx := ctx
+			if be.Options.Timeout > 0 {
+				var cancel context.CancelFunc
+				runCtx, cancel = context.WithTimeout(ctx, be.Options.Timeout)
+				defer cancel()
+			}
+
+			// start 事件
+			if onEvent != nil {
+				onEvent(StreamEvent{
+					Event:     "start",
+					Node:      nd.Name,
+					Timestamp: time.Now().UTC().Format(time.RFC3339),
+				})
+			}
+
+			exec, err := NewExecutor(nd, ExecOptions{UsePTY: be.Options.UsePTY})
+			if err != nil {
+				if onEvent != nil {
+					onEvent(StreamEvent{
+						Event:     "error",
+						Node:      nd.Name,
+						Line:      fmt.Sprintf("new executor: %v", err),
+						Timestamp: time.Now().UTC().Format(time.RFC3339),
+					})
+				}
+				results[idx] = &ExecResult{
+					Node:     nd.Name,
+					Command:  cmd,
+					ExitCode: -1,
+					Error:    fmt.Sprintf("new executor: %v", err),
+					Duration: "0s",
+				}
+				return
+			}
+			defer exec.Close()
+
+			// 包装 onEvent 为 StreamCallback
+			cb := func(stream, line string) {
+				if onEvent != nil {
+					onEvent(StreamEvent{
+						Event:     stream, // stdout/stderr
+						Node:      nd.Name,
+						Line:      line,
+						Timestamp: time.Now().UTC().Format(time.RFC3339),
+					})
+				}
+			}
+
+			r, runErr := exec.RunStream(runCtx, cmd, cb)
+			results[idx] = r
+
+			if runErr != nil {
+				if onEvent != nil {
+					onEvent(StreamEvent{
+						Event:     "error",
+						Node:      nd.Name,
+						Line:      runErr.Error(),
+						Timestamp: time.Now().UTC().Format(time.RFC3339),
+					})
+				}
+				return
+			}
+
+			// exit 事件
+			if onEvent != nil {
+				onEvent(StreamEvent{
+					Event:     "exit",
+					Node:      nd.Name,
+					ExitCode:  r.ExitCode,
+					Duration:  r.Duration,
+					Timestamp: time.Now().UTC().Format(time.RFC3339),
+				})
+			}
 		}(i, node)
 	}
 	wg.Wait()

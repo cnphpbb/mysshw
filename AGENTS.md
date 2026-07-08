@@ -49,6 +49,21 @@ mysshw/
 │   ├── sync_cobra.go          # sync 命令：SCP/WebDAV/S3 上传下载
 │   ├── version_cobra.go       # version 命令：打印版本信息
 │   ├── yml_cmd.go             # yml 命令：sshw YAML → mysshw TOML 迁移
+│   ├── init_cmd.go            # init 命令：首次运行向导
+│   ├── list_cmd.go            # list 子命令：AI 友好的节点列表
+│   ├── exec_cmd.go            # exec 子命令：非交互 SSH 命令执行
+│   ├── copy_cmd.go            # copy 子命令：SCP 文件传输
+│   ├── tunnel_cmd.go          # tunnel 子命令：本地/反向/SOCKS5 端口转发
+│   ├── hostkey_cmd.go         # hostkey 子命令：known_hosts 管理
+│   ├── completions_cmd.go     # completions 子命令：动态输出 CLI Schema (JSON)
+│   ├── ping_cmd.go            # ping 子命令：TCP 连通性检测
+│   ├── info_cmd.go            # info 子命令：远程系统信息收集
+│   ├── hash_cmd.go            # hash 子命令：密码哈希生成/验证/pepper 生成
+│   ├── encrypt_cmd.go         # encrypt 子命令：配置文件加密/解密
+│   ├── mcp_cmd.go             # mcp 子命令：MCP server (stdio)
+│   ├── output.go              # -o plain|json 全局输出器
+│   ├── errors.go              # BSD sysexits 退出码 + ExitError
+│   ├── helpers.go             # 共享 helpers (duration 解析等)
 │   └── messages.go            # 全局字符串常量
 │
 ├── config/                    # 配置管理层
@@ -231,13 +246,70 @@ mage build
 
 | 优先级 | 功能 | 涉及包 |
 |--------|------|--------|
-| 中 | 主界面支持主题 | ssh/cmd.go |
+| 低 | 主界面支持主题 | ssh/cmd.go |
 | 低 | 配置文件加密 | config/ |
-| 低 | Docker 镜像 | 新文件 |
-| 中 | 自动化 CI/CD | 新文件 |
-| 中 | 集成测试 | 各包 |
-| 低 | Github/Gitee Gist 同步 | 新包 |
-| 低 | API/RPC 同步 | 新包 |
+| 低 | config 子命令 (节点 CRUD) | 新文件 cmd/config_cmd.go |
+| 低 | export/import (配置可移植性) | 新文件 cmd/import_cmd.go |
+| 中 | exec --follow (流式输出) | cmd/exec_cmd.go |
+
+## 8.1 已完成 ✅ MCP Server (Phase 1+2+3)
+
+| 状态 | 任务 | 涉及文件 |
+|------|------|---------|
+| ✅ | `mcp` 子命令: stdio transport, 启动 MCP server | `cmd/mcp_cmd.go` |
+| ✅ | `ssh_list_nodes` tool: 列出节点 (走 mysshw list -o json) | `cmd/mcp_cmd.go` |
+| ✅ | `ssh_exec` tool: 执行命令 (走 mysshw exec -o json, 支持 alias 匹配) | `cmd/mcp_cmd.go` |
+| ✅ | `ssh_copy` tool: SCP 传输 (走 mysshw copy -o json) | `cmd/mcp_cmd.go` |
+| ✅ | `ssh_hostkey_list/show/remove/update/audit` tool: known_hosts 管理 | `cmd/mcp_cmd.go` |
+| ✅ | `ssh_completions` tool: 动态 CLI schema 查询 | `cmd/mcp_cmd.go` |
+| ✅ | 工具 schema 静态注册, 不暴露 password/passphrase/env 变量名 | `cmd/mcp_cmd.go` |
+| ✅ | ExitError → MCP isError + 退出码透传 | `cmd/mcp_cmd.go::runSubcommandCaptured` |
+| ✅ | 30+ 个单元测试 (tool schema + handler + alias/dry-run/error/state 隔离) | `cmd/mcp_cmd_test.go` |
+| ✅ | 集成验证: JSON-RPC over stdio 端到端 (initialize / tools/list / tools/call) | 手工测试 |
+
+## 8.2 已完成 ✅ ping 子命令
+
+| 状态 | 任务 | 涉及文件 |
+|------|------|---------|
+| ✅ | `ping` 子命令: TCP 端口连通性检测 (不需 ICMP/root) | `cmd/ping_cmd.go` |
+| ✅ | 单节点 / 批量 / 直接 host 三种入口 | `cmd/ping_cmd.go` |
+| ✅ | JSON 输出: reachable/latency_ms/attempts/error | `cmd/ping_cmd.go` |
+| ✅ | --node/--alias/--host 互斥 (MarkFlagsMutuallyExclusive) | `cmd/ping_cmd.go` |
+| ✅ | 单元测试: 本地连接/超时/无效域名/count/JSON shape | `cmd/ping_cmd_test.go` |
+
+## 8.3 已完成 ✅ info 子命令
+
+| 状态 | 任务 | 涉及文件 |
+|------|------|---------|
+| ✅ | `info` 子命令: 远程节点系统信息收集 | `cmd/info_cmd.go` |
+| ✅ | 字段: hostname/os/kernel/arch/cpu/memory/disk/uptime | `cmd/info_cmd.go` |
+| ✅ | 跨平台: Linux (/proc) + macOS (sysctl) | `cmd/info_cmd.go` |
+| ✅ | 并发采集 (10 条命令并行, semaphore 控制) | `cmd/info_cmd.go` |
+| ✅ | 单元测试: humanDuration/humanBytes/parseBootTimeEpoch/JSON shape | `cmd/info_cmd_test.go` |
+
+## 8.4 已完成 ✅ 加密功能 (Phase B + C)
+
+### Phase B.1: bcrypt-pepper (字段级)
+| 状态 | 任务 | 涉及文件 |
+|------|------|---------|
+| ✅ | `encryption_algorithm` / `secret_key` schema 字段 (forward-compat) | `config/model_config.go` |
+| ✅ | `config.HashPasswordWithPepper` / `VerifyPasswordWithPepper` | `config/password.go` |
+| ✅ | `ssh/client.go::resolvePasswordForSSH` bcrypt-pepper 验证分支 | `ssh/client.go` |
+| ✅ | `list -o json` 输出 `auth="bcrypt-pepper"` | `cmd/list_cmd.go` |
+| ✅ | e2e 测试 (3 cases) | `ssh/e2e_test.go` |
+
+### Phase B.3: mysshw hash 工具
+| ✅ | `mysshw hash gen/verify/pepper` | `cmd/hash_cmd.go` |
+| ✅ | `--algo` 支持 (bcrypt / bcrypt-pepper / argon2id 占位 / pbkdf2-sha256 占位) | `cmd/hash_cmd.go` |
+| ✅ | 20 单元测试 | `cmd/hash_cmd_test.go` |
+
+### Phase C: 文件级加密
+| ✅ | `EncryptConfig` / `DecryptConfig` (Argon2id + AES-256-GCM) | `config/encrypt.go` |
+| ✅ | `MSEC` magic 头自动检测 | `config/encrypt.go` |
+| ✅ | `LoadViperConfig` 自动检测加密文件并 prompt passphrase | `config/config.go` |
+| ✅ | `mysshw encrypt` / `mysshw encrypt decrypt` 子命令 | `cmd/encrypt_cmd.go` |
+| ✅ | 34 单元 + 集成测试 (config 18 + cmd 12 + load 4) | `config/encrypt*_test.go`, `cmd/encrypt_cmd_test.go` |
+| ✅ | example/mysshw.toml 增加文件级加密章节 | `example/mysshw.toml` |
 
 ---
 
@@ -254,7 +326,21 @@ mage build
 3. 在 `config/validated_config.go` 添加类型校验
 4. 在 `cmd/sync_cobra.go` 添加 case 分支
 
-### 9.3 配置变更
+### 9.3 AI Agent 集成
+
+mysshw 提供 **2 种 AI Agent 集成模式**，详见 `examples/`：
+
+| 文档 | 模式 | 推荐度 |
+|------|------|--------|
+| `examples/mcp-integration.md` | MCP (stdio transport), 9 个工具 | **首选** |
+| `examples/ai-agent.md` | CLI subprocess + `-o json` | 备选 |
+
+**修改 AI 集成文档时**:
+- MCP 工具定义变更 → 同步更新 `cmd/mcp_cmd.go` 描述 + `examples/mcp-integration.md`
+- 子命令新增/改名 → 同时更新 `ai-agent.md` 中的 Python SDK 示例
+- 退出码语义变更 → 同时更新 `mcp-integration.md` § 3.2 和 `ai-agent.md` § 2.1
+
+### 9.4 配置变更
 - 所有配置结构体在 `config/model_config.go`
 - 默认配置模板也在同一文件 `DefaultTomlConfig` 常量
 - 校验逻辑在 `config/validated_config.go`

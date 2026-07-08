@@ -178,7 +178,7 @@ func genSSHConfig(node *config.SSHNode, allowStdin bool) *defaultClient {
 		fmt.Printf("mysshw:: password resolved from env var for %s@%s\n", node.SetUser(), node.Host)
 	}
 
-	password, pwdCleartext := resolvePasswordForSSH(node, resolvedPwd, allowStdin)
+	password, pwdCleartext := resolvePasswordForSSH(node, resolvedPwd, allowStdin, config.CFG)
 	_ = pwdCleartext // 明文由 Go GC 负责回收, 无需手动 zero
 	// 注: Go string 不可变, 显式 zeroBytes 对 string 无效 (只能用于 []byte)
 	// term.ReadPassword 返回的 []byte 转换为 string 后已无引用, 由 GC 回收
@@ -461,16 +461,22 @@ func (c *defaultClient) Login(sessionEndCallback func()) {
 
 // resolvePasswordForSSH 解析 SSH 认证用的明文密码 + (可选) AuthMethod
 // 输入 resolvedPwd 是 ResolveEnvRef 处理后的值 (可能是 明文 / bcrypt 哈希 / env 解析结果 / "")
+// 输入 cfg 提供顶层 encryption_algorithm + secret_key (Phase B 用于 bcrypt-pepper 验证)
 // 返回:
 //
 //	password:     ssh.AuthMethod (明文) 或 nil (不可用)
 //	pwdCleartext: 明文字符串, 供调用方 defer zeroBytes 清理
 //
 // 决策 B1 自动检测分支:
-//   - bcrypt 哈希 → term.ReadPassword 交互输入 → VerifyPassword
+//   - bcrypt 哈希 (或 bcrypt-pepper) → term.ReadPassword 交互输入 → VerifyPassword[WithPepper]
 //   - 空字符串  → term.ReadPassword 交互输入, **不写回 TOML** (默认行为, 用户可后续 init 向导设置)
 //   - 明文     → 直接使用, 可选提示迁移为 bcrypt
-func resolvePasswordForSSH(node *config.SSHNode, resolvedPwd string, allowStdin bool) (ssh.AuthMethod, string) {
+//
+// Phase B 新增: bcrypt-pepper
+//   - 当 cfg.EncryptionAlgorithm == "bcrypt-pepper" 且 cfg.SecretKey != "" 时
+//     视为 pepper 模式, 验证时同时要求明文 + secret_key
+//   - secret_key 推荐从 env 引用 (如 ${MYSSHW_SECRET_KEY}), 不写明文
+func resolvePasswordForSSH(node *config.SSHNode, resolvedPwd string, allowStdin bool, cfg *config.Configs) (ssh.AuthMethod, string) {
 	// 提前: 非交互场景 (AI/脚本/CI) — 不允许任何 stdin 操作
 	// 限制仅针对需要用户输入密码的场景 (bcrypt / 空) — 明文/${ENV} 仍直接使用
 	if !allowStdin {
@@ -485,19 +491,55 @@ func resolvePasswordForSSH(node *config.SSHNode, resolvedPwd string, allowStdin 
 		// 明文 + ${ENV}: 跟交互路径一致处理 (fall through)
 	}
 
-	// 情况 1: bcrypt 哈希 → 交互输入 + 验证
+	// 情况 1: bcrypt 哈希 → 交互输入 + 验证 (Phase B 支持 pepper 模式)
 	if config.IsBcryptHash(resolvedPwd) {
-		cleartext, err := promptPassword(node, "TOML 中存的是 bcrypt 哈希, 请输入明文密码以验证: ")
+		// 判断是否需要 pepper: 顶层 algorithm 明确指定 bcrypt-pepper 才需要
+		// 其它情况 (auto / bcrypt / 未实现算法) 都按标准 bcrypt 走 (兼容老配置)
+		needPepper := false
+		pepper := ""
+		if cfg != nil {
+			algo, _ := config.ResolveEncryptionAlgorithm(cfg.EncryptionAlgorithm)
+			if config.IsPepperRequired(algo) {
+				needPepper = true
+				pepper = ResolveEnvRef(cfg.SecretKey)
+				if pepper == "" {
+					fmt.Fprintf(os.Stderr, "mysshw:: 节点 %s 配置为 bcrypt-pepper 但顶层 secret_key 为空, 跳过认证 (请在 mysshw.toml 顶层配置 secret_key)\n", node.Name)
+					return nil, ""
+				}
+			}
+		}
+
+		prompt := "TOML 中存的是 bcrypt 哈希, 请输入明文密码以验证: "
+		if needPepper {
+			prompt = "TOML 中存的是 bcrypt-pepper 哈希, 请输入明文密码 (server 侧 secret_key 已被使用): "
+		}
+		cleartext, err := promptPassword(node, prompt)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "mysshw:: failed to read password: %v\n", err)
 			return nil, ""
 		}
-		if err := config.VerifyPassword(resolvedPwd, cleartext); err != nil {
-			fmt.Fprintln(os.Stderr, "mysshw:: 密码验证失败 (bcrypt mismatch)")
+
+		// 验证: 标准 bcrypt 或 bcrypt-pepper
+		var verifyErr error
+		if needPepper {
+			verifyErr = config.VerifyPasswordWithPepper(resolvedPwd, cleartext, pepper)
+		} else {
+			verifyErr = config.VerifyPassword(resolvedPwd, cleartext)
+		}
+		if verifyErr != nil {
+			if needPepper {
+				fmt.Fprintln(os.Stderr, "mysshw:: 密码验证失败 (bcrypt-pepper mismatch; 检查明文或 server 侧 secret_key)")
+			} else {
+				fmt.Fprintln(os.Stderr, "mysshw:: 密码验证失败 (bcrypt mismatch)")
+			}
 			zeroBytes(cleartext)
 			return nil, ""
 		}
-		fmt.Fprintln(os.Stderr, "mysshw:: bcrypt 验证通过")
+		if needPepper {
+			fmt.Fprintln(os.Stderr, "mysshw:: bcrypt-pepper 验证通过")
+		} else {
+			fmt.Fprintln(os.Stderr, "mysshw:: bcrypt 验证通过")
+		}
 		return ssh.Password(cleartext), cleartext
 	}
 

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -27,6 +28,7 @@ var (
 	execStopOnError      bool
 	execDryRun           bool
 	execRotateKnownHosts bool
+	execStream           bool // --follow/--stream: 边输出边推送 JSON 事件
 )
 
 // execCmd 非交互 SSH 命令执行（AI / 脚本友好）
@@ -40,7 +42,7 @@ var (
 //
 // 批量: --node 可重复, 同一条命令扇出到所有匹配节点
 var execCmd = &cobra.Command{
-	Use:   "exec [--node N [--node M] | --alias A | --host H [-u U] [-p P]] [--timeout 30s] [--parallel N] [--no-pty] -- <command> [args...]",
+	Use:   "exec [--node N [--node M] | --alias A | --host H [-u U] [-p P]] [--timeout 30s] [--parallel N] [--no-pty] [-f] -- <command> [args...]",
 	Short: "Non-interactive: log into a node and run a command",
 	Long: `Connect to one or more SSH nodes and run a command without TUI menu or PTY shell.
 
@@ -48,10 +50,11 @@ Designed for AI agents and scripts:
   - Requires explicit node selector (no menu)
   - PTY enabled by default (for sudo / progress bars)
   - Output format via -o plain|json
+  - --follow (-f) for streaming long-running commands (tail -f, journalctl -f)
   - BSD sysexits-style exit codes
 
 Selectors (priority: --node > --alias > --host [+ -u / -p]):
-  --node <name>     Exact match of SSHNode.Name (repeatable for batch)
+  --node <name>     Match by Name or Alias (exact, repeatable for batch)
   --alias <alias>   Exact match of SSHNode.Alias
   --host <host>     Match by Host (combine with -u/-p to disambiguate)
 
@@ -65,6 +68,10 @@ Examples:
 
   # Machine-readable output
   mysshw exec -o json --node prod-1 -- "df -h" | jq '.'
+
+  # Stream output line-by-line as JSON events (for AI agents or tail -f)
+  mysshw exec -f --node prod-1 -- "journalctl -u nginx -f"
+  # Outputs: {"event":"start",...} {"event":"stdout","line":"..."} {"event":"exit",...}
 
   # Disable PTY (pure pipe)
   mysshw exec --no-pty --node prod-1 -- "tar czf - /var/log" > out.tgz
@@ -87,7 +94,7 @@ Exit codes (BSD sysexits):
 func init() {
 	f := execCmd.Flags()
 	f.StringSliceVar(&execNodesFlag, "node", nil,
-		"Node name (exact). Repeat for batch: --node X --node Y --node Z")
+		"Node name or alias (exact). Repeat for batch: --node X --node Y --node Z")
 	f.StringVar(&execAlias, "alias", "", "Node alias (exact)")
 	f.StringVar(&execHost, "host", "", "Node host (combine with -u/-p)")
 	f.StringVarP(&execUser, "user", "u", "", "User for --host selector")
@@ -108,6 +115,10 @@ func init() {
 			"Equivalent to OpenSSH StrictHostKeyChecking=no for THIS call only. "+
 			"\u26a0\ufe0f Cannot distinguish MITM from legitimate key rotation. "+
 			"Use only when the server key has actually been rotated by an admin.")
+	f.BoolVarP(&execStream, "follow", "f", false,
+		"Stream output as JSON events (one line per event, no buffering). "+
+			"For long-running commands (tail -f, journalctl -f) or AI agents that need "+
+			"real-time feedback. Implies JSON output regardless of --output flag.")
 	rootCmd.AddCommand(execCmd)
 }
 
@@ -163,6 +174,11 @@ func runExec(cmd *cobra.Command, args []string) error {
 	// --dry-run: 打印计划, 不实际连接
 	if execDryRun {
 		return runExecDryRun(cmd, selector, nodes, command, usePTY)
+	}
+
+	// --follow/--stream: 边输出边推送 JSON 事件 (全节点走 BatchExecutor.RunStream)
+	if execStream {
+		return runExecStream(cmd, nodes, command, usePTY)
 	}
 
 	// 单节点: 直接透传命令 exit code
@@ -289,6 +305,53 @@ func runExecBatch(cmd *cobra.Command, nodes []*config.SSHNode, command string, u
 		if r.Error != "" || r.ExitCode != 0 {
 			return NewExitError(ExitGeneric,
 				"batch completed with failures (see -o json for details)")
+		}
+	}
+	return nil
+}
+
+// runExecStream 流式执行 (--follow): 边输出边推送 JSON 事件
+//
+// 事件 schema (每个事件一行 JSON, 供 AI agent 实时处理):
+//
+//	start   {event,node,ts}
+//	stdout  {event,node,line,ts}
+//	stderr  {event,node,line,ts}
+//	exit    {event,node,exit_code,duration,ts}
+//	error   {event,node,line,ts}
+//
+// --follow 总是输出 JSON (不论 -o flag), 退出码与批 exec 一致
+func runExecStream(cmd *cobra.Command, nodes []*config.SSHNode, command string, usePTY bool) error {
+	out := cmd.OutOrStdout()
+	enc := json.NewEncoder(out)
+
+	be := &ssh.BatchExecutor{
+		Nodes: nodes,
+		Options: ssh.BatchOptions{
+			UsePTY:   usePTY,
+			Timeout:  execTimeout,
+			Parallel: execParallel,
+		},
+	}
+
+	handler := func(ev ssh.StreamEvent) {
+		// 同步逐行写出, JSON 一行一个事件, AI agent 可逐行 parse
+		if err := enc.Encode(ev); err != nil {
+			// 输出错误不可恢复, 只能记日志到 stderr
+			fmt.Fprintf(cmd.ErrOrStderr(), "mysshw:: stream encode: %v\n", err)
+		}
+	}
+
+	results := be.RunStream(cmd.Context(), command, handler)
+
+	// 总体退出码语义: 任一节点失败 → exit 1
+	for _, r := range results {
+		if r == nil {
+			continue
+		}
+		if r.Error != "" || r.ExitCode != 0 {
+			return NewExitError(ExitGeneric,
+				"stream batch completed with failures")
 		}
 	}
 	return nil

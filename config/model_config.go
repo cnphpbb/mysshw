@@ -5,10 +5,51 @@ import "golang.org/x/crypto/ssh"
 const CFGPATH string = "~/.mysshw.toml"
 
 // DefaultConfig 包含默认配置的字符串
-// 注意: 默认配置不含明文密码, 鼓励使用 ${MYSSHW_PWD_xxx} 环境变量引用
-const DefaultTomlConfig = `# config example.
-# see URL: https://github.com/cnphpbb/mysshw/blob/master/readme.md#config
-cfg_dir = "./.mysshw.toml"   # default:  $HOME/.mysshw.toml
+//
+// 供 mysshw 首次运行 / 配置文件丢失时自动生成. 与 example/mysshw.toml 保持一致.
+// 注意: 默认配置不含明文密码, 鼓励使用 ${MYSSHW_PWD_xxx} 环境变量引用.
+//
+// 完整字段参考: https://github.com/cnphpbb/mysshw/blob/master/readme.md#config
+// MCP 集成文档: https://github.com/cnphpbb/mysshw/blob/master/examples/mcp-integration.md
+const DefaultTomlConfig = `# mysshw 默认配置 (v26.07.04.0+)
+# 首次运行自动生成. 重复运行仅在配置文件丢失时才会重新创建.
+# 完整字段参考: https://github.com/cnphpbb/mysshw/blob/master/readme.md#config
+#
+# 推荐 workflow: 复制本文件到 ~/.mysshw.toml, 按需修改 sync 块与 [[nodes]] 块
+# 密码字段使用 ${MYSSHW_PWD_xxx} env 引用, 避免明文落盘
+
+# cfg_dir: 历史遗留字段, 当前未读取 (死代码). 配置文件路径由 --cfg flag
+#          或 $HOME/.mysshw.toml 默认值决定 (见 config/utils.go::CFGPATH).
+# cfg_dir = "~/.mysshw.toml"   # 死代码, 实际未被读取
+
+# known_hosts_path: 自定义主机指纹存储路径 (留空用 ~/.ssh/known_hosts)
+# known_hosts_path = "~/.mysshw/known_hosts"
+
+# backup_keep: 写 TOML 时保留的本地备份数量 (默认 5)
+# backup_keep = 5
+
+# encryption_algorithm: 密码字段的 KDF 算法 (v26.07.04.1+ 计划)
+#   ""             → 默认: 自动检测 (bcrypt / env / 明文)
+#   "bcrypt-pepper" → bcrypt + secret_key (静态 pepper), 防纯 hash 泄露
+#   "argon2id"     → Argon2id (推荐, 抗 GPU/ASIC 攻击)
+#   "pbkdf2-sha256" → PBKDF2-HMAC-SHA256 (NIST 推荐)
+# 当前版本: 解析该字段但运行时仍按 v26.07.04.0 逻辑
+# encryption_algorithm = "bcrypt-pepper"
+
+# secret_key: 服务器侧静态 secret ("pepper"), 与 password hash 结合 (v26.07.04.1+)
+# 推荐: 引用 env 而非明文 (K8s Secret 机制)
+# secret_key = "${MYSSHW_SECRET_KEY}"
+
+# cipher: 文件级加密的对称算法 (v26.07.04.1+)
+#   ""                  → 不加密
+#   "aes-256-gcm"       → AES-256-GCM (推荐)
+#   "chacha20-poly1305" → ChaCha20-Poly1305 (ARM 优化)
+# 当前版本: 解析但未应用
+# cipher = "aes-256-gcm"
+
+# kdf_params: KDF 调优参数, JSON 字符串 (v26.07.04.1+)
+# 示例: kdf_params = "{\"time\":3,\"memory\":65536,\"threads\":2}"
+# kdf_params = "{\"time\":3,\"memory\":65536,\"threads\":2}"
 
 [sync]
 type = "scp" # type: ( scp || webdav || s3 ) default: scp
@@ -18,8 +59,8 @@ remote_path = "/data/backup/mysshw/mysshw.toml" # remote file path
 [sync.scp]
 username = "root"
 password = "${MYSSHW_PWD_sync}"  # 支持 ${VAR} 或 ${VAR:-default} 引用环境变量
-keypath = ""
-passphrase = ""
+keypath = ""        # 可选, 留空走密码认证
+passphrase = ""     # 可选, 密钥口令也支持 env 引用
 
 [sync.webdav]
 auth = "Basic" # Basic || Digest
@@ -34,34 +75,90 @@ region = "" # 区域
 endpoint = "" # 终端节点 这个值为空，按 remote_uri 的值
 
 
-# config example.
-# see URL: https://github.com/cnphpbb/mysshw/blob/master/readme.md#config
-[[nodes]]
-groups = "Groups01"
-
-[[nodes.ssh]]
-alias = 'Test'
-host = '127.0.0.1'
-name = 'vm-test-1'
-password = "${MYSSHW_PWD_vm_test_1}"
-user = 'root'
-
-[[nodes.ssh]]
-alias = "AllKey"  # 可以空, 可选
-name = "AllKey"
-host = "192.168.10.60" # 不可以空，必须
-user ="vm00" # 不可以空，必须
-port = 22  # 默认值:22, 不可以空, 如果是22端口, 可以忽略这个KEY
-password = "${MYSSHW_PWD_allkey:-}" # :- 空默认值, 留空走交互输入
-#keypath="~/.ssh/id_rsa" # 可以空, 可选
-#passphrase="${MYSSHW_KEY_PASSPHRASE}" # 密钥口令也支持 env 引用
+# === SSH 节点配置 (示例) ===
+# 字段约定: name 必填 + 同 group 唯一, host 必填, user 必填 (留空默认 root),
+#          port 选填 (默认 22), alias 全局唯一, password/keypath 至少填一个
+# 推荐: 生产环境用 ${MYSSHW_PWD_xxx} 引用 env 变量, 避免明文落盘
 
 [[nodes]]
-groups = "Groups02"
+groups = "Production"
+
+# 节点 1.1: password = ${ENV} 引用 (推荐)
+[[nodes.ssh]]
+name = "prod-web-1"
+alias = "Web01"
+host = "10.0.0.1"
+user = "app"
+port = 22
+password = "${MYSSHW_PWD_prod_web_1}"
+
+# 节点 1.2: password = bcrypt 哈希 (推荐, 防明文落盘)
+# 运行时 prompt 提示输入明文 + bcrypt 验证
+# 生成新哈希: go run -ldflags="-s -w" - <<EOF  (见 mysshw 项目源码 config/password.go)
+# import "golang.org/x/crypto/bcrypt"
+# h,_ := bcrypt.GenerateFromPassword([]byte("your-password"), bcrypt.DefaultCost)
+# fmt.Println(string(h))
+[[nodes.ssh]]
+name = "prod-db-1"
+alias = "DB01"
+host = "10.0.0.5"
+user = "postgres"
+port = 5432
+password = "$2a$10$BBEDysNBBCnf/RwKMLiea.ufVrsybvoes.HYz8w.6wtff7TSLhjsC"
+proxy = "bastion"
+
+# 节点 1.3: password = 明文 (⚠️ 仅测试用, 不推荐生产)
+[[nodes.ssh]]
+name = "prod-test-1"
+host = "10.0.0.99"
+user = "app"
+password = "test-password-do-not-use-in-prod"
+strict_host_key_checking = false
+
+# 节点 1.4: 纯密钥认证 (推荐用于 CI / 自动化)
+# password 留空 + keypath; 验证: list -o json → auth="key"
+[[nodes.ssh]]
+name = "prod-deploy-1"
+alias = "DeployBot"
+host = "10.0.0.50"
+user = "deploy"
+# keypath = "~/.ssh/id_ed25519"
+
+[[nodes]]
+groups = "Staging"
+
+# 节点 2.1: 简化的内联写法
+[[nodes.ssh]]
+name = "stag-web-1"
+alias = "StagWeb"
+host = "192.168.10.10"
+user = "deploy"
+
+[[nodes]]
+groups = "DevOps"
+
+# 节点 3.1: 跳板机 (其它节点的 proxy 引用此节点)
+[[nodes.ssh]]
+name = "bastion"
+host = "bastion.example.com"
+user = "ops"
+port = 2222
+
+# 节点 3.2: 通过 bastion 访问的内网机器
+[[nodes.ssh]]
+name = "internal-app-1"
+host = "172.16.0.5"
+user = "app"
+proxy = "bastion"
+
+[[nodes]]
+groups = "Batch"
+
+# 内联数组写法, 适合节点多且配置相似的场景
 ssh = [
-	# { name="no ssh conf", alias="", host="192.168.10.60", user="vm00", port=22, password="${MYSSHW_PWD_test}", keypath="~/.ssh/id_rsa", passphrase="${MYSSHW_KEY_PASSPHRASE}" },
-    { name="vm-test-1", alias="TestNode-1", host="127.0.0.1", user="root", port=22, password="${MYSSHW_PWD_vm_test_1}" },
-	{ name="vm-test-2", alias="TestNode", host="127.0.0.1", user="root", port=22, password="${MYSSHW_PWD_vm_test_2}" },
+    { name="batch-1", host="10.1.0.1", user="worker", password="${MYSSHW_PWD_batch}" },
+    { name="batch-2", host="10.1.0.2", user="worker", password="${MYSSHW_PWD_batch}" },
+    { name="batch-3", host="10.1.0.3", user="worker", password="${MYSSHW_PWD_batch}" },
 ]
 `
 
@@ -74,9 +171,34 @@ type (
 		// BackupKeep 写 TOML 时保留的本地备份数量 (默认 5)
 		// 备份命名: <name>.<YYYYMMDD_HHMMSS>.bak
 		// 0 或负数 → 使用 DefaultBackupKeep
-		BackupKeep int      `toml:"backup_keep,omitempty" mapstructure:"backup_keep"`
-		SyncCfg    SyncInfo `toml:"sync" mapstructure:"sync"`
-		Nodes      []Nodes  `toml:"nodes" mapstructure:"nodes"`
+		BackupKeep int `toml:"backup_keep,omitempty" mapstructure:"backup_keep"`
+		// EncryptionAlgorithm 密码字段的 KDF 算法选择 (v26.07.04.1+ 计划)
+		//   ""       → 默认 (仅检测 bcrypt / env / 明文)
+		//   "bcrypt" → 标准 bcrypt 哈希 (兼容, 同 v26.07.04.0)
+		//   "bcrypt-pepper" → bcrypt + 服务器侧静态 secret key (pepper)
+		//   "argon2id" → Argon2id 哈希 (推荐, 抗 GPU/ASIC 攻击)
+		//   "pbkdf2-sha256" → PBKDF2-HMAC-SHA256 (NIST 推荐)
+		// 当前版本会解析该字段但运行时未应用 (forward-compatible)
+		// ⚠️ 验证仍按 v26.07.04.0 行为: 任何 60 字符 $2x$ 前缀的字符串被视为 bcrypt
+		EncryptionAlgorithm string `toml:"encryption_algorithm,omitempty" mapstructure:"encryption_algorithm"`
+		// SecretKey 服务器侧静态 secret key ("pepper"), 与 password 哈希结合使用
+		// 适用: 防止配置文件泄露后纯 hash 被离线暴力 (需配合 server 侧 secret)
+		// 当前版本: 解析该字段但未应用 (forward-compatible for v26.07.04.1+)
+		// 推荐: 用 ${MYSSHW_SECRET_KEY} 引用环境变量, 避免明文落盘
+		SecretKey string `toml:"secret_key,omitempty" mapstructure:"secret_key"`
+		// Cipher 文件级加密的对称算法 (v26.07.04.1+ 计划)
+		//   ""           → 不加密 (默认, v26.07.04.0 行为)
+		//   "aes-256-gcm" → AES-256-GCM (推荐, 硬件加速)
+		//   "chacha20-poly1305" → ChaCha20-Poly1305 (ARM 优化)
+		// 当前版本: 解析该字段但未应用
+		Cipher string `toml:"cipher,omitempty" mapstructure:"cipher"`
+		// KdfParams 调优参数 (cost / iters / memory), JSON 字符串
+		// 示例: kdf_params = "{\"time\":3,\"memory\":65536,\"threads\":2}"
+		// 当前版本: 解析该字段但未应用
+		KdfParams string `toml:"kdf_params,omitempty" mapstructure:"kdf_params"`
+
+		SyncCfg SyncInfo `toml:"sync" mapstructure:"sync"`
+		Nodes   []Nodes  `toml:"nodes" mapstructure:"nodes"`
 	}
 
 	SyncInfo struct {

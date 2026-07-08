@@ -91,7 +91,7 @@ func init() {
 	for _, sub := range []*cobra.Command{tunnelLocalCmd, tunnelReverseCmd, tunnelDynamicCmd} {
 		f := sub.Flags()
 		f.StringSliceVar(&tunnelNodesFlag, "node", nil,
-			"Node name (exact). For tunnel, must select exactly one node.")
+			"Node name or alias (exact). For tunnel, must select exactly one node.")
 		f.StringVar(&tunnelAlias, "alias", "", "Node alias (exact)")
 		f.StringVar(&tunnelHost, "host", "", "Node host (combine with -u/-p)")
 		f.StringVarP(&tunnelUser, "user", "u", "", "User for --host selector")

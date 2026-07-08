@@ -45,8 +45,7 @@ func TestValidateConfig_NoNodes(t *testing.T) {
 	cfg := validBaseConfig()
 	cfg.Nodes = nil
 	err := ValidateConfig(cfg)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "no nodes")
+	assert.NoError(t, err, "0 nodes is valid (e.g. after removing all nodes)")
 }
 
 func TestValidateNodeGroup_EmptyGroupName(t *testing.T) {

@@ -292,12 +292,37 @@
 
 ## 优先级总览
 
-| 优先级 | 类别 | 任务数 | 状态 |
-|--------|------|--------|------|
-| P0 | 仓库健康 (CRLF) + 关键 Bug | 6 | ✅ 全部完成 |
-| P1 | 安全 (密码/非交互) | 8 + 1 (TOFU auto-trust) | ✅ 全部完成 |
-| P2 | 代码质量 + RunSSH + 配置 + Sync + UI + 测试 + **AI 友好 CLI** | 7 + 1 + 1 + 0 + 1 + 7 + 24 (8.1-8.8) | 🟡 主要完成 (UI 主题 + 1 集成测试未做) |
-| P3 | 发布 + 文档 | 5 + 1 | 🟡 主要完成 (4 项搁置/未做) |
+### ✅ 已完成核心功能
+
+| 优先级 | 类别 | 状态 |
+|--------|------|------|
+| P0 | 仓库健康 (CRLF) + 关键 Bug | ✅ 全部完成 |
+| P1 | 安全 (密码/非交互) | ✅ 全部完成 |
+| P2 | 代码质量 + RunSSH + 配置 + Sync + UI | ✅ 全部完成 |
+| P2 | AI 友好 CLI (list/exec/copy/tunnel/hostkey/completions) | ✅ 全部完成 |
+| P2 | SSH 代理链 + 端口转发 (local/reverse/SOCKS5) | ✅ 全部完成 |
+| **P0** | **MCP Server (Phase 1+2)** | **✅ 完成** (ssh_list_nodes + ssh_exec) |
+| P3 | 发布 + 文档 + 测试 | 🟡 主要完成 |
+
+### 🆕 待实现新功能
+
+| 优先级 | 功能 | 价值说明 | 预估工作量 |
+|--------|------|---------|-----------|
+| **P1** | **config 子命令 (CRUD)** | AI 可自主管理节点配置 | 2-3 天 |
+| **P2** | **export/import** | 配置可移植性 | 0.5 天 |
+| **P2** | **exec --follow/--stream** | 流式输出，长时间命令友好 | 1 天 |
+
+### ✅ 已完成 (v26.07.04.0+)
+
+| 优先级 | 功能 | 涉及文件 | 完成日期 |
+|--------|------|---------|----------|
+| P0 | MCP Server (Phase 1+2): stdio transport + `ssh_list_nodes` + `ssh_exec` | `cmd/mcp_cmd.go` | 2026-07-06 |
+| P1 | MCP Server (Phase 3): + `ssh_copy` + 5 个 `ssh_hostkey_*` + `ssh_completions` | `cmd/mcp_cmd.go` | 2026-07-06 |
+| P1 | `ping` 子命令 (TCP 连通性检测, 不需 ICMP/root) | `cmd/ping_cmd.go` | 2026-07-06 |
+| P2 | `info` 子命令 (hostname/OS/kernel/CPU/memory/disk/uptime) | `cmd/info_cmd.go` | 2026-07-06 |
+| P1 | **bcrypt-pepper 字段级加密** (Phase B.1) | `config/password.go` + `ssh/client.go` | 2026-07-08 |
+| P2 | **`mysshw hash` 工具** (gen/verify/pepper) | `cmd/hash_cmd.go` | 2026-07-08 |
+| P2 | **文件级加密 Phase C** (Argon2id + AES-256-GCM) | `config/encrypt.go` + `cmd/encrypt_cmd.go` | 2026-07-08 |
 
 ---
 
@@ -333,7 +358,34 @@ v26.07.04.0 (新增 AI 友好 CLI) 13 个 commit, 29 files, +4342/-9  list/exec/
 
 ---
 
-## 显式搁置项 (P2/P3)
+## 13. AI 动态 CLI Schema (新增 P3) ✅ 完成
+
+| 状态 | 任务 | 涉及文件 | 完成日期 |
+|------|------|---------|----------|
+| ✅ | `completions` 子命令: `--flat` 展平模式 + 子命令筛选 (`completions tunnel`) | `cmd/completions_cmd.go` | 2026-07-06 |
+| ✅ | 动态输出完整 CLI JSON schema (从 cobra 运行时反射) | `cmd/completions_cmd.go::buildSchema` | 2026-07-06 |
+| ✅ | 包含字段: application / commands (递归) / flags (含 persistent/type/default) / exit_codes (BSD sysexits 全量) | `cmd/completions_cmd.go` | 2026-07-06 |
+| ✅ | Args policy 推断 (反射 PositionalArgs 函数名 → noargs/arbitrary/exact(N)/custom) | `cmd/completions_cmd.go::inferArgsPolicy` | 2026-07-06 |
+| ✅ | 敏感默认值 redact (password/passphrase/secret/token 类 flag 默认值不输出明文) | `cmd/completions_cmd.go::flagToSchema` | 2026-07-06 |
+| ✅ | 单元测试 14 个用例 (schema 字段/命令发现/嵌套展开/filter/扁平化/JSON 往返/hidden flag 过滤) | `cmd/completions_cmd_test.go` | 2026-07-06 |
+
+### 使用场景
+
+- AI agent 运行时发现当前 mysshw 版本支持的完整 CLI 结构，无需硬编码
+- 动态 tool 注册 (Tool Use schema 从二进制 query 生成)
+- 版本差异检测 (比对 schema_version = "1.0" 兼容性)
+- CLI 自动补全/文档生成
+
+### JSON schema 设计要点
+
+- **schema_version** = "1.0", 后续变更需递增
+- **commands** 树递归 (rootCmd.Commands → completionsCmd.Commands → ...), 按 path 字典序排序
+- **flags** 含 name/shorthand/type/default/usage/persistent, hidden flag 过滤, 敏感字段 redact
+- **args_policy** 反射推断: well-known 函数 (NoArgs/ArbitraryArgs) → 字面量; 带参函数 (ExactArgs/MinimumNArgs) → 抽象名 (exact(N))
+- **exit_codes** 14 个 BSD sysexits 全量, 与 `cmd/errors.go` 常量一致
+- **filter** `completions <subcmd>` 路径筛选, **flat** `--flat` 单层数组
+
+---
 
 | 项 | 原因 | 决定日期 |
 |---|---|---|

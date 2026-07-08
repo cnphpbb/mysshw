@@ -10,6 +10,8 @@
 package config
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -102,6 +104,13 @@ func LoadViperConfig(cfgPath string) error {
 	// 读取配置文件
 	err := viper.ReadInConfig()
 	if err != nil {
+		// Phase C: 加密文件检测
+		// 尝试读原始字节, 如果是加密格式则提示 passphrase 解密
+		rawBytes, readErr := os.ReadFile(_cfgPath)
+		if readErr == nil && IsEncryptedFile(rawBytes) {
+			// 加密文件 → 需 passphrase 解密
+			return decryptAndLoadConfig(rawBytes)
+		}
 		// 先备份一份已经存在的配置文件, 如果有的话
 		backupPath, err := backupConfigFile()
 		if err != nil {
@@ -139,5 +148,36 @@ func LoadViperConfig(cfgPath string) error {
 		return err
 	}
 
+	return nil
+}
+
+// decryptAndLoadConfig 提示 passphrase, 解密后用 viper 解析
+// 用于 Phase C 的加密配置文件
+func decryptAndLoadConfig(cipherdata []byte) error {
+	passphrase, err := readPassphraseForDecrypt()
+	if err != nil {
+		return err
+	}
+	if passphrase == "" {
+		return errors.New("mysshw:: empty passphrase, cannot decrypt config")
+	}
+	plaintext, err := DecryptConfig(cipherdata, []byte(passphrase))
+	if err != nil {
+		return fmt.Errorf("mysshw:: config decrypt failed: %w", err)
+	}
+	// 用解密后的 bytes 作为 viper 输入
+	viper.SetConfigType(CFG_EXT_TYPE)
+	if err := viper.ReadConfig(bytes.NewReader(plaintext)); err != nil {
+		return fmt.Errorf("mysshw:: parse decrypted config: %w", err)
+	}
+	// 验证 + 设置 CFG
+	c := new(Configs)
+	if err := viper.Unmarshal(c); err != nil {
+		return fmt.Errorf("mysshw:: unmarshal decrypted config: %w", err)
+	}
+	if err := ValidateConfig(c); err != nil {
+		return fmt.Errorf("mysshw:: configuration validation failed: %v", err)
+	}
+	CFG = c
 	return nil
 }

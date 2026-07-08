@@ -68,12 +68,17 @@ type nodeSummary struct {
 
 // classifyAuth 根据节点字段归类认证方式（仅展示用，不输出密码本身）
 //
-//	空 password + 有 KeyPath → "key"
-//	空 password              → "empty"
-//	bcrypt 哈希               → "bcrypt"
-//	${ENV} 引用               → "env"
-//	有 KeyPath 但 password 也有 → "key+password"（少见）
-//	其他明文                  → "password"
+//	空 password + 有 KeyPath       → "key"
+//	空 password                    → "empty"
+//	bcrypt 哈希                     → "bcrypt"
+//	bcrypt-pepper 哈希 (Phase B)    → "bcrypt-pepper" (需顶层 secret_key)
+//	${ENV} 引用                     → "env"
+//	有 KeyPath 但 password 也有     → "key+password"（少见）
+//	其他明文                        → "password"
+//
+// Phase B: 如果 cfg.EncryptionAlgorithm == "bcrypt-pepper", 则所有 bcrypt 节点
+//
+//	都显示为 "bcrypt-pepper" (因为所有节点都需 pepper 验证)
 func classifyAuth(n *config.SSHNode) string {
 	if n == nil {
 		return "unknown"
@@ -91,7 +96,24 @@ func classifyAuth(n *config.SSHNode) string {
 	// 先检测特定格式
 	auth := ""
 	if config.IsBcryptHash(pwd) {
-		auth = "bcrypt"
+		// Phase B: bcrypt-pepper 模式标记
+		// 如果顶层 algorithm 显式指定 bcrypt-pepper, 所有 bcrypt 节点标记为 pepper
+		// (因为运行时都会用 pepper 验证, 区别仅在 server 侧 secret_key 是否存在)
+		if config.CFG != nil {
+			if algo, _ := config.ResolveEncryptionAlgorithm(config.CFG.EncryptionAlgorithm); config.IsPepperRequired(algo) {
+				auth = "bcrypt-pepper"
+			} else {
+				auth = "bcrypt"
+			}
+		} else {
+			auth = "bcrypt"
+		}
+	} else if config.IsArgon2idHash(pwd) {
+		// Phase B+ 占位识别: Argon2id 格式哈希
+		auth = "argon2id"
+	} else if config.IsPbkdf2Sha256Hash(pwd) {
+		// Phase B+ 占位识别: PBKDF2-SHA256 格式哈希
+		auth = "pbkdf2-sha256"
 	} else if strings.HasPrefix(strings.TrimSpace(pwd), "${") {
 		auth = "env"
 	} else {

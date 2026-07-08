@@ -86,7 +86,7 @@ Note: --upload uses -U (uppercase) to avoid clash with -u/--user used by exec/li
 func init() {
 	f := copyCmd.Flags()
 	f.StringSliceVar(&copyNodesFlag, "node", nil,
-		"Node name(s). Repeat for batch: --node X --node Y")
+		"Node name(s) or alias(es). Repeat for batch: --node X --node Y")
 	f.StringVar(&copyAlias, "alias", "", "Node alias (exact)")
 	f.StringVar(&copyHost, "host", "", "Node host (combine with -u/-p)")
 	f.StringVarP(&copyUser, "user", "u", "", "User for --host selector")
