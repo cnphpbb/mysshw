@@ -32,7 +32,7 @@ func TestResolvePasswordForSSH_Empty(t *testing.T) {
 	defer pipeStdin(t, "test-password\n")()
 
 	node := &config.SSHNode{Name: "test", Host: "127.0.0.1"}
-	auth, cleartext := resolvePasswordForSSH(node, "", true)
+	auth, cleartext := resolvePasswordForSSH(node, "", true, nil)
 	assert.NotNil(t, auth, "应返回非 nil AuthMethod")
 	assert.Equal(t, "test-password", cleartext)
 }
@@ -45,7 +45,7 @@ func TestResolvePasswordForSSH_Bcrypt(t *testing.T) {
 	defer pipeStdin(t, "secret-pwd\n")()
 	node := &config.SSHNode{Name: "test", Host: "127.0.0.1"}
 
-	auth, cleartext := resolvePasswordForSSH(node, hash, true)
+	auth, cleartext := resolvePasswordForSSH(node, hash, true, nil)
 	assert.NotNil(t, auth)
 	assert.Equal(t, "secret-pwd", cleartext)
 }
@@ -57,7 +57,7 @@ func TestResolvePasswordForSSH_BcryptMismatch(t *testing.T) {
 	defer pipeStdin(t, "wrong-pwd\n")()
 	node := &config.SSHNode{Name: "test", Host: "127.0.0.1"}
 
-	auth, cleartext := resolvePasswordForSSH(node, hash, true)
+	auth, cleartext := resolvePasswordForSSH(node, hash, true, nil)
 	assert.Nil(t, auth, "验证失败应返回 nil")
 	assert.Empty(t, cleartext)
 }
@@ -66,7 +66,7 @@ func TestResolvePasswordForSSH_BcryptMismatch(t *testing.T) {
 func TestResolvePasswordForSSH_Plain(t *testing.T) {
 	node := &config.SSHNode{Name: "test", Host: "127.0.0.1"}
 	// isTerminal(pipe) = false → 警告跳过, 明文直接使用
-	auth, cleartext := resolvePasswordForSSH(node, "plain-password", true)
+	auth, cleartext := resolvePasswordForSSH(node, "plain-password", true, nil)
 	assert.NotNil(t, auth)
 	assert.Equal(t, "plain-password", cleartext)
 }
@@ -76,7 +76,7 @@ func TestResolvePasswordForSSH_EmptyPipeEmpty(t *testing.T) {
 	defer pipeStdin(t, "")()
 
 	node := &config.SSHNode{Name: "test", Host: "127.0.0.1"}
-	auth, cleartext := resolvePasswordForSSH(node, "", true)
+	auth, cleartext := resolvePasswordForSSH(node, "", true, nil)
 	assert.Nil(t, auth, "空密码 + 空输入应跳过认证")
 	assert.Empty(t, cleartext)
 }
@@ -87,9 +87,100 @@ func TestResolvePasswordForSSH_NonInteractiveSkipsStdin(t *testing.T) {
 	defer pipeStdin(t, "ignored-input\n")()
 
 	node := &config.SSHNode{Name: "test", Host: "127.0.0.1"}
-	auth, cleartext := resolvePasswordForSSH(node, "", false)
+	auth, cleartext := resolvePasswordForSSH(node, "", false, nil)
 	assert.Nil(t, auth, "非交互 + 空密码 → nil auth")
 	assert.Empty(t, cleartext)
+}
+
+// ==================== Phase B: bcrypt-pepper 验证 ====================
+
+// TestResolvePasswordForSSH_BcryptPepper_Success 验证 bcrypt-pepper 正确明文 + secret_key
+func TestResolvePasswordForSSH_BcryptPepper_Success(t *testing.T) {
+	pepper := "server-side-secret-32bytes"
+	hash, err := config.HashPasswordWithPepper("secret-pwd", pepper)
+	require.NoError(t, err)
+
+	defer pipeStdin(t, "secret-pwd\n")()
+	node := &config.SSHNode{Name: "test", Host: "127.0.0.1"}
+	cfg := &config.Configs{
+		EncryptionAlgorithm: "bcrypt-pepper",
+		SecretKey:           pepper, // 明文 pepper (实际部署应用 env 引用)
+	}
+
+	auth, cleartext := resolvePasswordForSSH(node, hash, true, cfg)
+	assert.NotNil(t, auth, "bcrypt-pepper 验证通过应返回非 nil")
+	assert.Equal(t, "secret-pwd", cleartext)
+}
+
+// TestResolvePasswordForSSH_BcryptPepper_WrongPepper 验证错误 pepper → 验证失败
+func TestResolvePasswordForSSH_BcryptPepper_WrongPepper(t *testing.T) {
+	hash, _ := config.HashPasswordWithPepper("secret-pwd", "correct-pepper")
+
+	defer pipeStdin(t, "secret-pwd\n")()
+	node := &config.SSHNode{Name: "test", Host: "127.0.0.1"}
+	cfg := &config.Configs{
+		EncryptionAlgorithm: "bcrypt-pepper",
+		SecretKey:           "WRONG-PEPPER",
+	}
+
+	auth, cleartext := resolvePasswordForSSH(node, hash, true, cfg)
+	assert.Nil(t, auth, "错误 pepper 应验证失败")
+	assert.Empty(t, cleartext)
+}
+
+// TestResolvePasswordForSSH_BcryptPepper_EmptySecretKey 验证 algorithm=bcrypt-pepper 但
+// secret_key 缺失 → 跳过认证 (避免退化到标准 bcrypt 让攻击者得逞)
+func TestResolvePasswordForSSH_BcryptPepper_EmptySecretKey(t *testing.T) {
+	hash, _ := config.HashPasswordWithPepper("secret-pwd", "any-pepper")
+
+	defer pipeStdin(t, "secret-pwd\n")()
+	node := &config.SSHNode{Name: "test", Host: "127.0.0.1"}
+	cfg := &config.Configs{
+		EncryptionAlgorithm: "bcrypt-pepper",
+		SecretKey:           "", // 故意空
+	}
+
+	auth, cleartext := resolvePasswordForSSH(node, hash, true, cfg)
+	assert.Nil(t, auth, "bcrypt-pepper 节点 + 空 secret_key 应拒绝")
+	assert.Empty(t, cleartext)
+}
+
+// TestResolvePasswordForSSH_BcryptWithoutPepper 验证 algorithm="" 时按标准 bcrypt 处理
+// (兼容 v26.07.04.0 行为, 即便 config 里有 secret_key 也不使用)
+func TestResolvePasswordForSSH_BcryptWithoutPepper(t *testing.T) {
+	// 标准 bcrypt 哈希 (无 pepper)
+	hash, _ := config.HashPassword("secret-pwd")
+
+	defer pipeStdin(t, "secret-pwd\n")()
+	node := &config.SSHNode{Name: "test", Host: "127.0.0.1"}
+	cfg := &config.Configs{
+		EncryptionAlgorithm: "",           // 留空 → 兼容模式
+		SecretKey:           "any-pepper", // 配置了但 algorithm 没指定, 不使用
+	}
+
+	auth, cleartext := resolvePasswordForSSH(node, hash, true, cfg)
+	assert.NotNil(t, auth, "algorithm 留空时按标准 bcrypt 验证")
+	assert.Equal(t, "secret-pwd", cleartext)
+}
+
+// TestResolvePasswordForSSH_BcryptPepper_EnvRef 验证 secret_key 走 ${ENV} 引用
+func TestResolvePasswordForSSH_BcryptPepper_EnvRef(t *testing.T) {
+	pepper := "env-pepper-32bytes"
+	t.Setenv("MYSSHW_TEST_PEPPER", pepper)
+
+	hash, err := config.HashPasswordWithPepper("secret-pwd", pepper)
+	require.NoError(t, err)
+
+	defer pipeStdin(t, "secret-pwd\n")()
+	node := &config.SSHNode{Name: "test", Host: "127.0.0.1"}
+	cfg := &config.Configs{
+		EncryptionAlgorithm: "bcrypt-pepper",
+		SecretKey:           "${MYSSHW_TEST_PEPPER}", // 引用 env
+	}
+
+	auth, cleartext := resolvePasswordForSSH(node, hash, true, cfg)
+	assert.NotNil(t, auth, "${ENV} 引用的 secret_key 应被解析")
+	assert.Equal(t, "secret-pwd", cleartext)
 }
 
 // TestIsTerminal_PipeReturnsFalse 验证 isTerminal 对 pipe 返回 false
