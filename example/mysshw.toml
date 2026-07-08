@@ -15,8 +15,12 @@
 # 顶层字段
 # ============================================================
 
-# cfg_dir: 配置目录路径 (留空 → $HOME/.mysshw.toml)
-# cfg_dir = "~/.mysshw/"
+# cfg_dir: 历史遗留字段, 当前未读取 (死代码).
+#   配置文件路径实际由 --cfg flag 或 $HOME/.mysshw.toml 默认值决定
+#   (见 config/utils.go::CFGPATH 常量).
+#   推荐: 保留这一行以便知道这个字段不存在, 或直接删除.
+#   后续如果需要"配置目录"语义 (e.g. 多文件分拆配置), 会另行设计.
+# cfg_dir = "~/.mysshw.toml"   # 死代码, 实际未被读取
 
 # known_hosts_path: 自定义主机指纹存储路径
 # 留空 → ~/.ssh/known_hosts (与 OpenSSH 共享)
@@ -27,6 +31,34 @@
 # 留空或 ≤0 → 默认 5
 # 备份命名: <name>.<YYYYMMDD_HHMMSS>.bak, atomic rename 保证原子性
 # backup_keep = 5
+
+# encryption_algorithm: 密码字段的 KDF 算法 (v26.07.04.1+ 计划)
+#   ""             → 默认: 自动检测 (bcrypt / env / 明文), v26.07.04.0 行为
+#   "bcrypt"       → 标准 bcrypt 哈希 (兼容, v26.07.04.0 唯一识别的算法)
+#   "bcrypt-pepper" → bcrypt + 服务器侧 secret_key (静态 pepper), 防纯 hash 泄露
+#   "argon2id"     → Argon2id 哈希 (推荐, 抗 GPU/ASIC 攻击, OWASP 推荐)
+#   "pbkdf2-sha256" → PBKDF2-HMAC-SHA256 (NIST SP 800-132 推荐)
+# 当前版本: 会解析该字段, 但运行时仍按 v26.07.04.0 逻辑 (60字符 $2x$ 前缀即视为 bcrypt)
+# 迁移提示: v26.07.04.1+ 会根据该字段 + secret_key 计算/验证 hash
+# encryption_algorithm = "bcrypt-pepper"
+
+# secret_key: 服务器侧静态 secret ("pepper"), 与 password hash 结合 (v26.07.04.1+ 计划)
+# 适用: 即使配置文件泄露, 攻击者仍需拿到 server 侧 secret 才能离线爆破
+# 推荐: 引用 env 而非明文 (类似 K8s Secret 机制)
+# 当前版本: 解析该字段但未应用
+# secret_key = "${MYSSHW_SECRET_KEY}"
+
+# cipher: 文件级加密的对称算法 (v26.07.04.1+ 计划)
+#   ""                    → 不加密, v26.07.04.0 行为
+#   "aes-256-gcm"         → AES-256-GCM (推荐, 主流硬件加速)
+#   "chacha20-poly1305"   → ChaCha20-Poly1305 (ARM / 移动优化)
+# 当前版本: 解析该字段但未应用
+# cipher = "aes-256-gcm"
+
+# kdf_params: KDF 调优参数 (v26.07.04.1+ 计划)
+# 示例: kdf_params = "{\"time\":3,\"memory\":65536,\"threads\":2}"
+# 当前版本: 解析该字段但未应用
+# kdf_params = "{\"time\":3,\"memory\":65536,\"threads\":2}"
 
 
 # ============================================================
@@ -150,6 +182,23 @@ user = "deploy"
 # keypath = "~/.ssh/id_ed25519"   # 启用密钥认证
 # 密码字段留空
 
+# 节点 1.5: bcrypt + secret_key pepper (v26.07.04.1+)
+# 机制: password 字段仍然是 $2a$10$... bcrypt 哈希, 但运行时
+#       会用顶层 secret_key 做 HMAC 二次认证.
+#       优点: 即使 config 文件泄露, 攻击者仍需拿到 server 侧 secret 才能离线爆破.
+# 依赖: 顶层 encryption_algorithm = "bcrypt-pepper" + secret_key = "..."
+# 运行时 (v26.07.04.1+): 用户输入明文 → bcrypt 验证 → 用 secret_key 做 HMAC 二次验证
+# 当前版本 (v26.07.04.0): 仅检测为 bcrypt, secret_key 未参与验证 (forward-compatible)
+# list 输出 (v26.07.04.1+): auth="bcrypt-pepper"
+[[nodes.ssh]]
+name = "prod-secure-1"
+alias = "SecureDB"
+host = "10.0.0.200"
+user = "postgres"
+# 明文: "super-secret-db-password" (生成器在文件末尾)
+# 预期配合顶层 secret_key = "${MYSSHW_SECRET_KEY}" 使用
+password = "$2a$10$BBEDysNBBCnf/RwKMLiea.ufVrsybvoes.HYz8w.6wtff7TSLhjsC"
+
 # --- Group 2: Staging ---
 [[nodes]]
 groups = "Staging"
@@ -213,3 +262,43 @@ ssh = [
 #   4. 后续 ssh_exec/copy 走严格校验, 无需额外 flag
 #
 # ⚠️ rotate_known_hosts 字段已弃用, 保留仅为兼容; 新代码请用 hostkey update
+
+
+# ============================================================
+# Helper: 生成 bcrypt 哈希 / secret_key
+# ============================================================
+# 以下是 Go 单文件, 供运维在本地生成新哈希时使用:
+#
+# // genhash.go
+# package main
+#
+# import (
+#     "fmt"
+#     "os"
+#     "golang.org/x/crypto/bcrypt"
+# )
+#
+# func main() {
+#     pwd := os.Args[1]
+#     h, _ := bcrypt.GenerateFromPassword([]byte(pwd), bcrypt.DefaultCost)
+#     fmt.Println(string(h))
+# }
+#
+# 用法:
+#   go run genhash.go "your-password"
+#   # 输出: $2a$10$xxxxx...  (60 字符, 复制到 password 字段)
+#
+# 未来 v26.07.04.1+ 计划提供 mysshw 原生命令:
+#   mysshw hash gen <plaintext>             # 生成 bcrypt 哈希
+#   mysshw hash gen --algo=argon2id <plain> # 生成 Argon2id
+#   mysshw hash verify <hash> <plain>       # 验证哈希是否匹配
+#   mysshw hash pepper                      # 生成新的 secret_key (随机 32 字节)
+#
+# 变更 secret_key 的 workflow (v26.07.04.1+ 计划):
+#   1. 备份: cp mysshw.toml mysshw.toml.bak
+#   2. 生成新 secret: openssl rand -base64 32 (或 mysshw hash pepper)
+#   3. 更新配置: secret_key = "<新 secret>"
+#   4. 逐节点重哈希: 对每个 bcrypt 节点调 mysshw hash gen --with-pepper <新明文>
+#      (mysshw 内部用 旧 secret 验证 + 新 secret 重新 hash)
+#   5. 验证: mysshw list (确保所有节点仍然可解析)
+#   6. 删除备份: rm mysshw.toml.bak (验证后)

@@ -18,13 +18,38 @@ const DefaultTomlConfig = `# mysshw 默认配置 (v26.07.04.0+)
 # 推荐 workflow: 复制本文件到 ~/.mysshw.toml, 按需修改 sync 块与 [[nodes]] 块
 # 密码字段使用 ${MYSSHW_PWD_xxx} env 引用, 避免明文落盘
 
-cfg_dir = "./.mysshw.toml"   # default:  $HOME/.mysshw.toml
+# cfg_dir: 历史遗留字段, 当前未读取 (死代码). 配置文件路径由 --cfg flag
+#          或 $HOME/.mysshw.toml 默认值决定 (见 config/utils.go::CFGPATH).
+# cfg_dir = "~/.mysshw.toml"   # 死代码, 实际未被读取
 
 # known_hosts_path: 自定义主机指纹存储路径 (留空用 ~/.ssh/known_hosts)
 # known_hosts_path = "~/.mysshw/known_hosts"
 
 # backup_keep: 写 TOML 时保留的本地备份数量 (默认 5)
 # backup_keep = 5
+
+# encryption_algorithm: 密码字段的 KDF 算法 (v26.07.04.1+ 计划)
+#   ""             → 默认: 自动检测 (bcrypt / env / 明文)
+#   "bcrypt-pepper" → bcrypt + secret_key (静态 pepper), 防纯 hash 泄露
+#   "argon2id"     → Argon2id (推荐, 抗 GPU/ASIC 攻击)
+#   "pbkdf2-sha256" → PBKDF2-HMAC-SHA256 (NIST 推荐)
+# 当前版本: 解析该字段但运行时仍按 v26.07.04.0 逻辑
+# encryption_algorithm = "bcrypt-pepper"
+
+# secret_key: 服务器侧静态 secret ("pepper"), 与 password hash 结合 (v26.07.04.1+)
+# 推荐: 引用 env 而非明文 (K8s Secret 机制)
+# secret_key = "${MYSSHW_SECRET_KEY}"
+
+# cipher: 文件级加密的对称算法 (v26.07.04.1+)
+#   ""                  → 不加密
+#   "aes-256-gcm"       → AES-256-GCM (推荐)
+#   "chacha20-poly1305" → ChaCha20-Poly1305 (ARM 优化)
+# 当前版本: 解析但未应用
+# cipher = "aes-256-gcm"
+
+# kdf_params: KDF 调优参数, JSON 字符串 (v26.07.04.1+)
+# 示例: kdf_params = "{\"time\":3,\"memory\":65536,\"threads\":2}"
+# kdf_params = "{\"time\":3,\"memory\":65536,\"threads\":2}"
 
 [sync]
 type = "scp" # type: ( scp || webdav || s3 ) default: scp
@@ -146,9 +171,34 @@ type (
 		// BackupKeep 写 TOML 时保留的本地备份数量 (默认 5)
 		// 备份命名: <name>.<YYYYMMDD_HHMMSS>.bak
 		// 0 或负数 → 使用 DefaultBackupKeep
-		BackupKeep int      `toml:"backup_keep,omitempty" mapstructure:"backup_keep"`
-		SyncCfg    SyncInfo `toml:"sync" mapstructure:"sync"`
-		Nodes      []Nodes  `toml:"nodes" mapstructure:"nodes"`
+		BackupKeep int `toml:"backup_keep,omitempty" mapstructure:"backup_keep"`
+		// EncryptionAlgorithm 密码字段的 KDF 算法选择 (v26.07.04.1+ 计划)
+		//   ""       → 默认 (仅检测 bcrypt / env / 明文)
+		//   "bcrypt" → 标准 bcrypt 哈希 (兼容, 同 v26.07.04.0)
+		//   "bcrypt-pepper" → bcrypt + 服务器侧静态 secret key (pepper)
+		//   "argon2id" → Argon2id 哈希 (推荐, 抗 GPU/ASIC 攻击)
+		//   "pbkdf2-sha256" → PBKDF2-HMAC-SHA256 (NIST 推荐)
+		// 当前版本会解析该字段但运行时未应用 (forward-compatible)
+		// ⚠️ 验证仍按 v26.07.04.0 行为: 任何 60 字符 $2x$ 前缀的字符串被视为 bcrypt
+		EncryptionAlgorithm string `toml:"encryption_algorithm,omitempty" mapstructure:"encryption_algorithm"`
+		// SecretKey 服务器侧静态 secret key ("pepper"), 与 password 哈希结合使用
+		// 适用: 防止配置文件泄露后纯 hash 被离线暴力 (需配合 server 侧 secret)
+		// 当前版本: 解析该字段但未应用 (forward-compatible for v26.07.04.1+)
+		// 推荐: 用 ${MYSSHW_SECRET_KEY} 引用环境变量, 避免明文落盘
+		SecretKey string `toml:"secret_key,omitempty" mapstructure:"secret_key"`
+		// Cipher 文件级加密的对称算法 (v26.07.04.1+ 计划)
+		//   ""           → 不加密 (默认, v26.07.04.0 行为)
+		//   "aes-256-gcm" → AES-256-GCM (推荐, 硬件加速)
+		//   "chacha20-poly1305" → ChaCha20-Poly1305 (ARM 优化)
+		// 当前版本: 解析该字段但未应用
+		Cipher string `toml:"cipher,omitempty" mapstructure:"cipher"`
+		// KdfParams 调优参数 (cost / iters / memory), JSON 字符串
+		// 示例: kdf_params = "{\"time\":3,\"memory\":65536,\"threads\":2}"
+		// 当前版本: 解析该字段但未应用
+		KdfParams string `toml:"kdf_params,omitempty" mapstructure:"kdf_params"`
+
+		SyncCfg SyncInfo `toml:"sync" mapstructure:"sync"`
+		Nodes   []Nodes  `toml:"nodes" mapstructure:"nodes"`
 	}
 
 	SyncInfo struct {
