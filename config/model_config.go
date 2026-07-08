@@ -58,38 +58,46 @@ endpoint = "" # 终端节点 这个值为空，按 remote_uri 的值
 [[nodes]]
 groups = "Production"
 
-# 节点 1.1: 密码认证 (env 引用)
+# 节点 1.1: password = ${ENV} 引用 (推荐)
 [[nodes.ssh]]
 name = "prod-web-1"
 alias = "Web01"
 host = "10.0.0.1"
 user = "app"
+port = 22
 password = "${MYSSHW_PWD_prod_web_1}"
 
-# 节点 1.2: 通过 bastion 跳板访问的内网数据库
+# 节点 1.2: password = bcrypt 哈希 (推荐, 防明文落盘)
+# 运行时 prompt 提示输入明文 + bcrypt 验证
+# 生成新哈希: go run -ldflags="-s -w" - <<EOF  (见 mysshw 项目源码 config/password.go)
+# import "golang.org/x/crypto/bcrypt"
+# h,_ := bcrypt.GenerateFromPassword([]byte("your-password"), bcrypt.DefaultCost)
+# fmt.Println(string(h))
 [[nodes.ssh]]
 name = "prod-db-1"
 alias = "DB01"
 host = "10.0.0.5"
 user = "postgres"
 port = 5432
-password = "${MYSSHW_PWD_prod_db_1}"
-# proxy: 跳板节点 name (指向同一配置中的另一个 SSHNode)
-#   连接顺序: client -> Proxy 节点 -> 本节点
-#   限制: 仅支持单跳; 多跳 (A -> B -> C) 通过链式 Proxy 实现
+password = "$2a$10$BBEDysNBBCnf/RwKMLiea.ufVrsybvoes.HYz8w.6wtff7TSLhjsC"
 proxy = "bastion"
 
-# 节点 1.3: 临时跳过主机指纹校验 (仅测试环境)
+# 节点 1.3: password = 明文 (⚠️ 仅测试用, 不推荐生产)
 [[nodes.ssh]]
 name = "prod-test-1"
 host = "10.0.0.99"
 user = "app"
-password = "${MYSSHW_PWD_prod_test_1}"
-# strict_host_key_checking: 控制对当前节点的主机指纹校验策略
-#   nil (默认) → 启用严格校验 (推荐, 防 MITM)
-#   true       → 显式启用严格校验
-#   false      → 跳过主机指纹校验 (⚠️ 不推荐, 测试环境临时使用)
+password = "test-password-do-not-use-in-prod"
 strict_host_key_checking = false
+
+# 节点 1.4: 纯密钥认证 (推荐用于 CI / 自动化)
+# password 留空 + keypath; 验证: list -o json → auth="key"
+[[nodes.ssh]]
+name = "prod-deploy-1"
+alias = "DeployBot"
+host = "10.0.0.50"
+user = "deploy"
+# keypath = "~/.ssh/id_ed25519"
 
 [[nodes]]
 groups = "Staging"

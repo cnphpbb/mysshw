@@ -5,7 +5,7 @@
 # 字段约定:
 #   - "必填" 字段不可省略, 省略会导致 LoadViperConfig 失败
 #   - "可选" 字段省略时使用默认值
-#   - 密码字段建议用 ${MYSSHW_PWD_xxx} env 引用, 避免明文落盘
+#   - 密码字段推荐用 ${MYSSHW_PWD_xxx} env 引用, 或 bcrypt 哈希, 避免明文落盘
 #   - 单个 SSH 节点在同一 group 内 name 必须唯一
 #   - alias 在全局配置中应唯一, 方便 --node <alias> 定位
 #   - keypath 指定后 validator 会检查文件存在; 示例中所有 keypath 都注释掉了
@@ -30,6 +30,36 @@
 
 
 # ============================================================
+# 密码 / 认证字段格式 (4 种方式, 推荐度递减)
+# ============================================================
+# password / passphrase 字段支持 4 种格式; mysshw 自动检测并按类型处理:
+#
+# 1. ${ENV} 引用 (推荐)
+#    password = "${MYSSHW_PWD_node1}"
+#    运行时由 ssh.ResolveEnvRef 解析为 $MYSSHW_PWD_node1 的值
+#    list 输出的 auth 字段: "env"
+#    适用: 容器 / K8s Secret / 部署到多台机器时统一管理
+#
+# 2. bcrypt 哈希 (推荐, 防止明文落盘)
+#    password = "$2a$10$xxxxx..."  (60 字符, 必须以 $2a$/$2b$/$2y$ 开头)
+#    运行时 prompt 交互输入明文 → bcrypt.CompareHashAndPassword 验证
+#    list 输出的 auth 字段: "bcrypt"
+#    适用: 静态配置文件 + 多人共享, 任何明文都不应直接落盘
+#    生成工具: go run 下面的 helper, 或直接调 config.HashPassword(plain)
+#
+# 3. 明文 (⚠️ 不推荐)
+#    password = "my-secret-password"
+#    list 输出的 auth 字段: "password"
+#    适用: 一次性测试环境; 生产环境绝不应该用
+#
+# 4. 空 + keypath (推荐用于纯密钥认证)
+#    password = ""
+#    keypath = "~/.ssh/id_ed25519"
+#    list 输出的 auth 字段: "key" (有 keypath + 无 password)
+#    适用: 自动化 / CI / 跳板机
+
+
+# ============================================================
 # 同步配置 (sync 命令, 把本配置分发到远端)
 # ============================================================
 
@@ -46,8 +76,7 @@ remote_path = "/data/backup/mysshw/mysshw.toml" # remote file path
 # === scp 协议配置 ===
 [sync.scp]
 username = "root"
-# password 支持 ${VAR} / ${VAR:-default} 引用环境变量
-# 推荐: export MYSSHW_PWD_sync='实际密码' 后用 ${MYSSHW_PWD_sync} 引用
+# password 方式 1: ${ENV} 引用 (推荐)
 password = "${MYSSHW_PWD_sync}"
 # keypath = "~/.ssh/id_rsa"   # 启用时 validator 会校验文件存在
 # passphrase = "${MYSSHW_KEY_PASSPHRASE:-}"
@@ -68,51 +97,60 @@ endpoint = ""                            # 终端节点; 留空按 remote_uri �
 
 
 # ============================================================
-# SSH 节点配置
+# SSH 节点配置 (演示 4 种 auth 方式)
 # ============================================================
 # 每个 [[nodes]] 块代表一个 group, group 内可定义多个 SSH 节点
 # --group 参数批量筛选, --node 重复用于批量操作
 
-# --- Group 1: Production (env 引用密码, 适合 K8s/容器) ---
+# --- Group 1: Production ---
 [[nodes]]
 groups = "Production"
 
-# 节点 1.1: 密码认证 (env 引用, 不明文落盘)
+# 节点 1.1: password = ${ENV} 引用 (推荐, K8s Secret)
+# 运行时: ssh.ResolveEnvRef 解析为 $MYSSHW_PWD_prod_web_1 的值
+# list 输出: auth="env"
 [[nodes.ssh]]
-name = "prod-web-1"                      # 必填
-alias = "Web01"                          # 可选
-host = "10.0.0.1"                        # 必填
-user = "app"                             # 必填, 留空默认 root
-port = 22                                # 可选, 默认 22
-password = "${MYSSHW_PWD_prod_web_1}"    # 密码 (env 引用) — 与 keypath 至少填一个
+name = "prod-web-1"
+alias = "Web01"
+host = "10.0.0.1"
+user = "app"
+port = 22
+password = "${MYSSHW_PWD_prod_web_1}"
 
-# 节点 1.2: 通过 bastion 跳板访问的内网数据库
+# 节点 1.2: password = bcrypt 哈希 (推荐, 防明文落盘)
+# 运行时: prompt 提示输入明文 → bcrypt.CompareHashAndPassword 验证
+# list 输出: auth="bcrypt"
+# 生成新哈希: go run <(echo 'package main;import("fmt";"golang.org/x/crypto/bcrypt");func main(){h,_:=bcrypt.GenerateFromPassword([]byte("your-password"),bcrypt.DefaultCost);fmt.Println(string(h))}')
 [[nodes.ssh]]
 name = "prod-db-1"
 alias = "DB01"
-host = "10.0.0.5"                        # 内网 IP, 客户端不可直连
+host = "10.0.0.5"
 user = "postgres"
-port = 5432                              # 非标端口
-password = "${MYSSHW_PWD_prod_db_1}"
-# proxy: 跳板节点 name (指向同一配置中的另一个 SSHNode)
-#   连接顺序: client -> Proxy 节点 -> 本节点
-#   典型场景: 通过 bastion 访问内网不可直连的机器
-#   限制: 仅支持单跳; 多跳 (A -> B -> C) 通过链式 Proxy 实现
+port = 5432
+# 明文: "prod-db-password-2024" (仅供演示, 真实部署应该走 K8s Secret)
+password = "$2a$10$BBEDysNBBCnf/RwKMLiea.ufVrsybvoes.HYz8w.6wtff7TSLhjsC"
 proxy = "bastion"
 
-# 节点 1.3: 临时跳过主机指纹校验 (仅测试环境)
+# 节点 1.3: password = 明文 (⚠️ 仅测试用, 不推荐生产)
+# list 输出: auth="password"
 [[nodes.ssh]]
 name = "prod-test-1"
 host = "10.0.0.99"
 user = "app"
-password = "${MYSSHW_PWD_prod_test_1}"
-# strict_host_key_checking: 控制对当前节点的主机指纹校验策略
-#   nil (默认) → 启用严格校验 (推荐, 防 MITM)
-#   true       → 显式启用严格校验
-#   false      → 跳过主机指纹校验 (⚠️ 不推荐, 测试环境临时使用)
+password = "test-password-do-not-use-in-prod"
 strict_host_key_checking = false
 
-# --- Group 2: Staging (简化的内联写法) ---
+# 节点 1.4: 纯密钥认证 (推荐用于 CI / 自动化 / 跳板)
+# list 输出: auth="key"
+[[nodes.ssh]]
+name = "prod-deploy-1"
+alias = "DeployBot"
+host = "10.0.0.50"
+user = "deploy"
+# keypath = "~/.ssh/id_ed25519"   # 启用密钥认证
+# 密码字段留空
+
+# --- Group 2: Staging ---
 [[nodes]]
 groups = "Staging"
 
@@ -121,6 +159,7 @@ name = "stag-web-1"
 alias = "StagWeb"
 host = "192.168.10.10"
 user = "deploy"
+password = "${MYSSHW_PWD_stag_web_1}"
 
 # --- Group 3: DevOps (跳板机集中管理) ---
 [[nodes]]
@@ -132,17 +171,22 @@ name = "bastion"
 host = "bastion.example.com"
 user = "ops"
 port = 2222
+# 跳板机通常用密钥认证
+# keypath = "~/.ssh/id_bastion"
 
 # 节点 3.2: 通过 bastion 访问的内网机器
 [[nodes.ssh]]
 name = "internal-app-1"
 host = "172.16.0.5"
 user = "app"
+password = "${MYSSHW_PWD_internal_app_1}"
 proxy = "bastion"
 
 # --- Group 4: Batch (内联数组写法, 节点多时方便) ---
 [[nodes]]
 groups = "Batch"
+# 内联数组写法, 适合节点多且配置相似的场景
+# 3 个节点都引用同一个 env 变量
 ssh = [
     { name="batch-1", host="10.1.0.1", user="worker", password="${MYSSHW_PWD_batch}" },
     { name="batch-2", host="10.1.0.2", user="worker", password="${MYSSHW_PWD_batch}" },
