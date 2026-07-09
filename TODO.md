@@ -306,11 +306,7 @@
 
 ### 🆕 待实现新功能
 
-| 优先级 | 功能 | 价值说明 | 预估工作量 |
-|--------|------|---------|-----------|
-| **P1** | **config 子命令 (CRUD)** | AI 可自主管理节点配置 | 2-3 天 |
-| **P2** | **export/import** | 配置可移植性 | 0.5 天 |
-| **P2** | **exec --follow/--stream** | 流式输出，长时间命令友好 | 1 天 |
+> 全部完成 — 已无待实现功能 ✅
 
 ### ✅ 已完成 (v26.07.04.0+)
 
@@ -323,6 +319,9 @@
 | P1 | **bcrypt-pepper 字段级加密** (Phase B.1) | `config/password.go` + `ssh/client.go` | 2026-07-08 |
 | P2 | **`mysshw hash` 工具** (gen/verify/pepper) | `cmd/hash_cmd.go` | 2026-07-08 |
 | P2 | **文件级加密 Phase C** (Argon2id + AES-256-GCM) | `config/encrypt.go` + `cmd/encrypt_cmd.go` | 2026-07-08 |
+| **P1** | **config 子命令 (CRUD)** (list/get/add/remove/update/diff) | `cmd/config_cmd.go` + `cmd/config_cmd_test.go` | 2026-07-09 |
+| **P2** | **exec --follow/--stream** (逐行 JSON 事件流, 单节点+多节点) | `cmd/exec_cmd.go` + `ssh/exec.go` + `ssh/e2e_test.go` | 2026-07-09 |
+| **P2** | **export/import** (配置可移植性, JSON/TOML 双格式) | `cmd/export_cmd.go` + `cmd/import_cmd.go` + `cmd/import_export_test.go` | 2026-07-09 |
 
 ---
 

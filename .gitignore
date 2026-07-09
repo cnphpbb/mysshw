@@ -29,3 +29,4 @@ mysshw
 /vendor/*
 
 # analysis.md 从 v26.06.13.4 起已入库, 不再忽略
+release.sh

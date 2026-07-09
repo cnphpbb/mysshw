@@ -20,6 +20,8 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
+require github.com/spf13/pflag v1.0.6
+
 require (
 	github.com/mark3labs/mcp-go v0.32.0
 	github.com/pelletier/go-toml/v2 v2.2.3

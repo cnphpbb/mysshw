@@ -247,10 +247,6 @@ mage build
 | 优先级 | 功能 | 涉及包 |
 |--------|------|--------|
 | 低 | 主界面支持主题 | ssh/cmd.go |
-| 低 | 配置文件加密 | config/ |
-| 低 | config 子命令 (节点 CRUD) | 新文件 cmd/config_cmd.go |
-| 低 | export/import (配置可移植性) | 新文件 cmd/import_cmd.go |
-| 中 | exec --follow (流式输出) | cmd/exec_cmd.go |
 
 ## 8.1 已完成 ✅ MCP Server (Phase 1+2+3)
 
@@ -310,6 +306,45 @@ mage build
 | ✅ | `mysshw encrypt` / `mysshw encrypt decrypt` 子命令 | `cmd/encrypt_cmd.go` |
 | ✅ | 34 单元 + 集成测试 (config 18 + cmd 12 + load 4) | `config/encrypt*_test.go`, `cmd/encrypt_cmd_test.go` |
 | ✅ | example/mysshw.toml 增加文件级加密章节 | `example/mysshw.toml` |
+
+## 8.5 已完成 ✅ config 子命令 (CRUD)
+
+| 状态 | 任务 | 涉及文件 |
+|------|------|---------|
+| ✅ | `config` 父命令: list/get/add/remove/update/diff 6 子命令注册 | `cmd/config_cmd.go` |
+| ✅ | `config list`: 列出节点 (--group 过滤, --format plain\|json) | `cmd/config_cmd.go` |
+| ✅ | `config get <name|alias>`: 节点详情 (密码脱敏, 显示认证类别) | `cmd/config_cmd.go` |
+| ✅ | `config add`: 新增节点 (全部字段, 唯一性校验, dry-run 默认) | `cmd/config_cmd.go` |
+| ✅ | `config remove <name>`: 删除节点 (自动清空组, dry-run 默认) | `cmd/config_cmd.go` |
+| ✅ | `config update <name>`: 增量修改 (只改指定 flag, 支持跨组迁移) | `cmd/config_cmd.go` |
+| ✅ | `config diff <name> <name>`: 节点字段对比 (JSON 输出) | `cmd/config_cmd.go` |
+| ✅ | 安全设计: dry-run 默认, atomic rewrite + backup, 密码不暴露 JSON | `cmd/config_cmd.go` |
+| ✅ | 18+ 集成测试 (list/get/add/remove/update/diff + 完整 lifecycle) | `cmd/config_cmd_test.go` |
+
+## 8.6 已完成 ✅ exec --follow/--stream (流式输出)
+
+| 状态 | 任务 | 涉及文件 |
+|------|------|---------|
+| ✅ | `--follow`/`-f` flag 注册 + `runExecStream()` JSON 事件流 | `cmd/exec_cmd.go` |
+| ✅ | `Executor.RunStream()` 单节点逐行 callback | `ssh/exec.go` |
+| ✅ | `BatchExecutor.RunStream()` 多节点并发流 (StreamEvent handler) | `ssh/exec.go` |
+| ✅ | StreamEvent 结构 (event/node/line/exit_code/duration/timestamp) | `ssh/exec.go` |
+| ✅ | e2e 测试: 单节点流 + 多节点批量流 | `ssh/e2e_test.go` |
+| ✅ | 事件 schema: start/stdout/stderr/exit/error 逐行 JSON, AI agent 可逐行 parse | `cmd/exec_cmd.go` |
+
+## 8.7 已完成 ✅ export/import (配置可移植性)
+
+| 状态 | 任务 | 涉及文件 |
+|------|------|---------|
+| ✅ | `export` 子命令: 导出节点到 JSON/TOML 可移植文件 | `cmd/export_cmd.go` |
+| ✅ | `--group`/`--name` 筛选, `--format json|toml`, `--output` 文件输出 | `cmd/export_cmd.go` |
+| ✅ | 密码字段自动替换为 `${IMPORTED}` 占位符 (防泄露) | `cmd/export_cmd.go` |
+| ✅ | `import` 子命令: 从 JSON/TOML 文件批量导入节点 | `cmd/import_cmd.go` |
+| ✅ | 格式自动检测 (.json 解析JSON, .toml 解析 TOML, 其他同时尝试) | `cmd/import_cmd.go` |
+| ✅ | 支持 `[[nodes]]` 标准 TOML 格式 + 顶层数组格式 | `cmd/import_cmd.go` |
+| ✅ | 安全: dry-run 默认, --confirm 才写, 重复检测 (skip/overwrite), 原子写+备份 | `cmd/import_cmd.go` |
+| ✅ | `--group` 覆盖导入组, `--overwrite` 覆盖已有节点 | `cmd/import_cmd.go` |
+| ✅ | 20+ 集成测试 (export JSON/TOML/筛选/文件, import dry-run/confirm/skip/overwrite/TOML/生命期) | `cmd/import_export_test.go` |
 
 ---
 
