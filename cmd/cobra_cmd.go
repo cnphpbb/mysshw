@@ -76,36 +76,83 @@ Use "mysshw help" for more information about a specific command.`,
 		// 当没有子命令时执行 RunSSH
 		RunSSH(cmd.Context())
 	},
-	Example: `  # Connect to SSH using default configuration
+	Example: `  # Default: interactive SSH session (TUI menu to pick node)
   mysshw
 
-  # Connect using a custom configuration file
-  mysshw --cfg /path/to/custom/config.toml
-  or
-  mysshw -c /path/to/custom/config.toml
+  # Custom config file
+  mysshw --cfg /path/to/config.toml
 
-  # Sync local config to remote server
-  mysshw sync --upload | -u
+  # First-run wizard
+  mysshw init
 
-  # Download remote config to local
-  mysshw sync --down | -z
+  # List nodes (human-readable or JSON)
+  mysshw list
+  mysshw list -o json --search prod
 
-  # Custom configuration file path for sync command
-  mysshw sync --cfg /path/to/custom/config.toml --upload or --down
-  or
-  mysshw sync -c /path/to/custom/config.toml -u or -z
+  # Non-interactive: run command on a node
+  mysshw exec --node prod-1 -- uptime
+  mysshw exec --node prod-1 --node prod-2 -- "df -h"          # batch
+  mysshw exec -f --node prod-1 -- "journalctl -f"             # stream
 
-  # Migrate from sshw YAML config to mysshw TOML config file
+  # SCP: copy files to/from nodes
+  mysshw copy --upload --node prod-1 --local ./file --remote /tmp/
+  mysshw copy --download --node prod-1 --remote /var/log/app.log --local ./
+
+  # Port forwarding (local / reverse / SOCKS5)
+  mysshw tunnel local --node prod-1 --local 8080 --remote 80
+  mysshw tunnel reverse --node prod-1 --remote 9090 --local 90
+  mysshw tunnel dynamic --node prod-1 --local 1080               # SOCKS5
+
+  # Ping: TCP connectivity check
+  mysshw ping --node prod-1
+  mysshw ping --host 10.0.0.1 --port 22
+
+  # Info: remote system information
+  mysshw info --node prod-1
+  mysshw info --node prod-1 --node prod-2 -o json        # batch
+
+  # CRUD: manage SSH nodes in config
+  mysshw config list
+  mysshw config get prod-1
+  mysshw config add --group Production --name web-2 --host 10.0.0.2 --user app
+  mysshw config update prod-1 --port 2222 --confirm
+  mysshw config remove prod-1 --confirm
+  mysshw config diff prod-1 prod-2
+
+  # Export/Import: portable node config
+  mysshw export --group Production --format toml --output nodes.toml
+  mysshw import nodes.toml --confirm
+
+  # Host key management
+  mysshw hostkey list
+  mysshw hostkey show 10.0.0.1
+  mysshw hostkey remove 10.0.0.1
+
+  # Password & encryption tools
+  mysshw hash gen                    # generate bcrypt hash
+  mysshw hash verify                 # verify password against hash
+  mysshw hash pepper                 # generate secret_key for bcrypt-pepper
+  mysshw encrypt                     # encrypt mysshw.toml with passphrase
+  mysshw encrypt decrypt             # decrypt mysshw.toml
+
+  # Config sync (SCP / WebDAV / S3)
+  mysshw sync --upload
+  mysshw sync --down
+
+  # Migrate from sshw YAML
   mysshw yml -f ~/.sshw.yml
-  or
-  mysshw yml --file ~/.sshw.yml
 
-  # Display version information
-  mysshw version | -v | --version
+  # AI integration: MCP server (stdio)
+  mysshw mcp
 
-  # Display help information
-  mysshw help | -h | --help
-  `,
+  # AI integration: CLI schema discovery
+  mysshw completions json
+  mysshw completions json --flat
+  mysshw completions json exec        # filter by subcommand
+
+  # Display version or help
+  mysshw version
+  mysshw -v`,
 }
 
 // 初始化命令，添加标志等
