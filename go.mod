@@ -10,22 +10,17 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/gliderlabs/ssh v0.3.8 // 仅 e2e 测试使用 (build tag: e2e)
 	github.com/magefile/mage v1.15.0
+	github.com/mark3labs/mcp-go v0.32.0
 	github.com/minio/minio-go/v7 v7.0.95
+	github.com/pelletier/go-toml/v2 v2.2.3
 	github.com/spf13/cobra v1.9.1
+	github.com/spf13/pflag v1.0.6
 	github.com/spf13/viper v1.20.1
 	github.com/stretchr/testify v1.10.0
 	github.com/studio-b12/gowebdav v0.11.0
 	golang.org/x/crypto v0.39.0
 	golang.org/x/term v0.32.0
 	gopkg.in/yaml.v3 v3.0.1
-)
-
-require github.com/spf13/pflag v1.0.6
-
-require (
-	github.com/mark3labs/mcp-go v0.32.0
-	github.com/pelletier/go-toml/v2 v2.2.3
-	github.com/spf13/pflag v1.0.6
 )
 
 require (
