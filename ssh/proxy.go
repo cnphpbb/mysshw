@@ -95,6 +95,9 @@ func chainNames(chain []*config.SSHNode) []string {
 // 调用方负责 Close(), Close 会通过 SSH 协议栈级联关闭所有 transport。
 //
 // 清理: 中间 hop 失败时, 已建立的 client 一并 Close (防止资源泄漏)
+//
+// ponytail: 第一跳必须直接 ssh.Dial, 不能走 defaultClient.connect(),
+// 否则 chain[0].Proxy 非空 → connect() 再次进 dialViaProxyChain → 无限递归 (栈溢出前表现为 hang)。
 func dialViaProxyChain(chain []*config.SSHNode) (*gossh.Client, error) {
 	if len(chain) == 0 {
 		return nil, errors.New("mysshw:: empty chain")
@@ -102,6 +105,9 @@ func dialViaProxyChain(chain []*config.SSHNode) (*gossh.Client, error) {
 
 	// 拨号第一跳: 直接走 plain TCP + SSH handshake
 	first := chain[0]
+	if first.Host == "" {
+		return nil, fmt.Errorf("mysshw:: hop 1 %q has empty host", first.Name)
+	}
 	firstC := NewClientNonInteractive(first)
 	if firstC == nil {
 		return nil, fmt.Errorf("mysshw:: failed to build SSH client for %q (proxy hop 1)", first.Name)
@@ -110,7 +116,8 @@ func dialViaProxyChain(chain []*config.SSHNode) (*gossh.Client, error) {
 	if !ok || firstDC == nil {
 		return nil, fmt.Errorf("mysshw:: internal: defaultClient cast failed at hop 1")
 	}
-	cli, err := firstDC.connect()
+	addr := net.JoinHostPort(first.Host, strconv.Itoa(first.SetPort()))
+	cli, err := gossh.Dial("tcp", addr, firstDC.clientConfig)
 	if err != nil {
 		return nil, fmt.Errorf("mysshw:: dial first hop %q: %w", first.Name, err)
 	}

@@ -1,7 +1,10 @@
 package ssh
 
 import (
+	"net"
+	"strconv"
 	"testing"
+	"time"
 
 	"mysshw/config"
 
@@ -131,4 +134,60 @@ func TestChainNames(t *testing.T) {
 	n2 := &config.SSHNode{Name: "n2"}
 	out := chainNames([]*config.SSHNode{n1, n2, nil})
 	assert.Equal(t, []string{"n1", "n2"}, out)
+}
+
+// TestConnectWithProxy_DoesNotRecurse 回归测试: 节点 Proxy 非空时,
+// dialViaProxyChain 第一跳必须直接 ssh.Dial, 否则 chain[0].Proxy 非空
+// → connect() 再次进 dialViaProxyChain → 无限递归 (表现为 hang)。
+//
+// 用一个 accept-立即-close 的 TCP listener 作目标: TCP 能成, SSH 必败。
+func TestConnectWithProxy_DoesNotRecurse(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer l.Close()
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			_ = c.Close()
+		}
+	}()
+	host, portStr, err := net.SplitHostPort(l.Addr().String())
+	require.NoError(t, err)
+	port, err := strconv.Atoi(portStr)
+	require.NoError(t, err)
+
+	bastion := &config.SSHNode{
+		Name: "bastion", Host: host, Port: port, User: "u", Password: "p",
+	}
+	target := &config.SSHNode{
+		Name: "target", Host: host, Port: port, User: "u", Password: "p",
+		Proxy: "bastion",
+	}
+	cfg := &config.Configs{
+		Nodes: []config.Nodes{
+			{Groups: "G", SSHNodes: []*config.SSHNode{bastion, target}},
+		},
+	}
+	oldCFG := config.CFG
+	config.CFG = cfg
+	defer func() { config.CFG = oldCFG }()
+
+	c := NewClientNonInteractive(target).(*defaultClient)
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := c.connect()
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		require.Error(t, err, "expected connection error (mock server closes immediately), got nil")
+		assert.Contains(t, err.Error(), "first hop", "error should reference first hop")
+	case <-time.After(10 * time.Second):
+		t.Fatal("connect hung > 10s: 无限递归 (回归 bug)")
+	}
 }
