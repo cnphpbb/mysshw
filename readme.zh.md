@@ -211,6 +211,287 @@ export MYSSHW_PWD_web01=$(op read 'op://vault/web01/password')
 mysshw -c ~/.mysshw.toml
 ```
 
+### 密码哈希 (bcrypt)
+
+除了 `${VAR}` 引用外，`password` 和 `passphrase` 字段还支持 **bcrypt 哈希**——把密码哈希写入 TOML，运行时由用户交互输入明文并验证，既避免明文落盘，也不需要外部 secret 管理器。
+
+#### 4 种密码格式对比
+
+`mysshw list -o json` 的 `auth` 字段会自动识别以下格式（带 `keypath` 时附加 `+key` 后缀，如 `bcrypt+key`）：
+
+| 格式 | TOML 写法 | `auth` 字段 | 运行时行为 | 适用场景 |
+|------|-----------|-------------|------------|----------|
+| `${ENV}` 引用 | `password = "${MYSSHW_PWD_x}"` | `env` | `ssh.ResolveEnvRef` 解析 | K8s Secret / Vault / CI |
+| **bcrypt 哈希** | `password = "$2a$10$xxxxx..."` | `bcrypt` | 交互输入明文 → bcrypt 验证 | 静态配置文件 + 多人共享 |
+| **bcrypt + pepper** | `password = "$2a$10$..."` + 顶层 `secret_key` | `bcrypt-pepper` | bcrypt 验证 + secret_key HMAC | 防 config 泄露后离线爆破 |
+| 明文 | `password = "my-secret"` | `password` | 直接使用 | 一次性测试（⚠️ 不推荐） |
+| 空 + keypath | `password = ""` + `keypath` | `key` | 走密钥认证 | CI / 自动化 / 跳板机 |
+
+**自动检测规则**（无需额外标记）：
+
+- 以 `$2a$` / `$2b$` / `$2y$` 开头且长度 60 → bcrypt 哈希
+- 以 `$argon2id$` / `$pbkdf2-sha256$` 开头 → Argon2id / PBKDF2-SHA256（当前版本识别为占位，运行时 fallback 到 bcrypt 验证）
+- 以 `${` 开头 → env 引用
+- 其他非空字符串 → 明文
+
+#### 配置示例
+
+```toml
+# 节点 A：bcrypt 哈希（防明文落盘，推荐静态配置文件场景）
+[[nodes.ssh]]
+name = "prod-db-1"
+alias = "DB01"
+host = "10.0.0.5"
+user = "postgres"
+port = 5432
+# 明文：prod-db-password-2024
+password = "$2a$10$BBEDysNBBCnf/RwKMLiea.ufVrsybvoes.HYz8w.6wtff7TSLhjsC"
+
+# 节点 B：bcrypt + secret_key pepper（防 config 泄露后离线爆破）
+# 配合顶层 encryption_algorithm = "bcrypt-pepper" + secret_key = "..."
+[[nodes.ssh]]
+name = "prod-secure-1"
+alias = "SecureDB"
+host = "10.0.0.200"
+user = "postgres"
+password = "$2a$10$BBEDysNBBCnf/RwKMLiea.ufVrsybvoes.HYz8w.6wtff7TSLhjsC"
+
+# 节点 C：纯密钥认证（推荐 CI / 自动化 / 跳板机）
+[[nodes.ssh]]
+name = "prod-deploy-1"
+host = "10.0.0.50"
+user = "deploy"
+# keypath = "~/.ssh/id_ed25519"   # 启用密钥认证，password 留空
+```
+
+#### `mysshw hash` 子命令
+
+`hash` 子命令用于生成 / 验证哈希，以及生成 server 侧 secret（pepper）：
+
+```bash
+# 生成 bcrypt 哈希（默认 cost=10，约 60ms/次）
+mysshw hash gen 'my-password'
+# 输出：$2a$10$xxxxx...  （60 字符，复制到 password 字段）
+
+# 生成 bcrypt-pepper 哈希（把 secret 拼到 hash 里）
+mysshw hash gen --algo=bcrypt-pepper --pepper='my-server-secret' 'plaintext'
+
+# 自定义 cost（4-31，默认 10；越高越慢越安全）
+mysshw hash gen --cost=12 'my-password'
+
+# 验证 hash 是否匹配明文（明文从 stdin 读取，不 echo）
+echo -n 'my-password' | mysshw hash verify '$2a$10$xxx...'
+echo -n 'my-password' | mysshw hash verify '$2a$10$xxx...' --pepper='my-secret'
+# exit 0 = 匹配，exit 1 = 不匹配
+
+# 生成新的随机 secret_key（32 字节 base64，44 字符）
+mysshw hash pepper
+export MYSSHW_SECRET_KEY=$(mysshw hash pepper)
+
+# 脚本中嵌入（默认输出到 stderr，加 --stdout 切到 stdout 便于管道）
+PWD_HASH=$(mysshw hash gen --stdout 'real-password')
+```
+
+支持的算法（`--algo`）：
+
+| 算法 | hash 格式 | 状态 |
+|------|-----------|------|
+| `bcrypt`（默认） | `$2a$10$...` | ✅ 已实现 |
+| `bcrypt-pepper` | `$2a$10$...`（含 pepper） | ✅ 已实现 |
+| `argon2id` | `$argon2id$...` | 🟡 识别占位（fallback 到 bcrypt 验证） |
+| `pbkdf2-sha256` | `$pbkdf2-sha256$...` | 🟡 识别占位（fallback 到 bcrypt 验证） |
+
+#### bcrypt-pepper 模式（推荐生产）
+
+`bcrypt-pepper` 是 bcrypt 的加强版：**配置文件泄露后，攻击者拿到纯 hash 也无法离线爆破**，因为他还必须额外知道 server 侧的 `secret_key`（"pepper"）。
+
+```toml
+# 顶层字段（全配置仅需设置一次）
+encryption_algorithm = "bcrypt-pepper"            # 启用 bcrypt-pepper 模式
+secret_key = "${MYSSHW_SECRET_KEY}"                # 推荐引用 env，不要明文
+
+# 节点字段保持不变（仍是 bcrypt 哈希）
+[[nodes.ssh]]
+name = "prod-secure-1"
+host = "10.0.0.200"
+user = "postgres"
+password = "$2a$10$BBEDysNBBCnf/RwKMLiea.ufVrsybvoes.HYz8w.6wtff7TSLhjsC"
+```
+
+工作流：
+
+```bash
+# 1. 生成随机 secret_key（32 字节 base64）
+export MYSSHW_SECRET_KEY=$(mysshw hash pepper)
+
+# 2. 用 secret_key 生成节点 hash（一次性）
+mysshw hash gen --algo=bcrypt-pepper --pepper="$MYSSHW_SECRET_KEY" 'real-password' \
+    > /tmp/node.hash
+
+# 3. 把 /tmp/node.hash 的内容粘贴到 TOML 的 password 字段
+# 4. 把 secret_key 写入环境变量 / K8s Secret（必须保密！）
+
+# 5. 验证
+mysshw exec --node prod-secure-1 -- 'echo OK'
+```
+
+**安全提示**：
+
+- `secret_key` 丢失 → 全部 bcrypt-pepper 节点无法登录（必须重新生成 + 重新哈希所有节点）
+- `secret_key` 必须保密，但 `password` 字段的 hash 可以共享（类似 K8s Secret 思路）
+- 更换 `secret_key` 需要用旧 secret 验证 + 新 secret 重新哈希全部节点
+- **非交互场景（AI / `mysshw exec`）**：bcrypt 节点会直接拒绝认证（提示 "bcrypt 哈希节点需要在终端中输入明文密码，或改用 ${ENV} 引用"），因此 CI / 批量执行请用 `${ENV}` 引用
+
+#### 完整 workflow 示例
+
+```bash
+# === 场景 1：新增节点，使用 bcrypt（人工登录） ===
+HASH=$(mysshw hash gen --stdout 'node-password')
+echo "password = \"$HASH\"" >> ~/.mysshw.toml
+
+# === 场景 2：新增节点，使用 bcrypt-pepper（生产推荐） ===
+export MYSSHW_SECRET_KEY=$(mysshw hash pepper)
+HASH=$(mysshw hash gen --stdout --algo=bcrypt-pepper --pepper="$MYSSHW_SECRET_KEY" 'node-password')
+echo "password = \"$HASH\"" >> ~/.mysshw.toml
+
+# === 场景 3：审计现有节点认证方式 ===
+mysshw list -o json | jq '.[] | select(.auth | startswith("bcrypt")) | .name'
+
+# === 场景 4：轮换 secret_key ===
+# 1. 备份：cp mysshw.toml mysshw.toml.bak
+# 2. 生成新 secret：mysshw hash pepper
+# 3. 逐节点重哈希：对每个 bcrypt-pepper 节点执行
+#      mysshw hash gen --algo=bcrypt-pepper --pepper="<新 secret>" <明文>
+#    （需在另一台保留旧 secret 的机器上验证旧 hash 仍可登录后再切）
+# 4. 更新 secret_key 字段为新值
+# 5. 验证：mysshw list（确保所有节点仍可解析）→ mysshw exec（冒烟测试）
+# 6. 删除备份：rm mysshw.toml.bak
+```
+
+### 文件级加密 (mysshw encrypt)
+
+bcrypt / bcrypt-pepper 只保护 `password` 和 `passphrase` 两个字段;对于其他敏感字段(`host`、`user`、`keypath`、整段 `${MYSSHW_PWD_xxx}` 引用等)仍以明文出现在 TOML 中。**文件级加密**把整个 `mysshw.toml` 用 passphrase 加密,只有解密后才进入 viper 解析,从源头杜绝明文泄露。
+
+#### bcrypt / bcrypt-pepper vs 文件级加密
+
+| 维度 | bcrypt / bcrypt-pepper | 文件级加密 |
+|------|------------------------|------------|
+| 加密对象 | `password` / `passphrase` 字段 | 整个 TOML 文件 |
+| 加密后还能编辑 TOML 吗? | ✅ 可以（直接改） | ❌ 必须先解密再编辑 |
+| 文件是否能直接 git / S3 共享? | ⚠️ host / keypath 等仍明文 | ✅ 整文件不可读 |
+| passphrase 丢失后果 | 节点不可登录（可重新生成 hash） | **整文件不可恢复** |
+| 性能开销 | bcrypt 验证 ~60ms / 节点 | Argon2id 派生 ~300-500ms / 次（load 时） |
+| 适用场景 | 密码不能明文落盘 | 整个配置文件不能泄露（多人共享 / 备份 / Git） |
+
+**两种方案可叠加**:bcrypt 节点 + 整体加密文件 = 最高安全等级（加密文件本身被窃 → 攻击者拿不到 hash;passphrase 丢失 → 攻击者也无法解密 → 双重保护）。
+
+#### 加密文件格式
+
+加密文件是**二进制**,前 37 字节是固定 header,后面是密文:
+
+```
++--------+--------+----------+----------+----------+---------------------+
+| magic  | kdf_id | salt     | nonce    | ct_len   | ciphertext (含 tag) |
+| "MSEC" | 1B     | 16B      | 12B      | uint32   | N bytes             |
++--------+--------+----------+----------+----------+---------------------+
+```
+
+- **magic** = `MSEC`（ASCII,mysshw Encrypted Config）— 自动检测的关键标记
+- **kdf_id** = `0x01`（Argon2id）— 未来扩展其他 KDF 时使用
+- **salt** = Argon2id salt,16 字节,每次加密重新生成
+- **nonce** = AES-256-GCM nonce,12 字节,每次加密重新生成
+- **ct_len** = 密文长度,4 字节 big-endian
+- **ciphertext** = AES-256-GCM 输出（包含 16 字节 auth tag）
+
+**算法**:
+
+- **KDF**: Argon2id（`time=3, memory=64MB, threads=4, keylen=32`）— OWASP 2023 推荐参数,单次派生约 300-500ms
+- **Cipher**: AES-256-GCM（认证加密,自动检测篡改）
+- **自动检测**:`LoadViperConfig` 读文件前 4 字节,如 = `MSEC` 则视为加密文件,自动 prompt passphrase 解密
+
+#### `mysshw encrypt` 子命令
+
+```bash
+# === 加密 ===
+# 交互输入 passphrase + 默认 in-place 覆盖原文件
+mysshw encrypt
+
+# 显式指定输入 / 输出文件
+mysshw encrypt -c /path/to/input.toml -o /path/to/output.toml
+
+# 管道输入 passphrase（脚本友好）
+echo "$MYSSHW_PASSPHRASE" | mysshw encrypt -c ~/.mysshw.toml
+
+# 输出到 stdout（便于管道）
+mysshw encrypt -c ~/.mysshw.toml --stdout > encrypted.bin
+
+# === 解密 ===
+# 默认输出到 stdout（便于人眼 / 管道）
+mysshw encrypt decrypt -c ~/.mysshw.toml
+mysshw encrypt decrypt -c ~/.mysshw.toml -o plain.toml
+mysshw encrypt decrypt -i encrypted.toml -o plain.toml
+```
+
+可用 flags:
+
+| flag | 默认值 | 说明 |
+|------|--------|------|
+| `--in` / `-i` | `--cfg` / `~/.mysshw.toml` | 输入文件 |
+| `--out` / `-o` | encrypt in-place / decrypt stdout | 输出文件 |
+| `--in-place` | `true`（仅 encrypt） | 直接覆盖输入文件 |
+| `--stdout` | `false` | 输出到 stdout（管道） |
+
+**passphrase 来源**:固定从 stdin 读取（`readPassphraseInteractive`）,支持交互输入或 `echo "..." | mysshw encrypt`。注意:当前实现是 `bufio.Scanner`,**passphrase 会在终端回显**（不是 secure input）;生产部署请用管道方式传入或运行在安全终端中。
+
+#### Workflow 示例
+
+```bash
+# === 场景 1:首次加密现有明文配置 ===
+# 1. 备份明文（防止 passphrase 丢失）
+cp ~/.mysshw.toml ~/.mysshw.toml.bak
+
+# 2. 加密
+echo "$passphrase" | mysshw encrypt -c ~/.mysshw.toml
+
+# 3. 验证加密文件可用
+echo "$passphrase" | mysshw list -c ~/.mysshw.toml -o json
+
+# 4. 删除明文备份（已确认加密文件 OK）
+rm ~/.mysshw.toml.bak
+
+# === 场景 2:在 CI / 脚本中使用加密配置 ===
+export MYSSHW_PASSPHRASE=$(vault read -field=passphrase secret/mysshw)
+echo "$MYSSHW_PASSPHRASE" | mysshw exec -c /etc/mysshw/encrypted.toml --node web01 -- 'uptime'
+
+# === 场景 3:修改加密配置（必须先解密） ===
+echo "$passphrase" | mysshw encrypt decrypt -c ~/.mysshw.toml -o /tmp/plain.toml
+vim /tmp/plain.toml
+echo "$passphrase" | mysshw encrypt -i /tmp/plain.toml -o ~/.mysshw.toml
+rm /tmp/plain.toml
+
+# === 场景 4:轮换 passphrase ===
+# 1. 用旧 passphrase 解密
+echo "$old_passphrase" | mysshw encrypt decrypt -c ~/.mysshw.toml -o /tmp/plain.toml
+# 2. 用新 passphrase 重新加密
+echo "$new_passphrase" | mysshw encrypt -i /tmp/plain.toml -o ~/.mysshw.toml
+# 3. 验证
+echo "$new_passphrase" | mysshw list -c ~/.mysshw.toml -o json | jq '.[0].name'
+# 4. 删除临时明文
+rm /tmp/plain.toml
+# 5.（可选） 同步加密文件到远端
+mysshw sync --upload
+```
+
+#### 安全提示
+
+- ⚠️ **passphrase 丢失 = 数据不可恢复**（mysshw 不存储任何派生密钥 / recovery key）
+- ⚠️ **加密文件本身可共享**（salt / nonce 公开）,但 passphrase 必须严格保密
+- ✅ **错 passphrase / 篡改密文 → AES-GCM auth tag 验证失败**,自动报错（不会输出半明文）
+- ✅ **原子写**:encrypt 用 `tmpfile + rename`,防止半写状态
+- ✅ **输出文件权限 0600**:即使明文备份也仅所有者可读
+- ✅ **拒绝重复加密**:已加密文件再 encrypt 会立即报错（防止双重加密）
+- ✅ **配合 `sync`**:把加密文件传输到远端 / S3 / WebDAV,中间任何环节都拿不到明文
+
 ### 配置文件权限
 
 mysshw 加载配置后会自动将权限收紧到 `0600`（仅所有者可读写），备份文件同样处理。Windows 上 `Chmod` 是 no-op，权限由 NTFS ACL 控制。
