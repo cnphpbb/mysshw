@@ -2,7 +2,7 @@
 
 **开源免费的 SSH 命令行客户端工具**。Go 1.23+ 编写，支持 Linux、macOS、Windows。
 
-📖 [English Documentation](readme.md) · 📋 [更新日志](changelog.v26.07.08.0.md) · 📦 [Releases](https://github.com/cnphpbb/mysshw/releases)
+📖 [English Documentation](readme.md) · 📋 [更新日志](changelog.v26.07.12.0.md) · 📦 [Releases](https://github.com/cnphpbb/mysshw/releases)
 
 > 🐳 **Windows 用户** — 官方 Docker 镜像（`mysshw:latest`）是 Windows 下运行 mysshw 的**推荐方式**。原生 Windows 有多项终端语义限制，详见 [Windows 原生](#windows-原生不推荐)。
 
@@ -51,8 +51,8 @@ mage build
 ```bash
 # 构建
 docker build -t mysshw:latest .
-docker build -t mysshw:v26.07.08.0 \
-  --build-arg VERSION=v26.07.08.0 \
+docker build -t mysshw:v26.07.12.0 \
+  --build-arg VERSION=v26.07.12.0 \
   --build-arg BUILD=$(git rev-parse --short HEAD) \
   --build-arg BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) .
 

@@ -2,7 +2,7 @@
 
 **A free and open source SSH command line client.** Written in Go 1.23+, runs on Linux, macOS, and Windows.
 
-📖 [中文文档](readme.zh.md) · 📋 [Changelog](changelog.v26.07.08.0.md) · 📦 [Releases](https://github.com/cnphpbb/mysshw/releases)
+📖 [中文文档](readme.zh.md) · 📋 [Changelog](changelog.v26.07.12.0.md) · 📦 [Releases](https://github.com/cnphpbb/mysshw/releases)
 
 > 🐳 **Windows users** — the official Docker image (`mysshw:latest`) is the recommended way to run mysshw on Windows. Native Windows has several terminal-semantic limitations; see [Windows (Native)](#windows-native-not-recommended) for details.
 
@@ -51,8 +51,8 @@ Download a pre-built binary for your platform from the [Releases](https://github
 ```bash
 # Build
 docker build -t mysshw:latest .
-docker build -t mysshw:v26.07.08.0 \
-  --build-arg VERSION=v26.07.08.0 \
+docker build -t mysshw:v26.07.12.0 \
+  --build-arg VERSION=v26.07.12.0 \
   --build-arg BUILD=$(git rev-parse --short HEAD) \
   --build-arg BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) .
 
