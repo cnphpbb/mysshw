@@ -963,6 +963,236 @@ AI 工作流：
 
 e2e 测试：6 个用例覆盖 list/dry-run/confirm/show/mismatch/remove 路径。
 
+### `ping` — TCP 连通性检测
+
+```bash
+# 按 name 单节点
+mysshw ping --node prod-1
+
+# 按 alias 批量
+mysshw ping --alias WebAlias
+
+# 直连 host:port（不需要配置文件）
+mysshw ping --host 10.0.0.5 -p 22
+
+# 自定义超时 + 3 次尝试
+mysshw ping --node prod-1 --timeout 3s --count 3
+
+# AI agent 用 JSON 输出
+mysshw ping --node prod-1 -o json | jq '.[] | select(.reachable==false)'
+```
+
+与系统 `ping(1)` 不同，这里走 TCP 拨号（不需 root）。每个节点的 JSON schema：
+
+```json
+{
+  "node": "prod-1",
+  "host": "10.0.0.1",
+  "port": 22,
+  "reachable": true,
+  "latency_ms": 12.4,
+  "attempts": 1,
+  "error": ""
+}
+```
+
+退出码：`0` 全部可达，`1` 部分不可达，`64` 参数错误，`78` 节点未找到。
+
+### `info` — 远程系统信息采集
+
+通过 SSH 收集一个或多个节点的结构化系统信息（hostname、OS、内核、CPU、内存、磁盘、运行时间）。
+
+```bash
+# 按 name 单节点
+mysshw info --node prod-1
+
+# 批量（最多 10 并发）
+mysshw info --node web-1 --node web-2 --node web-3
+
+# 按 group 筛选
+mysshw list --group production -o json | jq -r '.[].name' | \
+  xargs mysshw info -o json
+
+# AI 辅助决策：
+mysshw info --node target -o json | jq '.[0].memory.total_bytes > 8589934592'
+```
+
+每节点 JSON schema：
+
+```json
+{
+  "node": "prod-1",
+  "hostname": "prod-1.internal",
+  "os": "linux",
+  "kernel": "6.8.0-31-generic",
+  "arch": "x86_64",
+  "cpu": {"cores": 4, "model": "Intel(R) Xeon(R) ..."},
+  "memory": {"total_bytes": 17179869184},
+  "disk": [{"mount": "/", "size_bytes": ..., "used_bytes": ..., "percent": 42}],
+  "uptime_seconds": 2592000,
+  "uptime_human": "30d 0h 0m",
+  "collected_at": "2026-07-06T...",
+  "error": ""
+}
+```
+
+**跨平台**：Linux（`/proc`）、macOS（`sysctl`）、其他 Unix（尽力而为）。
+
+### `config` — SSH 节点 CRUD
+
+直接在 `mysshw.toml` 中管理 SSH 节点，无需手动编辑。6 个子命令：
+
+```bash
+# 列出所有节点（含全部可编辑字段）
+mysshw config list
+mysshw config list --group Production --format json
+
+# 查看单个节点详情（密码脱敏）
+mysshw config get prod-1
+mysshw config get prod-1 --format json
+
+# 新增节点（默认 dry-run，--confirm 才写入）
+mysshw config add --group Production --name web-2 --host 10.0.0.2 \
+                  --user app --password '${MYSSHW_PWD_web2}'
+mysshw config add --group Staging --name db-1 --host 10.0.1.5 \
+                  --password 'my-password' --confirm
+
+# 删除节点（默认 dry-run）
+mysshw config remove prod-3 --confirm
+
+# 增量修改（默认 dry-run）
+mysshw config update prod-1 --port 2222 --confirm
+mysshw config update prod-1 --group Production --confirm
+
+# 对比两个节点（JSON 输出）
+mysshw config diff prod-1 prod-2
+```
+
+**安全设计**：
+- 写操作（`add` / `remove` / `update`）默认 `--dry-run`，加 `--confirm` 才真正写入
+- 每次写入使用原子重写 + 自动备份（见配置中的 `backup_keep`）
+- 密码推荐使用 bcrypt hash 或 `${ENV}` 引用；明文会触发警告
+- JSON 输出永远不会包含 password 字段
+
+### `export` / `import` — 配置可移植性
+
+将节点导出为可移植的 JSON/TOML 文件，或从文件导入。密码字段自动替换为 `${IMPORTED}` 占位符。
+
+```bash
+# 导出全部节点为 JSON（stdout）
+mysshw export
+
+# 导出某 group 为 TOML 到文件
+mysshw export --group Production --format toml --output nodes.toml
+
+# 导出指定节点
+mysshw export --name prod-1 --name prod-2
+
+# dry-run 预览导入
+mysshw import nodes.json
+
+# 实际导入（支持覆盖 + group 重写）
+mysshw import nodes.toml --confirm --overwrite --group Staging
+
+# 管道导出给 AI 解析
+mysshw export --group Production --format json | jq '. | length'
+```
+
+**格式自动检测**：`.json` → JSON；`.toml` → TOML；其他扩展名先试 JSON 再试 TOML。
+
+**重复处理**：同名节点默认跳过；`--overwrite` 更新已有节点。
+
+### `sync` — 配置远程备份
+
+通过 SCP、WebDAV 或 S3 上传/下载配置文件。
+
+```bash
+# 上传配置到远程
+mysshw sync --upload
+mysshw sync -u
+
+# 从远程下载配置
+mysshw sync --down
+mysshw sync -z
+
+# 使用自定义配置路径同步
+mysshw sync -c /path/to/custom/config.toml -u
+```
+
+**支持的协议**（在 `mysshw.toml` 的 `[sync]` 下配置）：
+- `scp` — 通过 SSH（用户名 + 密码 / 密钥）
+- `webdav` — HTTP WebDAV（Basic / Digest 认证）
+- `s3` — S3 兼容（MinIO / RustFS / AWS S3）
+
+### `yml` — 从旧版 sshw YAML 迁移
+
+解析旧版 `sshw` 项目的 `.sshw.yml` 文件，将转换后的节点追加到 `mysshw.toml`。
+
+```bash
+# 转换并追加到当前配置
+mysshw yml -f ~/.sshw.yml
+```
+
+### `init` — 交互式向导
+
+通过交互式向导初始化 `~/.mysshw.toml`。首次运行会显示"更新内容"页面，然后进入向导。
+
+```bash
+# 交互式向导
+mysshw init
+
+# 覆盖已有配置（不询问）
+mysshw init --force
+```
+
+### `completions` — AI Agent 用的 CLI Schema
+
+输出完整的 CLI 结构（命令、flag、参数策略、退出码）为 JSON 文档。专为 AI 动态工具封装设计。
+
+```bash
+# 完整 CLI schema (JSON)
+mysshw completions json
+
+# 只输出某个子命令
+mysshw completions json exec
+
+# 展平模式（单层数组，AI 遍历友好）
+mysshw completions json --flat
+
+# 通过 jq 提取特定 flag
+mysshw completions json copy | jq '.commands[] | .flags[] | .name'
+```
+
+输出包含所有子命令、flag（类型/默认值/是否必填）、参数策略（noargs / exact / arbitrary / range）以及 BSD sysexit 退出码说明。
+
+### `mcp` — MCP Server（AI 集成）
+
+启动 Model Context Protocol (MCP) server，通过 stdio transport 将 SSH 操作暴露为 AI 工具。
+
+```bash
+# 启动 MCP server
+mysshw mcp
+
+# 指定配置文件
+mysshw mcp -c /path/to/config.toml
+```
+
+暴露的工具（共 9 个）：
+
+| 工具 | 说明 |
+|------|------|
+| `ssh_list_nodes` | 列出所有 SSH 节点（支持按 group/name 筛选） |
+| `ssh_exec` | 在一个或多个节点上执行命令 |
+| `ssh_copy` | SCP 文件上传/下载 |
+| `ssh_hostkey_list` | 列出 known_hosts 条目 |
+| `ssh_hostkey_show` | 查看指定主机的详情 |
+| `ssh_hostkey_remove` | 从 known_hosts 中删除主机条目 |
+| `ssh_hostkey_update` | 更新主机条目（带指纹验证） |
+| `ssh_hostkey_audit` | known_hosts 安全审查 |
+| `ssh_completions` | 动态查询 CLI schema |
+
+详细集成指南（Python SDK、JSON-RPC 示例）见 [examples/mcp-integration.md](examples/mcp-integration.md)。
+
 ---
 
 ## 开发
