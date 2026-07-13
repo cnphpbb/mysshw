@@ -50,7 +50,7 @@ RUN cp example/mysshw.toml /out/mysshw.toml.example
 # ---- Stage 2: Runtime ----
 # 使用 alpine (体积小, 含 nobody 用户, 镜像仓库可达)
 # 备选: distroless (gcr.io 不可达时降级到 alpine)
-FROM alpine:3.19
+FROM alpine:latest
 
 LABEL org.opencontainers.image.title="mysshw" \
       org.opencontainers.image.description="A free and open source SSH command line client" \
