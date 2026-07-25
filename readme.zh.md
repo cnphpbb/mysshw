@@ -2,7 +2,7 @@
 
 **开源免费的 SSH 命令行客户端工具**。Go 1.23+ 编写，支持 Linux、macOS、Windows。
 
-📖 [English Documentation](readme.md) · 📋 [更新日志](changelog.v26.07.08.0.md) · 📦 [Releases](https://github.com/cnphpbb/mysshw/releases)
+📖 [English Documentation](readme.md) · 📋 [更新日志](changelog.v26.07.12.0.md) · 📦 [Releases](https://github.com/cnphpbb/mysshw/releases)
 
 > 🐳 **Windows 用户** — 官方 Docker 镜像（`mysshw:latest`）是 Windows 下运行 mysshw 的**推荐方式**。原生 Windows 有多项终端语义限制，详见 [Windows 原生](#windows-原生不推荐)。
 
@@ -51,8 +51,8 @@ mage build
 ```bash
 # 构建
 docker build -t mysshw:latest .
-docker build -t mysshw:v26.07.08.0 \
-  --build-arg VERSION=v26.07.08.0 \
+docker build -t mysshw:v26.07.12.0 \
+  --build-arg VERSION=v26.07.12.0 \
   --build-arg BUILD=$(git rev-parse --short HEAD) \
   --build-arg BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) .
 
@@ -210,6 +210,287 @@ mysshw -c ~/.mysshw.toml
 export MYSSHW_PWD_web01=$(op read 'op://vault/web01/password')
 mysshw -c ~/.mysshw.toml
 ```
+
+### 密码哈希 (bcrypt)
+
+除了 `${VAR}` 引用外，`password` 和 `passphrase` 字段还支持 **bcrypt 哈希**——把密码哈希写入 TOML，运行时由用户交互输入明文并验证，既避免明文落盘，也不需要外部 secret 管理器。
+
+#### 4 种密码格式对比
+
+`mysshw list -o json` 的 `auth` 字段会自动识别以下格式（带 `keypath` 时附加 `+key` 后缀，如 `bcrypt+key`）：
+
+| 格式 | TOML 写法 | `auth` 字段 | 运行时行为 | 适用场景 |
+|------|-----------|-------------|------------|----------|
+| `${ENV}` 引用 | `password = "${MYSSHW_PWD_x}"` | `env` | `ssh.ResolveEnvRef` 解析 | K8s Secret / Vault / CI |
+| **bcrypt 哈希** | `password = "$2a$10$xxxxx..."` | `bcrypt` | 交互输入明文 → bcrypt 验证 | 静态配置文件 + 多人共享 |
+| **bcrypt + pepper** | `password = "$2a$10$..."` + 顶层 `secret_key` | `bcrypt-pepper` | bcrypt 验证 + secret_key HMAC | 防 config 泄露后离线爆破 |
+| 明文 | `password = "my-secret"` | `password` | 直接使用 | 一次性测试（⚠️ 不推荐） |
+| 空 + keypath | `password = ""` + `keypath` | `key` | 走密钥认证 | CI / 自动化 / 跳板机 |
+
+**自动检测规则**（无需额外标记）：
+
+- 以 `$2a$` / `$2b$` / `$2y$` 开头且长度 60 → bcrypt 哈希
+- 以 `$argon2id$` / `$pbkdf2-sha256$` 开头 → Argon2id / PBKDF2-SHA256（当前版本识别为占位，运行时 fallback 到 bcrypt 验证）
+- 以 `${` 开头 → env 引用
+- 其他非空字符串 → 明文
+
+#### 配置示例
+
+```toml
+# 节点 A：bcrypt 哈希（防明文落盘，推荐静态配置文件场景）
+[[nodes.ssh]]
+name = "prod-db-1"
+alias = "DB01"
+host = "10.0.0.5"
+user = "postgres"
+port = 5432
+# 明文：prod-db-password-2024
+password = "$2a$10$BBEDysNBBCnf/RwKMLiea.ufVrsybvoes.HYz8w.6wtff7TSLhjsC"
+
+# 节点 B：bcrypt + secret_key pepper（防 config 泄露后离线爆破）
+# 配合顶层 encryption_algorithm = "bcrypt-pepper" + secret_key = "..."
+[[nodes.ssh]]
+name = "prod-secure-1"
+alias = "SecureDB"
+host = "10.0.0.200"
+user = "postgres"
+password = "$2a$10$BBEDysNBBCnf/RwKMLiea.ufVrsybvoes.HYz8w.6wtff7TSLhjsC"
+
+# 节点 C：纯密钥认证（推荐 CI / 自动化 / 跳板机）
+[[nodes.ssh]]
+name = "prod-deploy-1"
+host = "10.0.0.50"
+user = "deploy"
+# keypath = "~/.ssh/id_ed25519"   # 启用密钥认证，password 留空
+```
+
+#### `mysshw hash` 子命令
+
+`hash` 子命令用于生成 / 验证哈希，以及生成 server 侧 secret（pepper）：
+
+```bash
+# 生成 bcrypt 哈希（默认 cost=10，约 60ms/次）
+mysshw hash gen 'my-password'
+# 输出：$2a$10$xxxxx...  （60 字符，复制到 password 字段）
+
+# 生成 bcrypt-pepper 哈希（把 secret 拼到 hash 里）
+mysshw hash gen --algo=bcrypt-pepper --pepper='my-server-secret' 'plaintext'
+
+# 自定义 cost（4-31，默认 10；越高越慢越安全）
+mysshw hash gen --cost=12 'my-password'
+
+# 验证 hash 是否匹配明文（明文从 stdin 读取，不 echo）
+echo -n 'my-password' | mysshw hash verify '$2a$10$xxx...'
+echo -n 'my-password' | mysshw hash verify '$2a$10$xxx...' --pepper='my-secret'
+# exit 0 = 匹配，exit 1 = 不匹配
+
+# 生成新的随机 secret_key（32 字节 base64，44 字符）
+mysshw hash pepper
+export MYSSHW_SECRET_KEY=$(mysshw hash pepper)
+
+# 脚本中嵌入（默认输出到 stderr，加 --stdout 切到 stdout 便于管道）
+PWD_HASH=$(mysshw hash gen --stdout 'real-password')
+```
+
+支持的算法（`--algo`）：
+
+| 算法 | hash 格式 | 状态 |
+|------|-----------|------|
+| `bcrypt`（默认） | `$2a$10$...` | ✅ 已实现 |
+| `bcrypt-pepper` | `$2a$10$...`（含 pepper） | ✅ 已实现 |
+| `argon2id` | `$argon2id$...` | 🟡 识别占位（fallback 到 bcrypt 验证） |
+| `pbkdf2-sha256` | `$pbkdf2-sha256$...` | 🟡 识别占位（fallback 到 bcrypt 验证） |
+
+#### bcrypt-pepper 模式（推荐生产）
+
+`bcrypt-pepper` 是 bcrypt 的加强版：**配置文件泄露后，攻击者拿到纯 hash 也无法离线爆破**，因为他还必须额外知道 server 侧的 `secret_key`（"pepper"）。
+
+```toml
+# 顶层字段（全配置仅需设置一次）
+encryption_algorithm = "bcrypt-pepper"            # 启用 bcrypt-pepper 模式
+secret_key = "${MYSSHW_SECRET_KEY}"                # 推荐引用 env，不要明文
+
+# 节点字段保持不变（仍是 bcrypt 哈希）
+[[nodes.ssh]]
+name = "prod-secure-1"
+host = "10.0.0.200"
+user = "postgres"
+password = "$2a$10$BBEDysNBBCnf/RwKMLiea.ufVrsybvoes.HYz8w.6wtff7TSLhjsC"
+```
+
+工作流：
+
+```bash
+# 1. 生成随机 secret_key（32 字节 base64）
+export MYSSHW_SECRET_KEY=$(mysshw hash pepper)
+
+# 2. 用 secret_key 生成节点 hash（一次性）
+mysshw hash gen --algo=bcrypt-pepper --pepper="$MYSSHW_SECRET_KEY" 'real-password' \
+    > /tmp/node.hash
+
+# 3. 把 /tmp/node.hash 的内容粘贴到 TOML 的 password 字段
+# 4. 把 secret_key 写入环境变量 / K8s Secret（必须保密！）
+
+# 5. 验证
+mysshw exec --node prod-secure-1 -- 'echo OK'
+```
+
+**安全提示**：
+
+- `secret_key` 丢失 → 全部 bcrypt-pepper 节点无法登录（必须重新生成 + 重新哈希所有节点）
+- `secret_key` 必须保密，但 `password` 字段的 hash 可以共享（类似 K8s Secret 思路）
+- 更换 `secret_key` 需要用旧 secret 验证 + 新 secret 重新哈希全部节点
+- **非交互场景（AI / `mysshw exec`）**：bcrypt 节点会直接拒绝认证（提示 "bcrypt 哈希节点需要在终端中输入明文密码，或改用 ${ENV} 引用"），因此 CI / 批量执行请用 `${ENV}` 引用
+
+#### 完整 workflow 示例
+
+```bash
+# === 场景 1：新增节点，使用 bcrypt（人工登录） ===
+HASH=$(mysshw hash gen --stdout 'node-password')
+echo "password = \"$HASH\"" >> ~/.mysshw.toml
+
+# === 场景 2：新增节点，使用 bcrypt-pepper（生产推荐） ===
+export MYSSHW_SECRET_KEY=$(mysshw hash pepper)
+HASH=$(mysshw hash gen --stdout --algo=bcrypt-pepper --pepper="$MYSSHW_SECRET_KEY" 'node-password')
+echo "password = \"$HASH\"" >> ~/.mysshw.toml
+
+# === 场景 3：审计现有节点认证方式 ===
+mysshw list -o json | jq '.[] | select(.auth | startswith("bcrypt")) | .name'
+
+# === 场景 4：轮换 secret_key ===
+# 1. 备份：cp mysshw.toml mysshw.toml.bak
+# 2. 生成新 secret：mysshw hash pepper
+# 3. 逐节点重哈希：对每个 bcrypt-pepper 节点执行
+#      mysshw hash gen --algo=bcrypt-pepper --pepper="<新 secret>" <明文>
+#    （需在另一台保留旧 secret 的机器上验证旧 hash 仍可登录后再切）
+# 4. 更新 secret_key 字段为新值
+# 5. 验证：mysshw list（确保所有节点仍可解析）→ mysshw exec（冒烟测试）
+# 6. 删除备份：rm mysshw.toml.bak
+```
+
+### 文件级加密 (mysshw encrypt)
+
+bcrypt / bcrypt-pepper 只保护 `password` 和 `passphrase` 两个字段;对于其他敏感字段(`host`、`user`、`keypath`、整段 `${MYSSHW_PWD_xxx}` 引用等)仍以明文出现在 TOML 中。**文件级加密**把整个 `mysshw.toml` 用 passphrase 加密,只有解密后才进入 viper 解析,从源头杜绝明文泄露。
+
+#### bcrypt / bcrypt-pepper vs 文件级加密
+
+| 维度 | bcrypt / bcrypt-pepper | 文件级加密 |
+|------|------------------------|------------|
+| 加密对象 | `password` / `passphrase` 字段 | 整个 TOML 文件 |
+| 加密后还能编辑 TOML 吗? | ✅ 可以（直接改） | ❌ 必须先解密再编辑 |
+| 文件是否能直接 git / S3 共享? | ⚠️ host / keypath 等仍明文 | ✅ 整文件不可读 |
+| passphrase 丢失后果 | 节点不可登录（可重新生成 hash） | **整文件不可恢复** |
+| 性能开销 | bcrypt 验证 ~60ms / 节点 | Argon2id 派生 ~300-500ms / 次（load 时） |
+| 适用场景 | 密码不能明文落盘 | 整个配置文件不能泄露（多人共享 / 备份 / Git） |
+
+**两种方案可叠加**:bcrypt 节点 + 整体加密文件 = 最高安全等级（加密文件本身被窃 → 攻击者拿不到 hash;passphrase 丢失 → 攻击者也无法解密 → 双重保护）。
+
+#### 加密文件格式
+
+加密文件是**二进制**,前 37 字节是固定 header,后面是密文:
+
+```
++--------+--------+----------+----------+----------+---------------------+
+| magic  | kdf_id | salt     | nonce    | ct_len   | ciphertext (含 tag) |
+| "MSEC" | 1B     | 16B      | 12B      | uint32   | N bytes             |
++--------+--------+----------+----------+----------+---------------------+
+```
+
+- **magic** = `MSEC`（ASCII,mysshw Encrypted Config）— 自动检测的关键标记
+- **kdf_id** = `0x01`（Argon2id）— 未来扩展其他 KDF 时使用
+- **salt** = Argon2id salt,16 字节,每次加密重新生成
+- **nonce** = AES-256-GCM nonce,12 字节,每次加密重新生成
+- **ct_len** = 密文长度,4 字节 big-endian
+- **ciphertext** = AES-256-GCM 输出（包含 16 字节 auth tag）
+
+**算法**:
+
+- **KDF**: Argon2id（`time=3, memory=64MB, threads=4, keylen=32`）— OWASP 2023 推荐参数,单次派生约 300-500ms
+- **Cipher**: AES-256-GCM（认证加密,自动检测篡改）
+- **自动检测**:`LoadViperConfig` 读文件前 4 字节,如 = `MSEC` 则视为加密文件,自动 prompt passphrase 解密
+
+#### `mysshw encrypt` 子命令
+
+```bash
+# === 加密 ===
+# 交互输入 passphrase + 默认 in-place 覆盖原文件
+mysshw encrypt
+
+# 显式指定输入 / 输出文件
+mysshw encrypt -c /path/to/input.toml -o /path/to/output.toml
+
+# 管道输入 passphrase（脚本友好）
+echo "$MYSSHW_PASSPHRASE" | mysshw encrypt -c ~/.mysshw.toml
+
+# 输出到 stdout（便于管道）
+mysshw encrypt -c ~/.mysshw.toml --stdout > encrypted.bin
+
+# === 解密 ===
+# 默认输出到 stdout（便于人眼 / 管道）
+mysshw encrypt decrypt -c ~/.mysshw.toml
+mysshw encrypt decrypt -c ~/.mysshw.toml -o plain.toml
+mysshw encrypt decrypt -i encrypted.toml -o plain.toml
+```
+
+可用 flags:
+
+| flag | 默认值 | 说明 |
+|------|--------|------|
+| `--in` / `-i` | `--cfg` / `~/.mysshw.toml` | 输入文件 |
+| `--out` / `-o` | encrypt in-place / decrypt stdout | 输出文件 |
+| `--in-place` | `true`（仅 encrypt） | 直接覆盖输入文件 |
+| `--stdout` | `false` | 输出到 stdout（管道） |
+
+**passphrase 来源**:固定从 stdin 读取（`readPassphraseInteractive`）,支持交互输入或 `echo "..." | mysshw encrypt`。注意:当前实现是 `bufio.Scanner`,**passphrase 会在终端回显**（不是 secure input）;生产部署请用管道方式传入或运行在安全终端中。
+
+#### Workflow 示例
+
+```bash
+# === 场景 1:首次加密现有明文配置 ===
+# 1. 备份明文（防止 passphrase 丢失）
+cp ~/.mysshw.toml ~/.mysshw.toml.bak
+
+# 2. 加密
+echo "$passphrase" | mysshw encrypt -c ~/.mysshw.toml
+
+# 3. 验证加密文件可用
+echo "$passphrase" | mysshw list -c ~/.mysshw.toml -o json
+
+# 4. 删除明文备份（已确认加密文件 OK）
+rm ~/.mysshw.toml.bak
+
+# === 场景 2:在 CI / 脚本中使用加密配置 ===
+export MYSSHW_PASSPHRASE=$(vault read -field=passphrase secret/mysshw)
+echo "$MYSSHW_PASSPHRASE" | mysshw exec -c /etc/mysshw/encrypted.toml --node web01 -- 'uptime'
+
+# === 场景 3:修改加密配置（必须先解密） ===
+echo "$passphrase" | mysshw encrypt decrypt -c ~/.mysshw.toml -o /tmp/plain.toml
+vim /tmp/plain.toml
+echo "$passphrase" | mysshw encrypt -i /tmp/plain.toml -o ~/.mysshw.toml
+rm /tmp/plain.toml
+
+# === 场景 4:轮换 passphrase ===
+# 1. 用旧 passphrase 解密
+echo "$old_passphrase" | mysshw encrypt decrypt -c ~/.mysshw.toml -o /tmp/plain.toml
+# 2. 用新 passphrase 重新加密
+echo "$new_passphrase" | mysshw encrypt -i /tmp/plain.toml -o ~/.mysshw.toml
+# 3. 验证
+echo "$new_passphrase" | mysshw list -c ~/.mysshw.toml -o json | jq '.[0].name'
+# 4. 删除临时明文
+rm /tmp/plain.toml
+# 5.（可选） 同步加密文件到远端
+mysshw sync --upload
+```
+
+#### 安全提示
+
+- ⚠️ **passphrase 丢失 = 数据不可恢复**（mysshw 不存储任何派生密钥 / recovery key）
+- ⚠️ **加密文件本身可共享**（salt / nonce 公开）,但 passphrase 必须严格保密
+- ✅ **错 passphrase / 篡改密文 → AES-GCM auth tag 验证失败**,自动报错（不会输出半明文）
+- ✅ **原子写**:encrypt 用 `tmpfile + rename`,防止半写状态
+- ✅ **输出文件权限 0600**:即使明文备份也仅所有者可读
+- ✅ **拒绝重复加密**:已加密文件再 encrypt 会立即报错（防止双重加密）
+- ✅ **配合 `sync`**:把加密文件传输到远端 / S3 / WebDAV,中间任何环节都拿不到明文
 
 ### 配置文件权限
 
@@ -486,6 +767,20 @@ mysshw copy -U --node deep-1 --local ./deploy.sh --remote /tmp/deploy.sh
 mysshw list -o json | jq '.[] | select(.proxy != null)'
 ```
 
+> [!IMPORTANT]
+> **跳板机上 sshd 配置必须打开 AllowTcpForwarding**
+>
+> 凡是被其它节点的 `proxy = "..."` 引用作为跳板的节点，它的 `sshd` 都必须允许客户端侧的 TCP 转发。编辑该节点的 `/etc/ssh/sshd_config`：
+>
+> ```sshd_config
+> AllowTcpForwarding yes
+> ```
+>
+> - OpenSSH 默认就是 `yes`，但部分**加固镜像 / 云平台镜像**会把它改成 `no`，那时 mysshw 会报 `ssh: rejected: unknown channel type (unsupported channel type)` 或 `forward dial via "..." to "...": ... refused`。
+> - 这一项对**多跳链上的每一个 hop** 都适用（每一级都是它内层下一跳的「forwarder」），不只是最外层的 bastion。
+> - `GatewayPorts` **不需要**为 `yes`，它只影响 `tunnel reverse` 让 server 端开监听端口的场景，跟 proxy 透传无关。
+> - 改完 `sshd_config` 后记得重载：`sudo systemctl reload sshd`（先 `sudo sshd -t` 试配置再 reload 最稳）。
+
 机制：
 
 1. `ssh.Dial` 直连跳板（bastion）
@@ -681,6 +976,236 @@ AI 工作流：
 - plain 模式表格友好（debug）；`-o json` AI 友好
 
 e2e 测试：6 个用例覆盖 list/dry-run/confirm/show/mismatch/remove 路径。
+
+### `ping` — TCP 连通性检测
+
+```bash
+# 按 name 单节点
+mysshw ping --node prod-1
+
+# 按 alias 批量
+mysshw ping --alias WebAlias
+
+# 直连 host:port（不需要配置文件）
+mysshw ping --host 10.0.0.5 -p 22
+
+# 自定义超时 + 3 次尝试
+mysshw ping --node prod-1 --timeout 3s --count 3
+
+# AI agent 用 JSON 输出
+mysshw ping --node prod-1 -o json | jq '.[] | select(.reachable==false)'
+```
+
+与系统 `ping(1)` 不同，这里走 TCP 拨号（不需 root）。每个节点的 JSON schema：
+
+```json
+{
+  "node": "prod-1",
+  "host": "10.0.0.1",
+  "port": 22,
+  "reachable": true,
+  "latency_ms": 12.4,
+  "attempts": 1,
+  "error": ""
+}
+```
+
+退出码：`0` 全部可达，`1` 部分不可达，`64` 参数错误，`78` 节点未找到。
+
+### `info` — 远程系统信息采集
+
+通过 SSH 收集一个或多个节点的结构化系统信息（hostname、OS、内核、CPU、内存、磁盘、运行时间）。
+
+```bash
+# 按 name 单节点
+mysshw info --node prod-1
+
+# 批量（最多 10 并发）
+mysshw info --node web-1 --node web-2 --node web-3
+
+# 按 group 筛选
+mysshw list --group production -o json | jq -r '.[].name' | \
+  xargs mysshw info -o json
+
+# AI 辅助决策：
+mysshw info --node target -o json | jq '.[0].memory.total_bytes > 8589934592'
+```
+
+每节点 JSON schema：
+
+```json
+{
+  "node": "prod-1",
+  "hostname": "prod-1.internal",
+  "os": "linux",
+  "kernel": "6.8.0-31-generic",
+  "arch": "x86_64",
+  "cpu": {"cores": 4, "model": "Intel(R) Xeon(R) ..."},
+  "memory": {"total_bytes": 17179869184},
+  "disk": [{"mount": "/", "size_bytes": ..., "used_bytes": ..., "percent": 42}],
+  "uptime_seconds": 2592000,
+  "uptime_human": "30d 0h 0m",
+  "collected_at": "2026-07-06T...",
+  "error": ""
+}
+```
+
+**跨平台**：Linux（`/proc`）、macOS（`sysctl`）、其他 Unix（尽力而为）。
+
+### `config` — SSH 节点 CRUD
+
+直接在 `mysshw.toml` 中管理 SSH 节点，无需手动编辑。6 个子命令：
+
+```bash
+# 列出所有节点（含全部可编辑字段）
+mysshw config list
+mysshw config list --group Production --format json
+
+# 查看单个节点详情（密码脱敏）
+mysshw config get prod-1
+mysshw config get prod-1 --format json
+
+# 新增节点（默认 dry-run，--confirm 才写入）
+mysshw config add --group Production --name web-2 --host 10.0.0.2 \
+                  --user app --password '${MYSSHW_PWD_web2}'
+mysshw config add --group Staging --name db-1 --host 10.0.1.5 \
+                  --password 'my-password' --confirm
+
+# 删除节点（默认 dry-run）
+mysshw config remove prod-3 --confirm
+
+# 增量修改（默认 dry-run）
+mysshw config update prod-1 --port 2222 --confirm
+mysshw config update prod-1 --group Production --confirm
+
+# 对比两个节点（JSON 输出）
+mysshw config diff prod-1 prod-2
+```
+
+**安全设计**：
+- 写操作（`add` / `remove` / `update`）默认 `--dry-run`，加 `--confirm` 才真正写入
+- 每次写入使用原子重写 + 自动备份（见配置中的 `backup_keep`）
+- 密码推荐使用 bcrypt hash 或 `${ENV}` 引用；明文会触发警告
+- JSON 输出永远不会包含 password 字段
+
+### `export` / `import` — 配置可移植性
+
+将节点导出为可移植的 JSON/TOML 文件，或从文件导入。密码字段自动替换为 `${IMPORTED}` 占位符。
+
+```bash
+# 导出全部节点为 JSON（stdout）
+mysshw export
+
+# 导出某 group 为 TOML 到文件
+mysshw export --group Production --format toml --output nodes.toml
+
+# 导出指定节点
+mysshw export --name prod-1 --name prod-2
+
+# dry-run 预览导入
+mysshw import nodes.json
+
+# 实际导入（支持覆盖 + group 重写）
+mysshw import nodes.toml --confirm --overwrite --group Staging
+
+# 管道导出给 AI 解析
+mysshw export --group Production --format json | jq '. | length'
+```
+
+**格式自动检测**：`.json` → JSON；`.toml` → TOML；其他扩展名先试 JSON 再试 TOML。
+
+**重复处理**：同名节点默认跳过；`--overwrite` 更新已有节点。
+
+### `sync` — 配置远程备份
+
+通过 SCP、WebDAV 或 S3 上传/下载配置文件。
+
+```bash
+# 上传配置到远程
+mysshw sync --upload
+mysshw sync -u
+
+# 从远程下载配置
+mysshw sync --down
+mysshw sync -z
+
+# 使用自定义配置路径同步
+mysshw sync -c /path/to/custom/config.toml -u
+```
+
+**支持的协议**（在 `mysshw.toml` 的 `[sync]` 下配置）：
+- `scp` — 通过 SSH（用户名 + 密码 / 密钥）
+- `webdav` — HTTP WebDAV（Basic / Digest 认证）
+- `s3` — S3 兼容（MinIO / RustFS / AWS S3）
+
+### `yml` — 从旧版 sshw YAML 迁移
+
+解析旧版 `sshw` 项目的 `.sshw.yml` 文件，将转换后的节点追加到 `mysshw.toml`。
+
+```bash
+# 转换并追加到当前配置
+mysshw yml -f ~/.sshw.yml
+```
+
+### `init` — 交互式向导
+
+通过交互式向导初始化 `~/.mysshw.toml`。首次运行会显示"更新内容"页面，然后进入向导。
+
+```bash
+# 交互式向导
+mysshw init
+
+# 覆盖已有配置（不询问）
+mysshw init --force
+```
+
+### `completions` — AI Agent 用的 CLI Schema
+
+输出完整的 CLI 结构（命令、flag、参数策略、退出码）为 JSON 文档。专为 AI 动态工具封装设计。
+
+```bash
+# 完整 CLI schema (JSON)
+mysshw completions json
+
+# 只输出某个子命令
+mysshw completions json exec
+
+# 展平模式（单层数组，AI 遍历友好）
+mysshw completions json --flat
+
+# 通过 jq 提取特定 flag
+mysshw completions json copy | jq '.commands[] | .flags[] | .name'
+```
+
+输出包含所有子命令、flag（类型/默认值/是否必填）、参数策略（noargs / exact / arbitrary / range）以及 BSD sysexit 退出码说明。
+
+### `mcp` — MCP Server（AI 集成）
+
+启动 Model Context Protocol (MCP) server，通过 stdio transport 将 SSH 操作暴露为 AI 工具。
+
+```bash
+# 启动 MCP server
+mysshw mcp
+
+# 指定配置文件
+mysshw mcp -c /path/to/config.toml
+```
+
+暴露的工具（共 9 个）：
+
+| 工具 | 说明 |
+|------|------|
+| `ssh_list_nodes` | 列出所有 SSH 节点（支持按 group/name 筛选） |
+| `ssh_exec` | 在一个或多个节点上执行命令 |
+| `ssh_copy` | SCP 文件上传/下载 |
+| `ssh_hostkey_list` | 列出 known_hosts 条目 |
+| `ssh_hostkey_show` | 查看指定主机的详情 |
+| `ssh_hostkey_remove` | 从 known_hosts 中删除主机条目 |
+| `ssh_hostkey_update` | 更新主机条目（带指纹验证） |
+| `ssh_hostkey_audit` | known_hosts 安全审查 |
+| `ssh_completions` | 动态查询 CLI schema |
+
+详细集成指南（Python SDK、JSON-RPC 示例）见 [examples/mcp-integration.md](examples/mcp-integration.md)。
 
 ---
 
