@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -273,8 +272,9 @@ func runExecSingle(cmd *cobra.Command, node *config.SSHNode, command string, use
 	case result.ExitCode == 0:
 		return nil
 	case result.ExitCode > 0 && result.ExitCode < 256:
-		os.Exit(result.ExitCode) // 透传命令 exit code
-		return nil               // unreachable
+		// 透传: 返回 ExitError 让 cobra 顶层 Execute() 调 os.Exit(Code)
+		// 不能直接 os.Exit() —— 通过 runSubcommandCaptured 重入时会杀掉整个 MCP server 进程
+		return WrapExit(result.ExitCode, nil)
 	default:
 		return WrapExit(ExitSSHError,
 			fmt.Errorf("command exited with code %d (likely connection closed)", result.ExitCode))

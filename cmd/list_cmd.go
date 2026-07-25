@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"io"
-	"os"
 	"sort"
 	"strings"
 
@@ -204,8 +203,10 @@ func sortSummaries(s []nodeSummary) {
 }
 
 func printNodeTable(w io.Writer, summaries []nodeSummary) error {
+	// 不兜底到 os.Stdout: MCP stdio 模式下 os.Stdout = JSON-RPC 通道,
+	// 写入会污染协议流导致客户端断开。nil writer 直接 no-op。
 	if w == nil {
-		w = os.Stdout
+		return nil
 	}
 	if len(summaries) == 0 {
 		fmt.Fprintln(w, "(no nodes match filters)")

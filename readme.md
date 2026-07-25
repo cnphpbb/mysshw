@@ -769,6 +769,20 @@ mysshw copy -U --node deep-1 --local ./deploy.sh --remote /tmp/deploy.sh
 mysshw list -o json | jq '.[] | select(.proxy != null)'
 ```
 
+> [!IMPORTANT]
+> **sshd config requirement on every jump host in the chain**
+>
+> Each node that acts as a jump host (i.e. is referenced by another node's `proxy = "..."`) runs `sshd` and must permit client-side TCP forwarding. In `/etc/ssh/sshd_config` on the jump host:
+>
+> ```sshd_config
+> AllowTcpForwarding yes
+> ```
+>
+> - Default is `yes` in OpenSSH, but some hardened distros / cloud images flip it to `no`, which will cause `mysshw` to fail with `ssh: rejected: unknown channel type (unsupported channel type)` or `forward dial via "..." to "...": ... refused`.
+> - This applies to **every hop** in a multi-hop chain (each intermediate node forwards to the next inner one), not just the outermost bastion.
+> - `GatewayPorts` is **not** required for proxy chains; it only matters for `tunnel reverse` where the SSH server opens a listening port.
+> - After editing `sshd_config`, reload the daemon: `sudo systemctl reload sshd` (or `sudo sshd -t && sudo systemctl restart sshd`).
+
 Mechanism:
 
 1. `ssh.Dial` connects directly to the jump host (bastion)

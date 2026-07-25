@@ -767,6 +767,20 @@ mysshw copy -U --node deep-1 --local ./deploy.sh --remote /tmp/deploy.sh
 mysshw list -o json | jq '.[] | select(.proxy != null)'
 ```
 
+> [!IMPORTANT]
+> **跳板机上 sshd 配置必须打开 AllowTcpForwarding**
+>
+> 凡是被其它节点的 `proxy = "..."` 引用作为跳板的节点，它的 `sshd` 都必须允许客户端侧的 TCP 转发。编辑该节点的 `/etc/ssh/sshd_config`：
+>
+> ```sshd_config
+> AllowTcpForwarding yes
+> ```
+>
+> - OpenSSH 默认就是 `yes`，但部分**加固镜像 / 云平台镜像**会把它改成 `no`，那时 mysshw 会报 `ssh: rejected: unknown channel type (unsupported channel type)` 或 `forward dial via "..." to "...": ... refused`。
+> - 这一项对**多跳链上的每一个 hop** 都适用（每一级都是它内层下一跳的「forwarder」），不只是最外层的 bastion。
+> - `GatewayPorts` **不需要**为 `yes`，它只影响 `tunnel reverse` 让 server 端开监听端口的场景，跟 proxy 透传无关。
+> - 改完 `sshd_config` 后记得重载：`sudo systemctl reload sshd`（先 `sudo sshd -t` 试配置再 reload 最稳）。
+
 机制：
 
 1. `ssh.Dial` 直连跳板（bastion）

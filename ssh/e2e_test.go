@@ -45,6 +45,16 @@ import (
 //	"exit <N>"         → exit N (无输出)
 //	其他               → stdout "executed: <cmd>\n", exit 0
 func startTestSSHServer(t *testing.T) (host string, port int, signer gossh.Signer, cleanup func()) {
+	return startTestSSHServerWithMarker(t, "executed")
+}
+
+// startTestSSHServerWithMarker 启动一个用 marker 标记输出的 in-process SSH server
+//
+// 所有 session stdout 以 "<marker>: <cmd>\n" 格式输出。仅 forward tcpip-direct 的 server
+// 可不设 marker (session 上跑不到, 但有助于调试时了然区分)。
+//
+// 用于多服务器场景下区分命令到底跑在哪台, 例如 proxy e2e 中区别 bastion 与 target。
+func startTestSSHServerWithMarker(t *testing.T, marker string) (host string, port int, signer gossh.Signer, cleanup func()) {
 	t.Helper()
 
 	// 生成临时 RSA host key
@@ -82,7 +92,7 @@ func startTestSSHServer(t *testing.T) (host string, port int, signer gossh.Signe
 				return
 			}
 		}
-		_, _ = s.Write([]byte("executed: " + cmd + "\n"))
+		_, _ = s.Write([]byte(marker + ": " + cmd + "\n"))
 		_ = s.Exit(0)
 	})
 
@@ -229,6 +239,115 @@ func TestE2E_BatchExecutorMultipleNodes(t *testing.T) {
 		assert.Equal(t, 0, r.ExitCode)
 		assert.Contains(t, r.Stdout, "executed:")
 	}
+}
+
+// TestE2E_Proxy_HopsViaJumpHost 验证跳板链连接是经由 bastion 后到达 target 的,
+// 不是直接在 target 上出结果。
+//
+// 采用场景:
+//   - bastion server 标记 "BASTION", 并启用 DirectTCPIPHandler (默认 gliderssh 不转发)
+//   - target server  标记 "TARGET"
+//
+// 期望:
+//   - exec.RunCommand 成功
+//   - stdout 含 "TARGET: <cmd>"    (证明是 SSH 到 target 后执行)
+//   - stdout 不含 "BASTION" 字样  (证明命令没误在 bastion 上跑)
+//
+// 该测试是 Proxy 修复后 happy-path 烟雾测试。拨顺序的反向回归测试 (bastion refused)
+// 为 proxy_test.go::TestDialViaProxyChain_TwoDistinctEndpoints。
+func TestE2E_Proxy_HopsViaJumpHost(t *testing.T) {
+	bastionHost, bastionPort, _, bastionCleanup := startForwardingSSHServer(t)
+	defer bastionCleanup()
+	targetHost, targetPort, _, targetCleanup := startTestSSHServerWithMarker(t, "TARGET")
+	defer targetCleanup()
+
+	t.Setenv("MYSSHW_SKIP_HOST_KEY_CHECK", "true")
+
+	// 在 config.CFG 里注册两个节点, 让 resolveProxyChain 能找到 bastion
+	bastionNode := &config.SSHNode{
+		Name: "bastion", Host: bastionHost, Port: bastionPort,
+		User: "testuser", Password: "testpwd",
+	}
+	targetNode := &config.SSHNode{
+		Name: "target", Host: targetHost, Port: targetPort,
+		User: "testuser", Password: "testpwd",
+		Proxy: "bastion",
+	}
+	oldCFG := config.CFG
+	config.CFG = &config.Configs{
+		Nodes: []config.Nodes{
+			{Groups: "E2E", SSHNodes: []*config.SSHNode{bastionNode, targetNode}},
+		},
+	}
+	defer func() { config.CFG = oldCFG }()
+
+	exec, err := NewExecutor(targetNode, ExecOptions{UsePTY: false})
+	require.NoError(t, err)
+	defer exec.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	res, runErr := exec.RunCommand(ctx, "echo proxy-marker")
+	require.NoError(t, runErr, "跳板链 dial 应成功; error: %v stderr: %s", runErr, res.Stderr)
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Contains(t, res.Stdout, "TARGET: echo proxy-marker",
+		"stdout 应来自 target; got %q (err=%v)", res.Stdout, runErr)
+	assert.NotContains(t, res.Stdout, "BASTION",
+		"命令不应在 bastion 上跑过; got %q", res.Stdout)
+}
+
+// startForwardingSSHServer 启动一个 启用 direct-tcpip 透传的 SSH server。
+//
+// gliderlabs/ssh v0.3 默认只注册 "session" channel handler, direct-tcpip 转发需手动加上。
+// 另外, LocalPortForwardingCallback 默认为 nil 会直接拒绝转发, 也需手动设置为允许。
+//
+// 本 server 不注册 session handler (无需跑命令); 仅供 (my) 作为跳板透传用。
+func startForwardingSSHServer(t *testing.T) (host string, port int, signer gossh.Signer, cleanup func()) {
+	t.Helper()
+
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	pemBlock := &pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(priv),
+	}
+	parsed, err := gossh.ParsePrivateKey(pem.EncodeToMemory(pemBlock))
+	require.NoError(t, err)
+	signer = parsed
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	host = "127.0.0.1"
+	p, err := strconv.Atoi(strings.Split(listener.Addr().String(), ":")[1])
+	require.NoError(t, err)
+	port = p
+
+	server := &gliderssh.Server{
+		HostSigners: []gliderssh.Signer{signer},
+		PasswordHandler: func(ctx gliderssh.Context, password string) bool {
+			return ctx.User() == "testuser" && password == "testpwd"
+		},
+		// 允许所有来自跳转链的本地转发请求
+		LocalPortForwardingCallback: func(ctx gliderssh.Context, host string, port uint32) bool {
+			return true
+		},
+		// 添加 direct-tcpip 转发 handler (默认未注册)
+		ChannelHandlers: map[string]gliderssh.ChannelHandler{
+			"session":      gliderssh.DefaultSessionHandler,
+			"direct-tcpip": gliderssh.DirectTCPIPHandler,
+		},
+	}
+
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	time.Sleep(150 * time.Millisecond) // 等真正 ready
+
+	cleanup = func() {
+		_ = server.Close()
+	}
+	return
 }
 
 // TestE2E_StreamExecutorSingleNode 验证 RunStream 逐行 callback

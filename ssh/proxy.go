@@ -79,91 +79,112 @@ func chainNames(chain []*config.SSHNode) []string {
 
 // dialViaProxyChain 建立跳板链 SSH 连接
 //
-// chain 的语义:
+// chain 语义 (由 resolveProxyChain 填充):
 //
-//	chain[0]   = target (要访问的最终节点)
-//	chain[1..] = proxy 跳板节点 (按 SSH 客户端连接顺序)
+//	chain[0]       = target  (要访问的最终节点, 内层)
+//	chain[1..N-1]  = proxy   (跳板节点, 越靠后越外层)
+//	chain[N-1]     = 最外层跳板 = 唯一 TCP 可直接触达的节点
+//
+// SSH 隧道堆叠顺序 (从客户端视角):
+//
+//	client ──TCP+SSH──> chain[N-1]   (outermost, 直连)
+//	                        │
+//	                        └──DirectTCPIP──> chain[N-2] ──SSH handshake──> ...
+//	                                  │
+//	                                  └────── ... ──> chain[0] (target, 最内层)
 //
 // 实现:
-//  1. 直接 Dial chain[0] (第一跳, 可能是 bastion)
-//  2. 如果还有更多 hop, 在外层 SSH Client 上用 Client.Dial("tcp", next)
-//     建立 direct-tcpip channel, 然后用 NewClientConn 在加密通道内
-//     二次 SSH 握手连接下一跳
-//  3. 全部 stack 在最内层 client
+//  1. 第一跳 (outermost = chain[N-1]): 直接 plain TCP + SSH 握手 (这是 client 唯一能直连的)
+//  2. 后续跳 (i = N-2 .. 0): 用当前 transports 末尾 client 的 Dial("tcp", chain[i])
+//     开启 direct-tcpip 通道, 然后用 gossh.NewClientConn 在加密通道内做 SSH 客户端握手,
+//     把新 client append 到 transports 末端 (保持 "最后一个 = 当前外层" 的不变量)
+//  3. 返回 transports 末尾 (即 chain[0] target 的连接), 可直接 NewSession
 //
-// 返回的最内层 *gossh.Client 可直接用于 Session 创建。
-// 调用方负责 Close(), Close 会通过 SSH 协议栈级联关闭所有 transport。
+// 错误信息: 区分 outermost / forward-dial / handshake 三类, 便于定位失败点。
 //
-// 清理: 中间 hop 失败时, 已建立的 client 一并 Close (防止资源泄漏)
+// 清理: 中间 hop 失败时按 LIFO 顺序 Close 已建立 client, 防止资源泄漏
 //
-// ponytail: 第一跳必须直接 ssh.Dial, 不能走 defaultClient.connect(),
-// 否则 chain[0].Proxy 非空 → connect() 再次进 dialViaProxyChain → 无限递归 (栈溢出前表现为 hang)。
+// ponytail: 第一跳必须用 gossh.Dial 而不是再走 defaultClient.connect(), 否则
+// outermost.Proxy 非空 → connect() 再次进 dialViaProxyChain → 无限递归 (在引入
+// 多层代理前这是个隐藏风险, 未来支持多层时务必保留此约束)。
 func dialViaProxyChain(chain []*config.SSHNode) (*gossh.Client, error) {
 	if len(chain) == 0 {
 		return nil, errors.New("mysshw:: empty chain")
 	}
+	n := len(chain)
+	chainLabel := make([]string, 0, n)
+	for _, nd := range chain {
+		if nd != nil {
+			chainLabel = append(chainLabel, nd.Name)
+		}
+	}
 
-	// 拨号第一跳: 直接走 plain TCP + SSH handshake
-	first := chain[0]
-	if first.Host == "" {
-		return nil, fmt.Errorf("mysshw:: hop 1 %q has empty host", first.Name)
+	// === 步骤 1: 第一跳 = chain 末尾 (outermost proxy, 唯一 TCP 可直连) ===
+	outermost := chain[n-1]
+	if outermost.Host == "" {
+		return nil, fmt.Errorf("mysshw:: outermost hop %q has empty host (chain: %v)", outermost.Name, chainLabel)
 	}
-	firstC := NewClientNonInteractive(first)
-	if firstC == nil {
-		return nil, fmt.Errorf("mysshw:: failed to build SSH client for %q (proxy hop 1)", first.Name)
+	outermostC := NewClientNonInteractive(outermost)
+	if outermostC == nil {
+		return nil, fmt.Errorf("mysshw:: failed to build SSH client for outermost hop %q (chain: %v)", outermost.Name, chainLabel)
 	}
-	firstDC, ok := firstC.(*defaultClient)
-	if !ok || firstDC == nil {
-		return nil, fmt.Errorf("mysshw:: internal: defaultClient cast failed at hop 1")
+	outermostDC, ok := outermostC.(*defaultClient)
+	if !ok || outermostDC == nil {
+		return nil, fmt.Errorf("mysshw:: internal: defaultClient cast failed at outermost hop 1 (%q)", outermost.Name)
 	}
-	addr := net.JoinHostPort(first.Host, strconv.Itoa(first.SetPort()))
-	cli, err := gossh.Dial("tcp", addr, firstDC.clientConfig)
+	outerAddr := net.JoinHostPort(outermost.Host, strconv.Itoa(outermost.SetPort()))
+	outerCli, err := gossh.Dial("tcp", outerAddr, outermostDC.clientConfig)
 	if err != nil {
-		return nil, fmt.Errorf("mysshw:: dial first hop %q: %w", first.Name, err)
+		return nil, fmt.Errorf("mysshw:: dial outermost hop %q (%s): %w", outermost.Name, outerAddr, err)
 	}
-	transports := []*gossh.Client{cli}
+	transports := []*gossh.Client{outerCli}
 
-	// 逐 hop 透传
-	for i := 1; i < len(chain); i++ {
-		cur := chain[i] // 当前要连的节点
-		curC := NewClientNonInteractive(cur)
-		if curC == nil {
+	// === 步骤 2: 逐层往内 i = n-2; i >= 0; i-- ===
+	// 每层: 用 transports 末尾 client 开 direct-tcpip 到 chain[i], 然后 SSH 握手
+	for i := n - 2; i >= 0; i-- {
+		inner := chain[i]
+		if inner.Host == "" {
 			closeTransports(transports)
-			return nil, fmt.Errorf("mysshw:: failed to build SSH client for hop %q (%s -> %s)",
-				cur.Name, chain[i-1].Name, cur.Name)
+			return nil, fmt.Errorf("mysshw:: inner hop %q (in chain %v) has empty host", inner.Name, chainLabel)
 		}
-		curDC, ok := curC.(*defaultClient)
-		if !ok || curDC == nil {
+		// 通过当前最外层 transports[last] 隧道化访问 chain[i]
+		outerHopName := chain[i+1].Name // 用于错误信息
+		innerAddr := net.JoinHostPort(inner.Host, strconv.Itoa(inner.SetPort()))
+
+		innerC := NewClientNonInteractive(inner)
+		if innerC == nil {
 			closeTransports(transports)
-			return nil, fmt.Errorf("mysshw:: internal: defaultClient cast failed at hop %d (%s)", i+1, cur.Name)
+			return nil, fmt.Errorf("mysshw:: failed to build SSH client for inner hop %q (%s -> %s, chain: %v)",
+				inner.Name, outerHopName, inner.Name, chainLabel)
+		}
+		innerDC, ok := innerC.(*defaultClient)
+		if !ok || innerDC == nil {
+			closeTransports(transports)
+			return nil, fmt.Errorf("mysshw:: internal: defaultClient cast failed at inner hop (%s -> %q)", outerHopName, inner.Name)
 		}
 
-		// 通过外层 SSH client dial 内层 host:port
-		addr := net.JoinHostPort(cur.Host, strconv.Itoa(cur.SetPort()))
-		if cur.Host == "" {
-			closeTransports(transports)
-			return nil, fmt.Errorf("mysshw:: hop %q (%s -> %s) has empty host",
-				cur.Name, chain[i-1].Name, cur.Name)
-		}
-		conn, dialErr := transports[i-1].Dial("tcp", addr)
+		// 步骤 2a: 通过 SSH 协议开 direct-tcpip 通道
+		conn, dialErr := transports[len(transports)-1].Dial("tcp", innerAddr)
 		if dialErr != nil {
 			closeTransports(transports)
-			return nil, fmt.Errorf("mysshw:: forward dial %s -> %s: %w",
-				chain[i-1].Name, cur.Name, dialErr)
+			return nil, fmt.Errorf("mysshw:: forward dial via %q to %q (%s): %w",
+				outerHopName, inner.Name, innerAddr, dialErr)
 		}
 
-		// 在已加密的 conn 上做 SSH 客户端握手
-		ncc, chans, reqs, handshakeErr := gossh.NewClientConn(conn, addr, curDC.clientConfig)
+		// 步骤 2b: 在已加密的 conn 上做 SSH 客户端握手
+		ncc, chans, reqs, handshakeErr := gossh.NewClientConn(conn, innerAddr, innerDC.clientConfig)
 		if handshakeErr != nil {
 			_ = conn.Close()
 			closeTransports(transports)
-			return nil, fmt.Errorf("mysshw:: SSH handshake over tunnel to %q: %w", cur.Name, handshakeErr)
+			return nil, fmt.Errorf("mysshw:: SSH handshake over tunnel %q -> %q: %w",
+				outerHopName, inner.Name, handshakeErr)
 		}
-		cli = gossh.NewClient(ncc, chans, reqs)
+		cli := gossh.NewClient(ncc, chans, reqs)
 		transports = append(transports, cli)
 	}
 
-	return cli, nil
+	// transports 末尾就是 chain[0] (target) 的 SSH 连接
+	return transports[len(transports)-1], nil
 }
 
 func closeTransports(transport []*gossh.Client) {

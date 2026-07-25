@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
 
 	"mysshw/config"
 
@@ -667,6 +668,16 @@ func sshCompletionsHandler(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 // 内部 helper: 执行子命令并捕获输出
 // ============================================================
 
+// mcpSubcommandMu 串行化 runSubcommandCaptured 调用.
+//
+// 原因: 函数修改全局 rootCmd.SetArgs/SetOut/SetErr/SetContext 后调 Execute() 走 cobra.
+// 并发 MCP tool call 会撕扯这些全局状态, 且 cobra 内部 (parsed flags, command tree)
+// 非并发安全. 全局锁保证同一时刻只有一个 in-flight call.
+//
+// ponytail: 全局锁足够. 个人 SSH 客户端的 MCP 并发低 (单用户多次串行调用常见,
+// 并行工具调用少见). 真要扛高并发再换成 exec.Command() 派生子进程.
+var mcpSubcommandMu sync.Mutex
+
 // runSubcommandCaptured 在隔离的子命令上下文中执行 cmd, 捕获 stdout/stderr 到 buf,
 // 把 ExitError 序列化为可读消息。
 //
@@ -676,12 +687,18 @@ func sshCompletionsHandler(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 //
 // caller 负责传入完整路由路径 (e.g. hostkey 子命令需传 ["hostkey", "list", ...],
 // 不是 ["list", ...])。args 可以为空, 表示 "执行 cmd 本身"。
-func runSubcommandCaptured(_ context.Context, cmd *cobra.Command, args []string) (string, error) {
+//
+// ctx 来自 MCP 请求 (per-request): 透传给 rootCmd.SetContext 让内层 SSH/cobra 收到
+// 客户端取消/超时信号。否则 AI 客户端 cancel 后内层 SSH 仍跑到自然结束, 占用资源。
+func runSubcommandCaptured(ctx context.Context, cmd *cobra.Command, args []string) (string, error) {
+	mcpSubcommandMu.Lock()
+	defer mcpSubcommandMu.Unlock()
+
 	var buf bytes.Buffer
 	rootCmd.SetArgs(args)
 	rootCmd.SetOut(&buf)
 	rootCmd.SetErr(&buf)
-	rootCmd.SetContext(context.Background())
+	rootCmd.SetContext(ctx)
 	defer func() {
 		rootCmd.SetArgs(nil)
 		rootCmd.SetOut(nil)

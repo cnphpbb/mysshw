@@ -3,7 +3,10 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -814,5 +817,110 @@ func TestMCPServer_AllToolsRegistered(t *testing.T) {
 	// 验证每个工具都能成功调用 (不会因 schema 问题报错)
 	for _, name := range expected {
 		assert.True(t, tools[name], "%s should be registered", name)
+	}
+}
+
+// ============================================================
+// 回归测试: MCP server 偶发断开修复
+// ============================================================
+
+// TestRunSubcommandCaptured_ExitErrorSurvives 验证内层 RunE 返回 ExitError 时
+// runSubcommandCaptured 把错误返回给 caller 而不是调用 os.Exit 杀掉 MCP 进程。
+//
+// 历史 bug: cmd/exec_cmd.go 旧版对 result.ExitCode > 0 直接 os.Exit(result.ExitCode),
+// 通过 runSubcommandCaptured 重入时整个 mysshw mcp 进程被杀, AI 客户端 EOF 断开。
+// 修复: 改 return WrapExit(result.ExitCode, nil)。
+func TestRunSubcommandCaptured_ExitErrorSurvives(t *testing.T) {
+	resetRootCmd(t)
+	defer resetRootCmd(t)
+
+	// 触发 ExitError 路径: list 加载不存在的 config → WrapExit(ExitConfig=78)
+	out, err := runSubcommandCaptured(context.Background(), listCmd,
+		[]string{"list", "-o", "json", "--cfg", "/nonexistent/path/that/does/not/exist.toml"})
+
+	// 必须返回 error 而非让 process 死亡
+	require.Error(t, err, "runSubcommandCaptured 应返回 ExitError 包装的 error 而不是 os.Exit 杀进程")
+	assert.Contains(t, err.Error(), "exit 78",
+		"ExitError code 78 (EX_CONFIG) 应被透传到 error message")
+	// 进程存活 = 测试还能继续跑 = os.Exit 没被调用
+	assert.NotNil(t, out, "已写到 buffer 的输出应仍能返回 (即使 inner cmd 失败)")
+}
+
+// TestPrintNodeTable_NilWriterNoOp 验证 nil writer 时不写到 os.Stdout,
+// 否则 MCP stdio 模式下会污染 JSON-RPC 流导致客户端断开。
+func TestPrintNodeTable_NilWriterNoOp(t *testing.T) {
+	// 重定向 os.Stdout 捕获是否被写入
+	origStdout := os.Stdout
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	os.Stdout = w
+	defer func() { os.Stdout = origStdout }()
+
+	// 调用方传 nil writer — 不应触达 os.Stdout
+	res := printNodeTable(nil, []nodeSummary{{Group: "G", Name: "n1"}})
+	w.Close()
+
+	// 读 pipe: 如果 fallback 到 os.Stdout, 这里会读到内容
+	buf := make([]byte, 1024)
+	n, _ := r.Read(buf)
+	r.Close()
+
+	assert.NoError(t, res)
+	assert.Equal(t, 0, n, "nil writer 不应写到 os.Stdout (会污染 MCP JSON-RPC 流)")
+}
+
+// TestRunSubcommandCaptured_Concurrent 验证 mcpSubcommandMu 正确串行化并发调用.
+//
+// 历史 bug: 并发 MCP tool call 同时修改 rootCmd.SetArgs/SetOut/SetErr/SetContext
+// 后调 rootCmd.Execute(), 全局状态互相撕扯导致 race / panic / 输出串台.
+// 修复: 加 sync.Mutex.
+//
+// 测试策略: 全部 goroutine 共享同一 config (避免 viper.AddConfigPath 累加污染).
+// 加 -race 跑测试时, Go runtime 会检测 rootCmd / mcpSubcommandMu 周围的真 race.
+// 不验证 per-goroutine 输出内容 — 锁保证串行, 内容正确性靠单线程测试覆盖.
+func TestRunSubcommandCaptured_Concurrent(t *testing.T) {
+	resetRootCmd(t)
+	defer resetRootCmd(t)
+
+	cfgPath := withTempConfig(t, `
+[[nodes]]
+groups = "G"
+
+[[nodes.ssh]]
+name = "shared-node"
+host = "10.0.0.1"
+`)
+
+	const N = 10
+	var wg sync.WaitGroup
+	errs := make(chan error, N)
+
+	for i := 0; i < N; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					errs <- fmt.Errorf("goroutine %d panicked: %v", idx, r)
+				}
+			}()
+
+			out, err := runSubcommandCaptured(context.Background(), listCmd,
+				[]string{"list", "-o", "json", "--cfg", cfgPath})
+			if err != nil {
+				errs <- fmt.Errorf("goroutine %d: %w", idx, err)
+				return
+			}
+			if !strings.Contains(out, "shared-node") {
+				errs <- fmt.Errorf("goroutine %d: missing shared-node in output: %s", idx, out)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errs)
+
+	for e := range errs {
+		t.Errorf("%v", e)
 	}
 }
