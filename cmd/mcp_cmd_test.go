@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"strings"
 	"sync"
@@ -13,6 +16,7 @@ import (
 	"mysshw/config"
 
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/server"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -923,4 +927,67 @@ host = "10.0.0.1"
 	for e := range errs {
 		t.Errorf("%v", e)
 	}
+}
+
+// TestMCP_WithRecovery_PanicDoesNotBreakStdio 锁定 MCP 偶发断连回归:
+// handler panic 若不被 recover, 会导致进程崩溃 → stdio EOF → AI 客户端断开。
+// runMCP 通过 server.WithRecovery() 把 panic 转成 error 响应, 连接存活。
+// 本测试用真实 stdio transport (io.Pipe) 驱动, 注册一个会 panic 的 tool,
+// 断言: (1) panic 后能读到 error 响应 (不是 EOF); (2) 后续请求仍可响应 = 连接没断。
+func TestMCP_WithRecovery_PanicDoesNotBreakStdio(t *testing.T) {
+	s := server.NewMCPServer("test", "1.0",
+		server.WithToolCapabilities(true),
+		server.WithRecovery(),
+	)
+	s.AddTool(mcp.NewTool("boom"), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		panic("kaboom")
+	})
+
+	stdinR, stdinW := io.Pipe()
+	stdoutR, stdoutW := io.Pipe()
+	t.Cleanup(func() { _ = stdinR.Close(); _ = stdinW.Close(); _ = stdoutR.Close(); _ = stdoutW.Close() })
+
+	stdio := server.NewStdioServer(s)
+	stdio.SetErrorLogger(log.New(io.Discard, "", 0))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go func() { _ = stdio.Listen(ctx, stdinR, stdoutW) }()
+
+	sc := bufio.NewScanner(stdoutR)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+
+	send := func(m map[string]any) {
+		b, err := json.Marshal(m)
+		require.NoError(t, err)
+		_, err = stdinW.Write(append(b, '\n'))
+		require.NoError(t, err)
+	}
+	readResp := func() map[string]any {
+		t.Helper()
+		if !sc.Scan() {
+			t.Fatalf("stdio 连接已断 (EOF): AI 客户端会失联; err=%v", sc.Err())
+		}
+		var r map[string]any
+		require.NoError(t, json.Unmarshal(sc.Bytes(), &r))
+		return r
+	}
+
+	send(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize",
+		"params": map[string]any{"protocolVersion": "2024-11-05",
+			"clientInfo": map[string]any{"name": "test", "version": "1"}}})
+	require.NotNil(t, readResp()["result"], "initialize 应返回 result")
+	send(map[string]any{"jsonrpc": "2.0", "method": "notifications/initialized"})
+
+	// 关键断言 1: panic → error 响应, 连接没崩
+	send(map[string]any{"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+		"params": map[string]any{"name": "boom", "arguments": map[string]any{}}})
+	resp := readResp()
+	assert.Nil(t, resp["result"], "panic 应让 result 为 nil")
+	assert.NotNil(t, resp["error"], "panic 应转成 JSON-RPC error, got: %v", resp)
+
+	// 关键断言 2: 后续请求仍可响应 = 连接存活 (核心: 不会让 AI 客户端断开)
+	send(map[string]any{"jsonrpc": "2.0", "id": 3, "method": "tools/list", "params": map[string]any{}})
+	list := readResp()
+	require.NotNil(t, list["result"], "panic 后连接应仍存活可响应后续请求")
 }

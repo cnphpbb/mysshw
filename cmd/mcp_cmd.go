@@ -95,6 +95,9 @@ func runMCP(cmd *cobra.Command, args []string) error {
 		"mysshw",
 		Version,
 		server.WithToolCapabilities(false),
+		// handler panic 不杀进程: recover → 返回 error 给客户端, 保持 stdio 连接存活
+		// 否则任何 resolver/SSH 边界的 nil-deref 会导致 EOF 断开 (偶发现象之一)
+		server.WithRecovery(),
 		server.WithInstructions(`
 mysshw MCP server exposes SSH operations as tools. Use ssh_list_nodes first to
 discover available nodes, then ssh_exec to run commands. All tools return
