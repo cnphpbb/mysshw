@@ -157,10 +157,20 @@ func runExec(cmd *cobra.Command, args []string) error {
 	}
 
 	// --rotate-known-hosts: 临时设到本调用涉及的所有节点上 (不跨调用泄露)
+	//
+	// 节点指针来自 config.CFG (全局), 直接改字段会永久污染. 用 save/restore 兜底:
+	// 函数返回前恢复原值, 避免下一次 MCP 调用 (不带 --rotate-known-hosts) 误用旧值.
 	if execRotateKnownHosts {
-		for _, n := range nodes {
+		saved := make([]bool, len(nodes))
+		for i, n := range nodes {
+			saved[i] = n.RotateKnownHosts
 			n.RotateKnownHosts = true
 		}
+		defer func() {
+			for i, n := range nodes {
+				n.RotateKnownHosts = saved[i]
+			}
+		}()
 	}
 
 	command := strings.Join(args, " ")

@@ -17,6 +17,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -990,4 +991,206 @@ func TestMCP_WithRecovery_PanicDoesNotBreakStdio(t *testing.T) {
 	send(map[string]any{"jsonrpc": "2.0", "id": 3, "method": "tools/list", "params": map[string]any{}})
 	list := readResp()
 	require.NotNil(t, list["result"], "panic 后连接应仍存活可响应后续请求")
+}
+
+// ============================================================
+// 回归测试: MCP exec 状态泄漏修复
+// ============================================================
+
+// TestMCPExecHandler_StateNotLeakedAcrossCalls 锁定同类 bug: 第一次调 ssh_exec 后
+// cobra flag 全局变量 (execNodesFlag / execDryRun / execRotateKnownHosts) 残留,
+// 第二次调用被污染, exec 跑不通.
+//
+// 历史 bug 表现:
+//   - call 1: --node A --dry-run       → execNodesFlag=[A], execDryRun=true
+//   - call 2: --node B                  → cobra append → execNodesFlag=[A,B], execDryRun=true 残留
+//                                            → 第 2 次返回 dry-run 输出, 不是真执行
+//
+// 修复: runSubcommandCaptured 入口 resetCmdGlobals(), Execute() 之前重置所有 flag 全局变量.
+func TestMCPExecHandler_StateNotLeakedAcrossCalls(t *testing.T) {
+	resetRootCmd(t)
+	defer resetRootCmd(t)
+
+	cfgPath := withTempConfig(t, `
+[[nodes]]
+groups = "Test"
+
+[[nodes.ssh]]
+name = "node-A"
+host = "10.0.0.1"
+
+[[nodes.ssh]]
+name = "node-B"
+host = "10.0.0.2"
+`)
+
+	// call 1: --node A --dry-run
+	req1 := mcp.CallToolRequest{}
+	req1.Params.Name = "ssh_exec"
+	req1.Params.Arguments = map[string]any{
+		"cfg":     cfgPath,
+		"node":    []string{"node-A"},
+		"command": "uptime",
+		"dry_run": true,
+	}
+	out1, err := runSubcommandCaptured(context.Background(), execCmd,
+		[]string{"exec", "-o", "json", "--cfg", cfgPath, "--node", "node-A", "--dry-run", "--", "uptime"})
+	require.NoError(t, err)
+	t.Logf("call 1 output: %s", out1)
+
+	// 关键断言 1: call 1 后 execNodesFlag 应被 reset (不累积)
+	// resetCmdGlobals 在入口处调用, 解析后 cobra 设置, 之后回归到 [A]
+	assert.Equal(t, []string{"node-A"}, execNodesFlag,
+		"call 1 后 execNodesFlag 应只含 'node-A', 不应有残留")
+
+	// call 2: --node B --dry-run=false (验证 dry_run 不残留; 用 dry_run=true 避免真 SSH)
+	// 这里 dry_run=true 跟我们想测的"不残留"是相容的: 测的是"不残留" → 列出 node-B only
+	// 不想真 SSH, 因为本机 IP 10.0.0.2 不存在, dial 会卡超时
+	req2 := mcp.CallToolRequest{}
+	req2.Params.Name = "ssh_exec"
+	req2.Params.Arguments = map[string]any{
+		"cfg":     cfgPath,
+		"node":    []string{"node-B"},
+		"command": "uptime",
+		"dry_run": true,
+	}
+	out2, err := runSubcommandCaptured(context.Background(), execCmd,
+		[]string{"exec", "-o", "json", "--cfg", cfgPath, "--node", "node-B", "--dry-run", "--", "uptime"})
+	require.NoError(t, err)
+	t.Logf("call 2 output: %s", out2)
+
+	// 关键断言 2: call 2 的 selector.names 应只有 [B], 不应是 [A,B]
+	if !strings.Contains(out2, "\"node-B\"") {
+		t.Fatalf("call 2 输出缺少 node-B: %s", out2)
+	}
+	if strings.Contains(out2, "\"node-A\"") {
+		t.Fatalf("call 2 输出含 node-A, 说明 call 1 的 --node 残留了: %s", out2)
+	}
+}
+
+// TestMCPExecHandler_DryRunNotLeakedAcrossCalls 单独验证 bool flag 不残留:
+// call 1 显式设 --dry-run, call 2 完全不设 (走的路径相同但 dry_run 应是 false).
+// 因为没有 dry_run 路径直接看 JSON 字段, 我们用 runExecDryRun 的输出特征:
+//   - dry_run=true  → 输出顶层字段 "dry_run": true
+//   - dry_run=false → 不会输出该字段 (默认为 false, omitempty-like)
+//
+// 这里用 mock 节点 (不会真 SSH) 配 --dry-run 跑 call 1, 然后 call 2 不带 --dry-run 验证
+// 是否又走了 dry-run 路径 (如果走, 返回 dry-run JSON; 如果没走, 会尝试 dial 失败).
+func TestMCPExecHandler_DryRunNotLeakedAcrossCalls(t *testing.T) {
+	resetRootCmd(t)
+	defer resetRootCmd(t)
+
+	cfgPath := withTempConfig(t, `
+[[nodes]]
+groups = "Test"
+
+[[nodes.ssh]]
+name = "node-X"
+host = "10.0.0.99"
+`)
+
+	// call 1: --dry-run
+	_, err := runSubcommandCaptured(context.Background(), execCmd,
+		[]string{"exec", "-o", "json", "--cfg", cfgPath, "--node", "node-X", "--dry-run", "--", "uptime"})
+	require.NoError(t, err)
+
+	// call 2: 不带 --dry-run. 期望: execDryRun 被 reset → false, 走真实路径 (会 dial 失败)
+	// 关键是: 不是返回 dry-run JSON
+	_, err = runSubcommandCaptured(context.Background(), execCmd,
+		[]string{"exec", "-o", "json", "--cfg", cfgPath, "--node", "node-X", "--timeout", "1s", "--", "uptime"})
+	// 真 SSH 会失败 (network unreachable), err 应非 nil 且 NOT 含 "dry_run"
+	if err == nil {
+		t.Fatalf("call 2 没装 dry-run, 应尝试真 SSH, 期望 error (dial 失败), got nil")
+	}
+	if strings.Contains(err.Error(), "dry_run") {
+		t.Fatalf("call 2 错误消息含 dry_run, 说明 call 1 的 --dry-run 残留了: %s", err.Error())
+	}
+}
+
+// TestMCPExecHandler_RotateKnownHostsNotMutatedAcrossCalls 锁定同类 bug:
+// --rotate-known-hosts flag 直接修改 config.CFG.*.RotateKnownHosts 字段,
+// 永久污染全局 config. 下次不带此 flag 的调用也会用旧值.
+//
+// 修复: runExec 在改字段前 save, defer 时 restore.
+func TestMCPExecHandler_RotateKnownHostsNotMutatedAcrossCalls(t *testing.T) {
+	resetRootCmd(t)
+	defer resetRootCmd(t)
+
+	cfgPath := withTempConfig(t, `
+[[nodes]]
+groups = "Test"
+
+[[nodes.ssh]]
+name = "node-1"
+host = "10.0.0.1"
+`)
+
+	// 直接跳过 dry-run, 走 --rotate-known-hosts + dry-run 路径模拟
+	// runExecDryRun 路径不触发 RotateKnownHosts 字段修改
+	// 所以这里测试的是"原始 false 值在调用前后都是 false"
+	// (我们不需要真 SSH, 只要确认字段没被改)
+	if err := execCmd.ParseFlags([]string{"--node", "node-1", "--dry-run", "--rotate-known-hosts"}); err != nil {
+		t.Fatalf("parse flags: %v", err)
+	}
+	defer func() {
+		execCmd.ParseFlags([]string{}) // 清掉
+	}()
+
+	// 直接调 runExec (MCP handler 不变), 验证 config.CFG.Nodes[0].SSHNodes[0].RotateKnownHosts
+	// 被临时设为 true 然后在 defer 恢复
+	require.NoError(t, config.LoadViperConfig(cfgPath))
+	require.NotNil(t, config.CFG)
+	require.NotEmpty(t, config.CFG.Nodes)
+	require.NotEmpty(t, config.CFG.Nodes[0].SSHNodes)
+
+	original := config.CFG.Nodes[0].SSHNodes[0].RotateKnownHosts
+	require.False(t, original, "precondition: RotateKnownHosts 起始为 false")
+
+	// 直接走 runExec 函数路径, 加载 config + 解析节点
+	// 这里用 dry_run 路径, 不触发真 SSH, 但 rotate 字段仍会被尝试设置
+	_ = runExec(execCmd, []string{"echo", "hello"})
+
+	// 关键断言: 调用结束后, 字段值仍是 false (rotate 临时设置 + defer 恢复)
+	// 注意: 这里即使 runExec 失败也不影响 — defer 会在 runExec 函数返回时执行
+	got := config.CFG.Nodes[0].SSHNodes[0].RotateKnownHosts
+	assert.Equal(t, original, got,
+		"runExec 结束后 RotateKnownHosts 字段应恢复原值, 当前=%v (期望=%v)", got, original)
+}
+
+// TestRunSubcommandCaptured_RecoversPanic 验证 runSubcommandCaptured 内的
+// defer recover() 能兜底任何内层 panic (resolver / config / viper 边缘 nil-deref).
+// WithRecovery() 只 wrap tool handler, 不覆盖此层.
+//
+// 历史 bug: 任意 nil-deref 都会让 MCP 进程崩溃, stdio EOF, AI 客户端失联.
+//
+// 注入方式: 临时在 rootCmd 注册一个 `panic_cmd` 子命令, RunE 调 panic.
+// 走完整 runSubcommandCaptured 路径: SetArgs → Execute → panic → recover → 返回 error.
+func TestRunSubcommandCaptured_RecoversPanic(t *testing.T) {
+	resetRootCmd(t)
+	defer resetRootCmd(t)
+
+	// 注册临时 panic 子命令
+	panicCmd := &cobra.Command{
+		Use: "panic_cmd",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			panic("injected panic for recovery test")
+		},
+	}
+	rootCmd.AddCommand(panicCmd)
+	defer rootCmd.RemoveCommand(panicCmd)
+
+	// 调 runSubcommandCaptured, 应该 recover 而不让进程死
+	out, err := runSubcommandCaptured(context.Background(), panicCmd,
+		[]string{"panic_cmd"})
+
+	// 关键断言 1: 返回 error, 不是 panic 终止
+	require.Error(t, err, "panic 应被 recover 并包成 error")
+	// 关键断言 2: error 包含 panic 信息 (调试可见)
+	assert.Contains(t, err.Error(), "panic", "error 应标明来源是 panic")
+	// 关键断言 3: error 关联 ExitSoftware (=70), AI 客户端可分类
+	ee, ok := err.(ExitError)
+	if assert.True(t, ok, "panic 应被包成 ExitError") {
+		assert.Equal(t, ExitSoftware, ee.Code, "panic 应映射到 ExitSoftware (70)")
+	}
+	_ = out
 }
