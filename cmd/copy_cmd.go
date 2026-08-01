@@ -198,11 +198,14 @@ func runCopy(cmd *cobra.Command, args []string) error {
 		return WrapExit(ExitIOErr, err)
 	}
 
-	// 任一失败 → ExitGeneric(=1)
+	// 任一失败 → ExitGeneric(=1). 暴露首条失败原因 (节点名 + error) 帮 AI 客户端快速定位
 	for _, r := range results {
-		if r == nil || r.Error != "" {
+		if r == nil {
+			continue
+		}
+		if r.Error != "" {
 			return NewExitError(ExitGeneric,
-				"copy completed with failures (see -o json for details)")
+				fmt.Sprintf("copy failed: node=%s error=%s", r.Node, r.Error))
 		}
 	}
 	return nil
