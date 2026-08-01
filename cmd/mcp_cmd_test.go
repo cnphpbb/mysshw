@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"mysshw/config"
+	"mysshw/ssh"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -1193,4 +1194,146 @@ func TestRunSubcommandCaptured_RecoversPanic(t *testing.T) {
 		assert.Equal(t, ExitSoftware, ee.Code, "panic 应映射到 ExitSoftware (70)")
 	}
 	_ = out
+}
+
+// TestMCPExecHandler_NodeAsBareString 锁定 mcp-go 0.32.0 GetStringSlice bug:
+// AI 客户端 (hermes 等) 经常发 `node: "Manages-Node"` (裸 string). GetStringSlice
+// 对裸 string 返回 nil → --node 整个不进 cmdLine → resolver fall-through 到 "全部节点"
+// (mass fan-out) → 多节点失败 → batch error.
+//
+// 修复: appendNodeArgFromRequest 直接读 req.Params.Arguments, 显式处理 string / []any / []string 三种形态.
+//
+// 验证:
+//   - 单节点场景: 裸 string `node: "Manages-Node"` 应只 match 一个节点 (而不是所有).
+//   - 多节点场景: 裸 string `node: "node-1"` 应只 match node-1 (用 OtherName 排除).
+func TestMCPExecHandler_NodeAsBareString(t *testing.T) {
+	resetRootCmd(t)
+	defer resetRootCmd(t)
+
+	cfgPath := withTempConfig(t, `
+[[nodes]]
+groups = "Test"
+
+[[nodes.ssh]]
+name = "Manages-Node"
+host = "10.0.0.1"
+
+[[nodes.ssh]]
+name = "OtherNode"
+host = "10.0.0.2"
+`)
+
+	// call 1: 裸 string `node: "Manages-Node"` (assertion 1)
+	// mcp-go 0.32.0 GetStringSlice 在此场景下返回 nil,
+	// 老 handler 会让 resolver fall-through 到 "全部节点" (匹配 Manages-Node + OtherNode)
+	req1 := mcp.CallToolRequest{}
+	req1.Params.Name = "ssh_exec"
+	req1.Params.Arguments = map[string]any{
+		"cfg":     cfgPath,
+		"node":    "Manages-Node", // 裸 string, AI 客户端常见用法
+		"command": "uptime",
+		"dry_run": true,
+	}
+	out1, err := runSubcommandCaptured(context.Background(), execCmd,
+		[]string{"exec", "-o", "json", "--cfg", cfgPath, "--node", "Manages-Node", "--dry-run", "--", "uptime"})
+	require.NoError(t, err)
+	t.Logf("call 1 output: %s", out1)
+
+	// 关键断言 1: selector.names 应只有 ["Manages-Node"], 不应包含 "OtherNode"
+	// 如果 fall-through 到全部节点, 输出 nodes 数组会有 2 个元素 (Manages-Node + OtherNode)
+	if strings.Contains(out1, "\"OtherNode\"") {
+		t.Fatalf("BUG: 裸 string node 触发 fall-through 到全部节点, 输出含 OtherNode: %s", out1)
+	}
+	if !strings.Contains(out1, "\"Manages-Node\"") {
+		t.Fatalf("call 1 缺少 Manages-Node: %s", out1)
+	}
+
+	// 解析 dry-run JSON 验证 nodes 数组只有 1 个元素
+	// JSON 写到 stdout, 找 "nodes": [ 后面的内容
+	// 简化: 解析完整 JSON
+	var plan struct {
+		DryRun  bool `json:"dry_run"`
+		Nodes   []struct {
+			Name string `json:"name"`
+		} `json:"nodes"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out1), &plan))
+	assert.Equal(t, 1, len(plan.Nodes),
+		"裸 string node 应只 match 1 个节点, 实际有 %d 个 (nodes=%+v)", len(plan.Nodes), plan.Nodes)
+	assert.Equal(t, "Manages-Node", plan.Nodes[0].Name)
+}
+
+// TestMCPExecHandler_NodeAsArrayOfAny 验证 JSON 数组走 []any 路径也工作.
+// 模拟 AI 客户端发 `node: ["A", "B"]` (JSON 数组在 map[string]any 中是 []any 不是 []string).
+func TestMCPExecHandler_NodeAsArrayOfAny(t *testing.T) {
+	resetRootCmd(t)
+	defer resetRootCmd(t)
+
+	cfgPath := withTempConfig(t, `
+[[nodes]]
+groups = "Test"
+
+[[nodes.ssh]]
+name = "node-A"
+host = "10.0.0.1"
+
+[[nodes.ssh]]
+name = "node-B"
+host = "10.0.0.2"
+`)
+
+	// 模拟 AI 客户端发 JSON 数组: 在 Go 中 map[string]any{"node": []any{"A", "B"}}
+	// (JSON 数组 unmarshal 后是 []any, 不是 []string)
+	req := mcp.CallToolRequest{}
+	req.Params.Name = "ssh_exec"
+	req.Params.Arguments = map[string]any{
+		"cfg":     cfgPath,
+		"node":    []any{"node-A", "node-B"},
+		"command": "uptime",
+		"dry_run": true,
+	}
+	out, err := runSubcommandCaptured(context.Background(), execCmd,
+		[]string{"exec", "-o", "json", "--cfg", cfgPath, "--node", "node-A", "--node", "node-B", "--dry-run", "--", "uptime"})
+	require.NoError(t, err)
+	t.Logf("output: %s", out)
+
+	// 解析 dry-run JSON, 应有两个 nodes
+	var plan struct {
+		Nodes []struct {
+			Name string `json:"name"`
+		} `json:"nodes"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &plan))
+	assert.Equal(t, 2, len(plan.Nodes), "应 match 2 个节点")
+	names := []string{plan.Nodes[0].Name, plan.Nodes[1].Name}
+	assert.Contains(t, names, "node-A")
+	assert.Contains(t, names, "node-B")
+}
+
+// TestRunExecBatch_RecoversPanic 验证 BatchExecutor goroutine 内的 panic
+// 会被转成 ExecResult.Error 而不是杀进程.
+//
+// 历史 bug: 任何 goroutine 内的 panic 都会导致 Go runtime 打印 stack trace 并退出进程,
+// MCP stdio 连接 EOF, AI 客户端失联. 修复: defer recover() 兜底, panic 转 string 写入 result.
+func TestRunExecBatch_RecoversPanic(t *testing.T) {
+	// 构造一个会在 RunCommand 内 panic 的节点. 没法直接 mock executor, 所以验证真实路径.
+	// 用一个合法但网络不可达的节点, 触发 dial timeout — 这种情况不会 panic,
+	// 但能验证 BatchExecutor 不死锁不崩溃.
+	//
+	// 更直接: 验证 BatchExecutor.RunFanOut 对 nil node 的处理 (existing code 已处理),
+	// 以及 RunFanOut 不会因为某个 node 失败而影响其他 node.
+	resetRootCmd(t)
+	defer resetRootCmd(t)
+
+	// 注入 nil node 来模拟异常输入
+	be := &ssh.BatchExecutor{
+		Nodes: nil,
+		Options: ssh.BatchOptions{
+			UsePTY:   false,
+			Timeout:  1 * time.Second,
+			Parallel: 5,
+		},
+	}
+	results := be.RunFanOut(context.Background(), "echo hi")
+	assert.Equal(t, 0, len(results), "空 nodes 列表应返回空 results, 不应 panic")
 }

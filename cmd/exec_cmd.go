@@ -307,14 +307,18 @@ func runExecBatch(cmd *cobra.Command, nodes []*config.SSHNode, command string, u
 		return WrapExit(ExitIOErr, err)
 	}
 
-	// 任一节点失败 → 1
+	// 任一节点失败 → 1. 暴露首条失败原因 (节点名 + error/exit_code) 帮 AI 客户端快速定位
 	for _, r := range results {
 		if r == nil {
 			continue
 		}
-		if r.Error != "" || r.ExitCode != 0 {
+		if r.Error != "" {
 			return NewExitError(ExitGeneric,
-				"batch completed with failures (see -o json for details)")
+				fmt.Sprintf("batch failed: node=%s error=%s", r.Node, r.Error))
+		}
+		if r.ExitCode != 0 {
+			return NewExitError(ExitGeneric,
+				fmt.Sprintf("batch failed: node=%s exit_code=%d", r.Node, r.ExitCode))
 		}
 	}
 	return nil

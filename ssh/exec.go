@@ -125,6 +125,12 @@ func (e *executorImpl) RunCommand(ctx context.Context, cmd string) (*ExecResult,
 	}
 	dialDone := make(chan dialResult, 1)
 	go func() {
+		// 兜底 panic: ensureDialed() 任何 nil-deref / 第三方库 panic 都不应杀进程
+		defer func() {
+			if r := recover(); r != nil {
+				dialDone <- dialResult{err: fmt.Errorf("panic in dial: %v", r)}
+			}
+		}()
 		c, err := e.ensureDialed()
 		dialDone <- dialResult{client: c, err: err}
 	}()
@@ -258,6 +264,12 @@ func (e *executorImpl) RunStream(ctx context.Context, cmd string, onLine StreamC
 	}
 	dialDone := make(chan dialResult, 1)
 	go func() {
+		// 兜底 panic: ensureDialed() 任何 nil-deref / 第三方库 panic 都不应杀进程
+		defer func() {
+			if r := recover(); r != nil {
+				dialDone <- dialResult{err: fmt.Errorf("panic in dial: %v", r)}
+			}
+		}()
 		c, err := e.ensureDialed()
 		dialDone <- dialResult{client: c, err: err}
 	}()
@@ -430,6 +442,19 @@ func (be *BatchExecutor) RunFanOut(ctx context.Context, cmd string) []*ExecResul
 		go func(idx int, nd *config.SSHNode) {
 			defer wg.Done()
 			defer sem.release()
+			// 兜底 panic: 单节点 panic 不应杀整个 MCP 进程;
+			// 转为 ExecResult.Error 放进 results, 让上层看到的是失败节点而不是 EOF
+			defer func() {
+				if r := recover(); r != nil {
+					results[idx] = &ExecResult{
+						Node:     safeNodeName(nd),
+						Command:  cmd,
+						ExitCode: -1,
+						Error:    fmt.Sprintf("panic in batch node: %v", r),
+						Duration: "0s",
+					}
+				}
+			}()
 
 			runCtx := ctx
 			if be.Options.Timeout > 0 {
@@ -515,6 +540,27 @@ func (be *BatchExecutor) RunStream(ctx context.Context, cmd string, onEvent Stre
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
+			// 兜底 panic: 单节点 panic 不应杀整个 MCP 进程;
+			// 转为 error event + ExecResult.Error, 上层看到的是失败节点而不是 EOF
+			defer func() {
+				if r := recover(); r != nil {
+					if onEvent != nil {
+						onEvent(StreamEvent{
+							Event:     "error",
+							Node:      safeNodeName(nd),
+							Line:      fmt.Sprintf("panic in batch node: %v", r),
+							Timestamp: time.Now().UTC().Format(time.RFC3339),
+						})
+					}
+					results[idx] = &ExecResult{
+						Node:     safeNodeName(nd),
+						Command:  cmd,
+						ExitCode: -1,
+						Error:    fmt.Sprintf("panic in batch node: %v", r),
+						Duration: "0s",
+					}
+				}
+			}()
 
 			runCtx := ctx
 			if be.Options.Timeout > 0 {

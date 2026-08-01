@@ -233,10 +233,9 @@ explicit list rather than relying on defaults.`),
 func sshExecHandler(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	cmdLine := []string{"exec", "-o", "json"}
 
-	// 节点选择
-	for _, n := range req.GetStringSlice("node", nil) {
-		cmdLine = append(cmdLine, "--node", n)
-	}
+	// 节点选择 — 走 appendNodeArgFromRequest 兜底 mcp-go 0.32.0 GetStringSlice 的裸 string bug
+	appendNodeArgFromRequest(req, &cmdLine)
+
 	if v := req.GetString("alias", ""); v != "" {
 		cmdLine = append(cmdLine, "--alias", v)
 	}
@@ -359,10 +358,9 @@ func sshCopyHandler(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallTool
 
 	cmdLine := []string{"copy", "-o", "json"}
 
-	// 节点选择 (跟 exec 一致)
-	for _, n := range req.GetStringSlice("node", nil) {
-		cmdLine = append(cmdLine, "--node", n)
-	}
+	// 节点选择 (跟 exec 一致; 同样绕开 mcp-go 0.32.0 GetStringSlice 的裸 string bug)
+	appendNodeArgFromRequest(req, &cmdLine)
+
 	if v := req.GetString("alias", ""); v != "" {
 		cmdLine = append(cmdLine, "--alias", v)
 	}
@@ -667,6 +665,44 @@ func sshCompletionsHandler(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	return mcp.NewToolResultText(out), nil
+}
+
+// appendNodeArgFromRequest 把 MCP 参数 "node" 展开成 --node <v> 追加到 cmdLine.
+//
+// 必要性: mcp-go 0.32.0 的 GetStringSlice 对裸 string 值 (e.g. `node: "Manages-Node"`)
+// 返回 nil — 只接受 []string / []any. AI 客户端 (hermes 等) 经常发裸 string 单节点,
+// GetStringSlice 吞掉 → --node 不进 cmdLine → resolver fall-through 到 "全部节点"
+// mass fan-out → 多节点 SSH 失败 → batch 完成失败.
+//
+// 修复: 直接读 req.GetArguments() (类型断言 map[string]any), switch 处理三种类型:
+//   - string  (裸 string, AI 客户端发单节点常见)
+//   - []any   (JSON 数组, mcp-go 0.32.0 已支持)
+//   - []string (测试场景直接传 Go []string, mcp-go 0.32.0 也支持)
+// nil / 其它类型不动 (前者表示未提供).
+func appendNodeArgFromRequest(req mcp.CallToolRequest, cmdLine *[]string) {
+	args := req.GetArguments()
+	v, ok := args["node"]
+	if !ok {
+		return
+	}
+	switch x := v.(type) {
+	case string:
+		if x != "" {
+			*cmdLine = append(*cmdLine, "--node", x)
+		}
+	case []any:
+		for _, item := range x {
+			if s, ok := item.(string); ok && s != "" {
+				*cmdLine = append(*cmdLine, "--node", s)
+			}
+		}
+	case []string:
+		for _, s := range x {
+			if s != "" {
+				*cmdLine = append(*cmdLine, "--node", s)
+			}
+		}
+	}
 }
 
 // ============================================================
