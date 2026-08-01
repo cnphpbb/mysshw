@@ -391,6 +391,71 @@ host = "10.0.0.3"
 	require.False(t, result.IsError)
 }
 
+// TestMCPExecHandler_DryRun_ParallelPropagated 验证 dry-run 模式下 parallel
+// 真的传递到 execPlan. 6 节点 + parallel=2/5/1/10 全部应在 plan.parallel 体现.
+func TestMCPExecHandler_DryRun_ParallelPropagated(t *testing.T) {
+	resetRootCmd(t)
+	cfgPath := withTempConfig(t, `
+[[nodes]]
+groups = "Test"
+
+[[nodes.ssh]]
+name = "n1"
+host = "10.0.0.1"
+user = "u"
+
+[[nodes.ssh]]
+name = "n2"
+host = "10.0.0.2"
+user = "u"
+
+[[nodes.ssh]]
+name = "n3"
+host = "10.0.0.3"
+user = "u"
+
+[[nodes.ssh]]
+name = "n4"
+host = "10.0.0.4"
+user = "u"
+
+[[nodes.ssh]]
+name = "n5"
+host = "10.0.0.5"
+user = "u"
+
+[[nodes.ssh]]
+name = "n6"
+host = "10.0.0.6"
+user = "u"
+`)
+
+	for _, parallel := range []int{2, 5, 1, 10} {
+		resetRootCmd(t)
+		req := mcp.CallToolRequest{}
+		req.Params.Name = "ssh_exec"
+		req.Params.Arguments = map[string]any{
+			"cfg":      cfgPath,
+			"node":     []string{"n1", "n2", "n3", "n4", "n5", "n6"},
+			"command":  "uptime",
+			"dry_run":  true,
+			"parallel": parallel,
+		}
+		result, err := sshExecHandler(context.Background(), req)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.False(t, result.IsError, "parallel=%d dry-run failed: %v", parallel, result.Content)
+
+		text := result.Content[0].(mcp.TextContent).Text
+		var plan map[string]any
+		require.NoError(t, json.Unmarshal([]byte(text), &plan))
+		p, ok := plan["parallel"]
+		t.Logf("parallel=%d: plan.parallel = %v (ok=%v) | execParallel global = %d", parallel, p, ok, execParallel)
+		require.True(t, ok, "parallel must be in plan when nodes > 1 (parallel=%d)", parallel)
+		require.Equal(t, float64(parallel), p, "MCP --parallel %d must reach execParallel", parallel)
+	}
+}
+
 func TestMCPExecHandler_AllArgsTranslateCorrectly(t *testing.T) {
 	// 验证所有参数都能正确翻译为 cobra args (除了 dry_run)
 	resetRootCmd(t)
