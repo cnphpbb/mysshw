@@ -37,10 +37,13 @@ func NewClient(ctx context.Context, cfg *config.SyncInfo) (*Client, error) {
 
 	// 检查远程路径是否存在
 	_, err := client.Stat(cfg.RemotePath)
-	if os.IsNotExist(err) {
-		// 如果路径不存在，则创建
-		if err := client.MkdirAll(cfg.RemotePath, 0755); err != nil {
-			return nil, fmt.Errorf("创建远程路径失败: %w", err)
+	if err != nil {
+		// 路径不存在 (404 Not Found) → 自动创建
+		// 其他错误 (如 403) 不创建, 直接由后续 MkdirAll / Upload 触发具体错误
+		if gowebdav.IsErrNotFound(err) {
+			if err := client.MkdirAll(cfg.RemotePath, 0755); err != nil {
+				return nil, fmt.Errorf("创建远程路径失败: %w", err)
+			}
 		}
 	}
 
@@ -84,7 +87,7 @@ func (c *Client) DownloadFile(ctx context.Context, remoteName string, localPath 
 	// 检查文件是否存在
 	_, err := c.client.Stat(remotePath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if gowebdav.IsErrNotFound(err) {
 			return fmt.Errorf("远程文件不存在: %s", remotePath)
 		}
 		return fmt.Errorf("检查远程文件失败: %w", err)
@@ -127,7 +130,7 @@ func (c *Client) DeleteFile(ctx context.Context, remoteName string) error {
 	// 检查文件是否存在
 	_, err := c.client.Stat(remotePath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if gowebdav.IsErrNotFound(err) {
 			return fmt.Errorf("远程文件不存在: %s", remotePath)
 		}
 		return fmt.Errorf("检查远程文件失败: %w", err)
