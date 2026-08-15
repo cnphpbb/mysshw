@@ -1310,4 +1310,4 @@ For AI agents: see [AGENTS.md](AGENTS.md) for the development guide and process 
 
 ## Changelog
 
-See [changelog.v26.07.08.0.md](changelog.v26.07.08.0.md) for the latest release. Process rule: every version tag on `main` must have a corresponding `changelog.${tag}.md` (see [AGENTS.md](AGENTS.md)).
+See [changelog.v26.07.26.0.md](changelog.v26.07.26.0.md) for the latest release. Process rule: every version tag on `main` must have a corresponding `changelog.${tag}.md` (see [AGENTS.md](AGENTS.md)).
