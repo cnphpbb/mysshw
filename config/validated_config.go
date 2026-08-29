@@ -111,11 +111,6 @@ func validateSSHNode(node *SSHNode, group string, index int) error {
 		return fmt.Errorf("SSH node '%s' in group '%s' has invalid port: %d. Must be between 1 and 65535", node.Name, group, node.Port)
 	}
 
-	// // 确保至少有一种认证方式
-	// if node.Password == "" && node.KeyPath == "" {
-	// 	return fmt.Errorf("SSH node '%s' in group '%s' has no authentication method (password or keyPath)", node.Name, group)
-	// }
-
 	// 如果提供了密钥路径，检查是否存在
 	if node.KeyPath != "" {
 		// 处理路径格式，兼容Windows
