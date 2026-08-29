@@ -1,10 +1,8 @@
 package cmd
 
 import (
-	"bufio"
 	"context"
 	"fmt"
-	"io"
 	"mysshw/config"
 	"mysshw/ssh"
 	"os"
@@ -13,7 +11,6 @@ import (
 	"path"
 	"runtime"
 	"syscall"
-	"time"
 )
 
 // RunSSH 执行 SSH 登录
@@ -35,40 +32,27 @@ func RunSSH(ctx context.Context) {
 		os.Exit(0)
 	}()
 
-	// 创建一个读取器用于检测键盘输入
-	reader := bufio.NewReader(os.Stdin)
-
+	// 主循环: huh 选择节点 → SSH 登录 → 退到循环
+	// 退出方式:
+	//   - huh 表单内按 Esc / Ctrl+C: ssh.Choose 返回 nil → 主循环 break
+	//   - SSH 会话结束后返回主菜单
+	// 历史变更: 原代码另起一个 bufio.NewReader(os.Stdin) 与 huh 抢 stdin,
+	//  	且 select 中 time.After + default 是死代码 (default 总是立即触发).
+	//  	那套机制会造成 huh 读到脏数据, 已删除. huh 自带 Esc 退出足够。
 	for {
-		// huh 中 Ctrl+d & /{string} 被占用了
 		fmt.Print(GlobalScreenClearingStr)
-		// 检查操作系统类型
 		fmt.Println(fmtExitingDesc())
 		node := ssh.Choose(config.CFG)
-		client := ssh.NewClient(node)
-		// 检查是否按下q键
-		select {
-		case <-time.After(100 * time.Millisecond):
-			// 没有按键输入，继续执行
-		default:
-			char, _, err := reader.ReadRune()
-			if err != nil {
-				// 检测到Ctrl+D (EOF)
-				if err == io.EOF {
-					fmt.Println(RunSSHCtrlDResultStr)
-					os.Exit(0)
-				}
-				continue
-			}
-			if char == 'q' || char == 'Q' {
-				fmt.Printf(RunSSHInputQResultStr, string(char))
-				os.Exit(0)
-			}
+		if node == nil {
+			// huh 表单被用户取消 (Esc / Ctrl+C)
+			fmt.Println(RunSSHCtrlCResultStr)
+			return
 		}
+		client := ssh.NewClient(node)
 
 		// 传递会话结束回调函数，在SSH会话结束后返回主界面
 		client.Login(func() {
 			fmt.Println(RunSSHClientLoginSessionEndCallbackStr)
-			// 清屏
 			fmt.Print(GlobalScreenClearingStr)
 		})
 		// 会话结束后继续循环，重新显示菜单
