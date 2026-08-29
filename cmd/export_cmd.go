@@ -48,6 +48,14 @@ type portableNode struct {
 
 const importPasswordPlaceholder = "${IMPORTED}"
 
+// exportTOMLWrapper 包装 portableNode 数组, 让 GuanceCloud/toml 能序列化
+//
+// GuanceCloud/toml 不支持顶层数组 (只能 map / struct), 所以这里用 wrapper。
+// 序列化后输出格式: nodes = [ {...}, {...} ], 符合 mysshw import --format toml 期望
+type exportTOMLWrapper struct {
+	Nodes []portableNode `toml:"nodes"`
+}
+
 var exportCmd = &cobra.Command{
 	Use:   "export [--group G] [--name N [--name M]] [--format json|toml] [--output FILE]",
 	Short: "Export SSH nodes to a portable file (password fields redacted)",
@@ -158,9 +166,11 @@ func runExport(cmd *cobra.Command, args []string) error {
 		}
 	case "toml":
 		// 用 GuanceCloud/toml 的 NewEncoder 序列化
+		// 注: GuanceCloud/toml 不支持顶层数组, 用 wrapper struct 包裹。
+		// 输出格式: nodes = [ {...}, {...} ] (符合 mysshw import --format toml 期望)
 		var buf bytes.Buffer
 		enc := toml.NewEncoder(&buf)
-		if err := enc.Encode(nodes); err != nil {
+		if err := enc.Encode(exportTOMLWrapper{Nodes: nodes}); err != nil {
 			return WrapExit(ExitIOErr, fmt.Errorf("toml encode: %w", err))
 		}
 		header := fmt.Sprintf("# mysshw export — %d node(s)\n", len(nodes))

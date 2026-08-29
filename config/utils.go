@@ -46,10 +46,9 @@ func GetCfgPath(cfgPath string) (string, error) {
 	return getConfigPath(cfgPath)
 }
 
-// getConfigPath 获取配置文件路径
-// 兼容Windows路径格式
+// getConfigPath 展开配置文件路径 (~ / $HOME / 相对路径 → 绝对路径)
+// 纯函数: 不修改全局状态, 调用方需自行更新 CFG_PATH (如需)
 func getConfigPath(cfgPath string) (string, error) {
-	var _cfgPath string
 	u, err := user.Current()
 	if err != nil {
 		return "", err
@@ -61,20 +60,21 @@ func getConfigPath(cfgPath string) (string, error) {
 	_cfgDir, _cfgFile := path.Split(cfgPath)
 
 	// 处理家目录路径
-	if _cfgDir == "~/" {
+	var _cfgPath string
+	switch {
+	case _cfgDir == "~/":
 		_cfgPath = u.HomeDir
-	} else if strings.HasPrefix(_cfgDir, "/") {
-		// 绝对路径
+	case strings.HasPrefix(_cfgDir, "/"):
+		// 绝对路径 (Unix)
 		_cfgPath = _cfgDir
-	} else if strings.Contains(_cfgDir, ":/") {
-		// Windows绝对路径 (如 D:/mydata/)
+	case strings.Contains(_cfgDir, ":/"):
+		// Windows 绝对路径 (如 D:/mydata/)
 		_cfgPath = _cfgDir
-	} else {
+	default:
 		// 相对路径
 		currentDir, _ := os.Getwd()
 		_cfgPath = path.Join(currentDir, _cfgDir)
 	}
 
-	CFG_PATH = path.Join(_cfgPath, _cfgFile)
-	return CFG_PATH, err
+	return path.Join(_cfgPath, _cfgFile), nil
 }

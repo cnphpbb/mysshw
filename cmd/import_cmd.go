@@ -344,7 +344,9 @@ func applyImportNode(cfg *config.Configs, pn portableNode) (importResult, string
 	if group == "" {
 		group = "Imported"
 	}
-	_ = configWithNodeAdded(cfg, group, node)
+	// configWithNodeAdded 返回 *新* Configs (不改原 cfg), 必须赋值回 cfg
+	// 历史上 _ = ... 是 bug: 节点不会进入 newCfg, 写入文件时丢失
+	*cfg = *configWithNodeAdded(cfg, group, node)
 	if existingGroup != "" && importOverwrite {
 		return importOverwritten, ""
 	}

@@ -674,9 +674,8 @@ func parseKnownHosts(path string) ([]knownhostsEntry, error) {
 		}
 		if keyUnparseable {
 			// 标记损坏行但不加额外 host name token
-			if fp == "(decode error)" || fp == "(parse error)" {
-				fp = fp
-			}
+			// (fp 已在上面赋值为 "(decode error)" / "(parse error)", 无需再赋值)
+			_ = fp
 		}
 
 		entries = append(entries, knownhostsEntry{

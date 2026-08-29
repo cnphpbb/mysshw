@@ -5,7 +5,6 @@ import (
 	"io"
 	"net"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -274,39 +273,24 @@ func printPingTable(w io.Writer, results []pingResult) error {
 	if w == nil {
 		w = io.Discard
 	}
-	widths := []int{len("NODE"), len("HOST"), len("PORT"), len("STATUS"), len("LATENCY_MS")}
-	for _, r := range results {
-		if l := len(r.Node); l > widths[0] {
-			widths[0] = l
-		}
-		if l := len(r.Host); l > widths[1] {
-			widths[1] = l
-		}
-		if l := len(fmt.Sprintf("%d", r.Port)); l > widths[2] {
-			widths[2] = l
-		}
-		status := "OK"
-		if !r.Reachable {
-			status = "FAIL"
-		}
-		if l := len(status); l > widths[3] {
-			widths[3] = l
-		}
+	if len(results) == 0 {
+		fmt.Fprintln(w, "(no ping results)")
+		return nil
 	}
 
-	rowFmt := fmt.Sprintf("%%-%ds  %%%ds  %%%ds  %%%ds  %%s\n",
-		widths[0], widths[1], widths[2], widths[3])
-
-	fmt.Fprintf(w, rowFmt, "NODE", "HOST", "PORT", "STATUS", "LATENCY_MS")
-	fmt.Fprintf(w, "%s\n", strings.Repeat("-", sumInts(widths)+8))
+	headers := []string{"NODE", "HOST", "PORT", "STATUS", "LATENCY_MS"}
+	rows := make([][]string, 0, len(results))
 	for _, r := range results {
 		status := "OK"
 		if !r.Reachable {
 			status = "FAIL"
 		}
-		fmt.Fprintf(w, rowFmt, r.Node, r.Host,
-			fmt.Sprintf("%d", r.Port), status,
-			fmt.Sprintf("%.2fms", r.LatencyMs))
+		rows = append(rows, []string{
+			r.Node, r.Host,
+			fmt.Sprintf("%d", r.Port),
+			status,
+			fmt.Sprintf("%.2fms", r.LatencyMs),
+		})
 	}
-	return nil
+	return PrintTable(w, headers, rows)
 }

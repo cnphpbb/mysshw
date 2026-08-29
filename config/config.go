@@ -29,11 +29,11 @@ var (
 
 // LoadConfigBytes 加载配置文件内容为字节切片
 func LoadConfigBytes(cfgPath string) ([]byte, error) {
-	var err error
-	CFG_PATH, err = getConfigPath(cfgPath)
+	expanded, err := getConfigPath(cfgPath)
 	if err != nil {
 		return nil, err
 	}
+	CFG_PATH = expanded
 	// 使用 os.ReadFile 替代已弃用的 ioutil.ReadFile
 	cfgBytes, err1 := os.ReadFile(CFG_PATH)
 	if err1 == nil {
@@ -84,7 +84,11 @@ func LoadViperConfig(cfgPath string) error {
 	var _cfgDir string
 	var _cfgFile string
 
-	_cfgPath, _ := getConfigPath(cfgPath)
+	_cfgPath, pathErr := getConfigPath(cfgPath)
+	if pathErr != nil {
+		return fmt.Errorf("mysshw:: resolve config path: %w", pathErr)
+	}
+	CFG_PATH = _cfgPath
 	_cfgDir, _cfgFile, _ = isCfgPath(_cfgPath)
 
 	// 兼容Windows路径格式，将反斜杠替换为正斜杠
@@ -122,15 +126,9 @@ func LoadViperConfig(cfgPath string) error {
 		if err := ValidateConfigFile(_cfgPath); err != nil {
 			// 如果配置文件不存在，则创建一个默认的配置文件
 			//
-			// 不使用viper的WriteConfigAs方法，而是使用os.WriteFile,是因为
-			// WriteConfigAs方法会自动解析配置文件不使用注释，而希望保持原貌
-			// 所以使用os.WriteFile方法来写入配置文件
-			//
-			// Viper 社区已讨论 v2 改进（如可选注释保留），可关注进展, 目前 viper v1 不支持
-			//
-			// viper.ReadConfig(strings.NewReader(DefaultTomlConfig))
-			// viper.Set("cfg_dir", _cfgPath)
-			//viper.WriteConfigAs(_cfgPath)
+			// 不使用 viper 的 WriteConfigAs 方法，而是使用 os.WriteFile,
+			// 因为 WriteConfigAs 会自动重新解析配置丢失注释。
+			// Viper v1 不支持保留注释 (v2 在讨论), 这里手动写文件保持原貌。
 
 			if writeErr := writeConfigFile(_cfgPath); writeErr != nil {
 				return fmt.Errorf("mysshw:: Write Config Error:: %s", err)
