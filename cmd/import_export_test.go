@@ -25,7 +25,7 @@ func writeExportFixture(t *testing.T) string {
 func runExportCmd(t *testing.T, cfgPath string, args ...string) (string, int) {
 	t.Helper()
 	cmdArgs := append([]string{"-c", cfgPath, "export"}, args...)
-	return runConfigCmd(t, "", cmdArgs...)
+	return runMySshwCmd(t, cmdArgs...)
 }
 
 // runExportCmdRaw 返回原始 stdout (不拼接 stderr)
@@ -149,7 +149,7 @@ func writeTempJSONNodes(t *testing.T, nodes []portableNode) string {
 func runImportCmd(t *testing.T, cfgPath string, filePath string, args ...string) (string, int) {
 	t.Helper()
 	cmdArgs := append([]string{"-c", cfgPath, "import", filePath}, args...)
-	return runConfigCmd(t, "", cmdArgs...)
+	return runMySshwCmd(t, cmdArgs...)
 }
 
 func TestImport_DryRun(t *testing.T) {
@@ -350,14 +350,14 @@ func TestExportImport_Lifecycle(t *testing.T) {
 	require.NoError(t, os.WriteFile(cfgPath, []byte(""), 0600))
 
 	// 1. 先用 config add 添加一个节点
-	addArgs := []string{"-c", cfgPath, "config", "add",
+	addArgs := []string{"add",
 		"--group", "Lifecycle",
 		"--name", "lifecycle-1",
 		"--host", "10.0.0.1",
 		"--user", "test",
 		"--confirm",
 	}
-	out, exitCode := runConfigCmd(t, "", addArgs...)
+	out, exitCode := runConfigCmd(t, cfgPath, addArgs...)
 	require.Equal(t, 0, exitCode, "add failed: %s", out)
 
 	// 2. export 为 JSON
@@ -366,8 +366,8 @@ func TestExportImport_Lifecycle(t *testing.T) {
 	require.Equal(t, 0, exitCode, "export failed: %s", out)
 
 	// 3. 删除原节点
-	removeArgs := []string{"-c", cfgPath, "config", "remove", "lifecycle-1", "--confirm"}
-	out, exitCode = runConfigCmd(t, "", removeArgs...)
+	removeArgs := []string{"remove", "lifecycle-1", "--confirm"}
+	out, exitCode = runConfigCmd(t, cfgPath, removeArgs...)
 	require.Equal(t, 0, exitCode, "remove failed: %s", out)
 
 	// 4. import 回来
@@ -421,6 +421,6 @@ func TestImport_NoArgs(t *testing.T) {
 	// import 需要 1 个参数
 	cfgPath := writeExportFixture(t)
 	cmdArgs := []string{"-c", cfgPath, "import"}
-	_, exitCode := runConfigCmd(t, "", cmdArgs...)
+	_, exitCode := runMySshwCmd(t, cmdArgs...)
 	assert.NotZero(t, exitCode)
 }

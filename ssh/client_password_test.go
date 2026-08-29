@@ -2,6 +2,7 @@ package ssh
 
 import (
 	"os"
+	"sync"
 	"testing"
 
 	"mysshw/config"
@@ -208,7 +209,8 @@ func TestZeroBytes_NoOpOnEmptyString(t *testing.T) {
 
 // TestPlainPwdWarnOnce 验证 plainPwdWarnOnce 是 sync.Once
 func TestPlainPwdWarnOnce(t *testing.T) {
-	// 类型断言: plainPwdWarnOnce 必须是 sync.Once
-	// 编译期已保证, 但显式测试以防误改
-	assert.NotNil(t, plainPwdWarnOnce)
+	// 编译期类型检查: plainPwdWarnOnce 必须是 sync.Once
+	// 不能用 assert.NotNil (会拷贝 sync.Once, 触发 vet noCopy 警告)
+	var _ *sync.Once = &plainPwdWarnOnce
+	assert.NotNil(t, &plainPwdWarnOnce, "plainPwdWarnOnce address must be non-nil (it's a global)")
 }

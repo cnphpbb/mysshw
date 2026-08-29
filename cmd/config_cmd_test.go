@@ -89,6 +89,16 @@ func writeFixtureConfig(t *testing.T) string {
 func runConfigCmd(t *testing.T, cfgPath string, subargs ...string) (string, int) {
 	t.Helper()
 	args := append([]string{"-c", cfgPath, "config"}, subargs...)
+	return runMySshwCmd(t, args...)
+}
+
+// runMySshwCmd 跑 mysshw <args>, 捕获输出 + 退出码
+//
+// 用于测试顶层子命令 (export / import / list / exec 等不隶属 config 的命令)。
+// 历史上 import_export_test.go 错误地把 export/import 走 runConfigCmd
+// 导致被多加了 "config" 子命令前缀, 详见 import_export_test.go 顶部说明。
+func runMySshwCmd(t *testing.T, args ...string) (string, int) {
+	t.Helper()
 	cmd := exec.Command(testBinary, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
