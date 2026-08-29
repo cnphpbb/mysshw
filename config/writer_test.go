@@ -11,10 +11,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// ==================== serializeConfigs ====================
+// ==================== SerializeConfigs ====================
 
 func TestSerializeConfigs_Empty(t *testing.T) {
-	data, err := serializeConfigs(&Configs{})
+	data, err := SerializeConfigs(&Configs{})
 	require.NoError(t, err)
 	assert.NotEmpty(t, data)
 	// 至少应包含 cfg_dir (即使为空也有 "")
@@ -30,7 +30,7 @@ func TestSerializeConfigs_Nodes(t *testing.T) {
 			}},
 		},
 	}
-	data, err := serializeConfigs(c)
+	data, err := SerializeConfigs(c)
 	require.NoError(t, err)
 	out := string(data)
 	assert.Contains(t, out, "[[nodes]]")
@@ -50,7 +50,7 @@ func TestSerializeConfigs_PreservesEnvReferences(t *testing.T) {
 			}},
 		},
 	}
-	data, _ := serializeConfigs(c)
+	data, _ := SerializeConfigs(c)
 	out := string(data)
 	assert.Contains(t, out, "${MYSSHW_PWD_xxx}")
 }
@@ -64,14 +64,14 @@ func TestSerializeConfigs_PreservesBcryptHash(t *testing.T) {
 			}},
 		},
 	}
-	data, _ := serializeConfigs(c)
+	data, _ := SerializeConfigs(c)
 	out := string(data)
 	// bcrypt 哈希应以单引号字符串输出 (不转义 $ 字符)
 	assert.Contains(t, out, "'"+hash+"'")
 }
 
 func TestSerializeConfigs_Nil(t *testing.T) {
-	_, err := serializeConfigs(nil)
+	_, err := SerializeConfigs(nil)
 	assert.Error(t, err)
 }
 

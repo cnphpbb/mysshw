@@ -25,7 +25,7 @@ import (
 // 不依赖 viper (因为它丢注释), 用 pelletier 直接序列化结构体, 输出格式稳定
 // ============================================================
 
-// serializeConfigs 把 *Configs 序列化为 TOML 字节
+// SerializeConfigs 把 *Configs 序列化为 TOML 字节
 //
 // 输出格式:
 //   - 顶层字段按 struct 顺序输出
@@ -36,7 +36,7 @@ import (
 // 注: pelletier/go-toml/v2 的 Marshal 不带注释. 这是预期行为
 //
 //	(用户用 crud 修改的字段都靠 schema, 不需要保留原注释)
-func serializeConfigs(c *Configs) ([]byte, error) {
+func SerializeConfigs(c *Configs) ([]byte, error) {
 	if c == nil {
 		return nil, errors.New("mysshw:: nil config")
 	}
@@ -56,7 +56,7 @@ func validateAndSerialize(c *Configs) ([]byte, error) {
 		return nil, errors.New("mysshw:: nil config")
 	}
 	// 1. 先序列化 (验证 schema 合法性, 例如 enum 错误会在 Marshal 阶段抛出)
-	data, err := serializeConfigs(c)
+	data, err := SerializeConfigs(c)
 	if err != nil {
 		return nil, err
 	}

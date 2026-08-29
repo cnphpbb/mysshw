@@ -191,48 +191,23 @@ func runConfigList(cmd *cobra.Command, args []string) error {
 }
 
 func printConfigList(cmd *cobra.Command, details []configNodeDetail) error {
+	out := cmd.OutOrStdout()
 	if len(details) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "(no nodes match filters)")
+		if out != nil {
+			fmt.Fprintln(out, "(no nodes match filters)")
+		}
 		return nil
 	}
 
-	type row struct {
-		group, name, host, port, user, alias string
+	headers := []string{"GROUP", "NAME", "HOST", "PORT", "USER", "ALIAS"}
+	rows := make([][]string, 0, len(details))
+	for _, d := range details {
+		rows = append(rows, []string{
+			d.Group, d.Name, d.Host,
+			fmt.Sprintf("%d", d.Port), d.User, d.Alias,
+		})
 	}
-	rows := make([]row, len(details))
-	for i, d := range details {
-		rows[i] = row{d.Group, d.Name, d.Host, fmt.Sprintf("%d", d.Port), d.User, d.Alias}
-	}
-
-	widths := []int{len("GROUP"), len("NAME"), len("HOST"), len("PORT"), len("USER"), len("ALIAS")}
-	for _, r := range rows {
-		if l := len(r.group); l > widths[0] {
-			widths[0] = l
-		}
-		if l := len(r.name); l > widths[1] {
-			widths[1] = l
-		}
-		if l := len(r.host); l > widths[2] {
-			widths[2] = l
-		}
-		if l := len(r.user); l > widths[4] {
-			widths[4] = l
-		}
-		if l := len(r.alias); l > widths[5] {
-			widths[5] = l
-		}
-	}
-
-	rowFmt := fmt.Sprintf("%%-%ds  %%%ds  %%%ds  %%%ds  %%%ds  %%%ds\n",
-		widths[0], widths[1], widths[2], widths[3], widths[4], widths[5])
-
-	out := cmd.OutOrStdout()
-	fmt.Fprintf(out, rowFmt, "GROUP", "NAME", "HOST", "PORT", "USER", "ALIAS")
-	fmt.Fprintf(out, "%s\n", strings.Repeat("-", sumInts(widths)+10))
-	for _, r := range rows {
-		fmt.Fprintf(out, rowFmt, r.group, r.name, r.host, r.port, r.user, r.alias)
-	}
-	return nil
+	return PrintTable(out, headers, rows)
 }
 
 // ============================================================
@@ -297,31 +272,10 @@ func runConfigGet(cmd *cobra.Command, args []string) error {
 }
 
 // classifyAuthForCLI 返回密码字段的认证类别 (用于 get/show 输出)
-// 注: 与 cmd/list_cmd.go::classifyAuth 类似, 但独立实现 (避免双向 import)
+//
+// 已迁移到 config.ClassifyAuth, 保持薄包装
 func classifyAuthForCLI(n *config.SSHNode) string {
-	pwd := n.Password
-	hasKey := n.KeyPath != ""
-	if pwd == "" {
-		if hasKey {
-			return "key"
-		}
-		return "empty"
-	}
-	if config.IsBcryptHash(pwd) {
-		// 检查顶层 algorithm 是否为 bcrypt-pepper
-		if config.CFG != nil {
-			if algo, err := config.ResolveEncryptionAlgorithm(config.CFG.EncryptionAlgorithm); err == nil {
-				if config.IsPepperRequired(algo) {
-					return "bcrypt-pepper"
-				}
-			}
-		}
-		return "bcrypt"
-	}
-	if strings.HasPrefix(strings.TrimSpace(pwd), "${") && strings.HasSuffix(strings.TrimSpace(pwd), "}") {
-		return "env"
-	}
-	return "password"
+	return config.ClassifyAuth(n, config.CFG)
 }
 
 // ============================================================

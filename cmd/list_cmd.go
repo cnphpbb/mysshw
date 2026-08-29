@@ -67,62 +67,9 @@ type nodeSummary struct {
 
 // classifyAuth 根据节点字段归类认证方式（仅展示用，不输出密码本身）
 //
-//	空 password + 有 KeyPath       → "key"
-//	空 password                    → "empty"
-//	bcrypt 哈希                     → "bcrypt"
-//	bcrypt-pepper 哈希 (Phase B)    → "bcrypt-pepper" (需顶层 secret_key)
-//	${ENV} 引用                     → "env"
-//	有 KeyPath 但 password 也有     → "key+password"（少见）
-//	其他明文                        → "password"
-//
-// Phase B: 如果 cfg.EncryptionAlgorithm == "bcrypt-pepper", 则所有 bcrypt 节点
-//
-//	都显示为 "bcrypt-pepper" (因为所有节点都需 pepper 验证)
+// 已迁移到 config.ClassifyAuth, 此处保留薄包装以避免改动调用面
 func classifyAuth(n *config.SSHNode) string {
-	if n == nil {
-		return "unknown"
-	}
-	pwd := n.Password
-	hasKey := n.KeyPath != ""
-
-	if pwd == "" {
-		if hasKey {
-			return "key"
-		}
-		return "empty"
-	}
-
-	// 先检测特定格式
-	auth := ""
-	if config.IsBcryptHash(pwd) {
-		// Phase B: bcrypt-pepper 模式标记
-		// 如果顶层 algorithm 显式指定 bcrypt-pepper, 所有 bcrypt 节点标记为 pepper
-		// (因为运行时都会用 pepper 验证, 区别仅在 server 侧 secret_key 是否存在)
-		if config.CFG != nil {
-			if algo, _ := config.ResolveEncryptionAlgorithm(config.CFG.EncryptionAlgorithm); config.IsPepperRequired(algo) {
-				auth = "bcrypt-pepper"
-			} else {
-				auth = "bcrypt"
-			}
-		} else {
-			auth = "bcrypt"
-		}
-	} else if config.IsArgon2idHash(pwd) {
-		// Phase B+ 占位识别: Argon2id 格式哈希
-		auth = "argon2id"
-	} else if config.IsPbkdf2Sha256Hash(pwd) {
-		// Phase B+ 占位识别: PBKDF2-SHA256 格式哈希
-		auth = "pbkdf2-sha256"
-	} else if strings.HasPrefix(strings.TrimSpace(pwd), "${") {
-		auth = "env"
-	} else {
-		auth = "password"
-	}
-
-	if hasKey {
-		return auth + "+key"
-	}
-	return auth
+	return config.ClassifyAuth(n, config.CFG)
 }
 
 func runList(cmd *cobra.Command, args []string) error {
@@ -204,55 +151,21 @@ func sortSummaries(s []nodeSummary) {
 
 func printNodeTable(w io.Writer, summaries []nodeSummary) error {
 	// 不兜底到 os.Stdout: MCP stdio 模式下 os.Stdout = JSON-RPC 通道,
-	// 写入会污染协议流导致客户端断开。nil writer 直接 no-op。
-	if w == nil {
-		return nil
-	}
+	// 写入会污染协议流导致客户端断开。nil writer 直接 no-op (PrintTable 内部处理)。
 	if len(summaries) == 0 {
-		fmt.Fprintln(w, "(no nodes match filters)")
+		if w != nil {
+			fmt.Fprintln(w, "(no nodes match filters)")
+		}
 		return nil
 	}
 
-	// 计算列宽
-	widths := []int{len("GROUP"), len("NAME"), len("ALIAS"), len("USER"), len("HOST"), len("PORT"), len("AUTH")}
+	headers := []string{"GROUP", "NAME", "ALIAS", "USER", "HOST", "PORT", "AUTH"}
+	rows := make([][]string, 0, len(summaries))
 	for _, s := range summaries {
-		if l := len(s.Group); l > widths[0] {
-			widths[0] = l
-		}
-		if l := len(s.Name); l > widths[1] {
-			widths[1] = l
-		}
-		if l := len(s.Alias); l > widths[2] {
-			widths[2] = l
-		}
-		if l := len(s.User); l > widths[3] {
-			widths[3] = l
-		}
-		if l := len(s.Host); l > widths[4] {
-			widths[4] = l
-		}
-		if l := len(fmt.Sprintf("%d", s.Port)); l > widths[5] {
-			widths[5] = l
-		}
-		if l := len(s.Auth); l > widths[6] {
-			widths[6] = l
-		}
+		rows = append(rows, []string{
+			s.Group, s.Name, s.Alias, s.User, s.Host,
+			fmt.Sprintf("%d", s.Port), s.Auth,
+		})
 	}
-	rowFmt := fmt.Sprintf("%%-%ds  %%%ds  %%%ds  %%%ds  %%%ds  %%%ds  %%s\n",
-		widths[0], widths[1], widths[2], widths[3], widths[4], widths[5])
-
-	fmt.Fprintf(w, rowFmt, "GROUP", "NAME", "ALIAS", "USER", "HOST", "PORT", "AUTH")
-	fmt.Fprintf(w, "%s\n", strings.Repeat("-", sumInts(widths)+12))
-	for _, s := range summaries {
-		fmt.Fprintf(w, rowFmt, s.Group, s.Name, s.Alias, s.User, s.Host, fmt.Sprintf("%d", s.Port), s.Auth)
-	}
-	return nil
-}
-
-func sumInts(xs []int) int {
-	t := 0
-	for _, x := range xs {
-		t += x
-	}
-	return t
+	return PrintTable(w, headers, rows)
 }
