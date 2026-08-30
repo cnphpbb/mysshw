@@ -25,10 +25,11 @@ func IsEnvTrue(name string) bool {
 //   - 其他文本原样保留
 //
 // 示例:
-//   ResolveEnvRef("${MYSSHW_PWD}")                → os.Getenv("MYSSHW_PWD")
-//   ResolveEnvRef("${MYSSHW_PWD:-fallback}")     → env 值或 "fallback"
-//   ResolveEnvRef("prefix-${A}-${B}")            → 拼接替换结果
-//   ResolveEnvRef("plaintext")                    → "plaintext"
+//
+//	ResolveEnvRef("${MYSSHW_PWD}")                → os.Getenv("MYSSHW_PWD")
+//	ResolveEnvRef("${MYSSHW_PWD:-fallback}")     → env 值或 "fallback"
+//	ResolveEnvRef("prefix-${A}-${B}")            → 拼接替换结果
+//	ResolveEnvRef("plaintext")                    → "plaintext"
 //
 // 导出供 cmd 等其他包复用
 func ResolveEnvRef(s string) string {

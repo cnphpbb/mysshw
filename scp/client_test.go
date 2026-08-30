@@ -389,4 +389,3 @@ func testSigner(t *testing.T) ssh.Signer {
 
 // 防止 binary 导入被误删 (无依赖, 仅占位以避免删 import 时 lint 失败)
 var _ = binary.BigEndian
-
