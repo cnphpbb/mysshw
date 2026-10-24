@@ -499,7 +499,7 @@ feat: 新增 S3 配置文件同步功能
 **日常开发流程**：
 ```bash
 git checkout gh-dev
-git pull --rebase origin gh-dev
+git pull --no-rebase origin gh-dev     # 不要用 --rebase, 原因见下方说明
 # ... 修改代码, 按 §9.7 规范提交 ...
 git push origin gh-dev
 ```
@@ -525,6 +525,8 @@ git push origin gh-dev
 - ❌ 未合入 `gh-dev` 就直接推送 `main`
 
 **注意**：`main` 与 `gh-dev` 存在双向合并时可能产生冲突，常见冲突点是 `ssh/client_test.go` 与 `webdav/client*.go`（两边都有改动）。解决冲突后必须跑 `go build ./... && go test ./...` 验证。
+
+**不要用 `git pull --rebase`**：`gh-dev` 的历史里包含 merge commit（如 `Merge branch 'main' into gh-dev`），`--rebase` 会尝试把 merge 历史线性化并重放已合并过的提交，从而产生**虚假冲突**（实测：明明已是最新，却报 `ssh/client_test.go` 冲突并进入 detached HEAD）。一律用 `git pull --no-rebase`（或直接 `git pull`）。
 
 #### Tag 与 Changelog 流程
 
