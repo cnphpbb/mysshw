@@ -35,17 +35,43 @@ jobs:
     name: Build and publish
     runs-on: ubuntu-latest
     env:
-      # TAG 解析:
-      #   workflow_dispatch → 手动输入的 tag
-      #   push tag         → tag 名
-      #   push branch      → release/<tag> 去掉前缀
-      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || (github.ref_type == 'tag' && github.ref_name || replace(github.ref_name, 'release/', '')) }}
+      # 触发来源 (供后续步骤解析 tag):
+      #   workflow_dispatch → 用 inputs.tag
+      #   push tag         → 用 github.ref_name
+      #   push branch      → 用 github.ref_name 去掉 'release/' 前缀
+      EVENT_NAME: ${{ github.event_name }}
+      INPUT_TAG: ${{ inputs.tag }}
+      REF_NAME: ${{ github.ref_name }}
 
     steps:
+      - name: Resolve target tag
+        id: resolve
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            workflow_dispatch) TAG="$INPUT_TAG" ;;
+            push)
+              case "$GITHUB_REF" in
+                refs/tags/*)  TAG="${GITHUB_REF#refs/tags/}" ;;
+                refs/heads/release/*) TAG="${GITHUB_REF#refs/heads/release/}" ;;
+                *) echo "::error::unsupported ref: $GITHUB_REF"; exit 1 ;;
+              esac
+              ;;
+            *) echo "::error::unsupported event: $EVENT_NAME"; exit 1 ;;
+          esac
+          if [ -z "$TAG" ]; then
+            echo "::error::could not resolve target tag"
+            exit 1
+          fi
+          echo "Resolved TAG=$TAG"
+          # 写入 GITHUB_ENV → 后续步骤可直接用 $TAG (env 变量)
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
       - name: Checkout tagged source (用于编译)
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.TAG }}
+          ref: ${{ steps.resolve.outputs.tag }}
           path: src
           fetch-depth: 0
 
@@ -71,17 +97,17 @@ jobs:
         run: |
           set -euo pipefail
           cd src
-          SHA=$(git rev-parse "$TAG^{commit}")
+          git fetch --tags --force origin
+          SHA=$(git rev-list -n 1 "$TAG")
           echo "TAG_SHA=$SHA" >> "$GITHUB_ENV"
           echo "Building $TAG @ $SHA"
 
       - name: Build all platform binaries
         if: env.SKIP_RELEASE != '1'
         working-directory: src
-        env:
-          MYSISHW_VERSION: ${{ env.TAG }}
         run: |
           set -euo pipefail
+          export MYSISHW_VERSION="$TAG"
           # 固定本地分支名, 让 -ldflags 的 Build 字段格式与本地构建一致 (main-<hash>)
           git checkout -B main "$TAG_SHA"
           go install github.com/magefile/mage@v1.17.2
