@@ -2,7 +2,7 @@
 
 **开源免费的 SSH 命令行客户端工具**。Go 1.23+ 编写，支持 Linux、macOS、Windows。
 
-📖 [English Documentation](readme.md) · 📋 [更新日志](changelog.v26.07.12.0.md) · 📦 [Releases](https://github.com/cnphpbb/mysshw/releases)
+📖 [English Documentation](readme.md) · 📋 [更新日志](changelog.v26.10.24.md) · 📦 [Releases](https://github.com/cnphpbb/mysshw/releases)
 
 > 🐳 **Windows 用户** — 官方 Docker 镜像（`mysshw:latest`）是 Windows 下运行 mysshw 的**推荐方式**。原生 Windows 有多项终端语义限制，详见 [Windows 原生](#windows-原生不推荐)。
 
@@ -1353,4 +1353,4 @@ mage test          # 含覆盖率报告
 
 ## 更新日志
 
-最新发布见 [changelog.v26.07.26.0.md](changelog.v26.07.26.0.md)。流程规则：每次在 `main` 分支打版本 tag 前必须生成 `changelog.${tag}.md`（详见 [AGENTS.md](AGENTS.md)）。
+最新发布见 [changelog.v26.10.24.md](changelog.v26.10.24.md)。流程规则：每次在 `main` 分支打版本 tag 前必须生成 `changelog.${tag}.md`（详见 [AGENTS.md](AGENTS.md)）。

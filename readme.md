@@ -2,7 +2,7 @@
 
 **A free and open source SSH command line client.** Written in Go 1.23+, runs on Linux, macOS, and Windows.
 
-📖 [中文文档](readme.zh.md) · 📋 [Changelog](changelog.v26.07.12.0.md) · 📦 [Releases](https://github.com/cnphpbb/mysshw/releases)
+📖 [中文文档](readme.zh.md) · 📋 [Changelog](changelog.v26.10.24.md) · 📦 [Releases](https://github.com/cnphpbb/mysshw/releases)
 
 > 🐳 **Windows users** — the official Docker image (`mysshw:latest`) is the recommended way to run mysshw on Windows. Native Windows has several terminal-semantic limitations; see [Windows (Native)](#windows-native-not-recommended) for details.
 
@@ -1364,4 +1364,4 @@ For AI agents: see [AGENTS.md](AGENTS.md) for the development guide and process 
 
 ## Changelog
 
-See [changelog.v26.07.26.0.md](changelog.v26.07.26.0.md) for the latest release. Process rule: every version tag on `main` must have a corresponding `changelog.${tag}.md` (see [AGENTS.md](AGENTS.md)).
+See [changelog.v26.10.24.md](changelog.v26.10.24.md) for the latest release. Process rule: every version tag on `main` must have a corresponding `changelog.${tag}.md` (see [AGENTS.md](AGENTS.md)).
