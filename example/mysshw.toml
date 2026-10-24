@@ -152,12 +152,19 @@ encrypt = true
 # passphrase = "${MYSSHW_SYNC_PASSPHRASE}"
 
 # === scp 协议配置 ===
+# 认证方式 (按优先级, 命中即用; keypath 与 password 可同时配置, 互为回退):
+#   1. keypath   → 公钥认证 (私钥口令取 passphrase, 支持 ${ENV} 引用)
+#   2. password  → 密码认证 (支持 ${ENV} 引用)
+#   3. SSH Agent → 公钥认证 (前两者都没配时自动回退; 适合 cron / CI)
+# 主机指纹: 与普通 SSH 登录共用 ~/.ssh/known_hosts, 采用 TOFU 策略
+#   (首次连接写入, 之后指纹不符直接拒绝; MYSSHW_SKIP_HOST_KEY_CHECK=true 可临时跳过)
 [sync.scp]
 username = "root"
 # password 方式 1: ${ENV} 引用 (推荐)
 password = "${MYSSHW_PWD_sync}"
-# keypath = "~/.ssh/id_rsa"   # 启用时 validator 会校验文件存在
-# passphrase = "${MYSSHW_KEY_PASSPHRASE:-}"
+# 方式 2: 私钥 (私钥优先于密码)
+# keypath = "~/.ssh/id_ed25519"
+# passphrase = "${MYSSHW_KEY_PASSPHRASE:-}"   # 私钥口令, 可省略
 
 # === webdav 协议配置 ===
 [sync.webdav]

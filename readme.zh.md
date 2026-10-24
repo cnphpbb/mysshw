@@ -130,9 +130,10 @@ encrypt = true                # 上传前加密 (默认 true, 远程只存密文
 
 [sync.scp]
 username = "root"
+# 认证优先级: keypath (公钥) > password (密码) > SSH Agent
 password = "${MYSSHW_PWD_sync}"  # 支持 ${VAR} 和 ${VAR:-default}
-keypath = ""
-passphrase = ""
+keypath = "~/.ssh/id_ed25519"    # 私钥路径 (可留空)
+passphrase = ""                  # 私钥口令 (可留空)
 
 [sync.webdav]
 auth = "Basic"                # Basic | Digest
@@ -536,6 +537,13 @@ mysshw sync --down --keep-encrypted
 # 使用自定义配置文件路径进行同步
 mysshw sync --cfg /path/to/custom/config.toml --upload
 mysshw sync -c /path/to/custom/config.toml -u   # 混合短选项
+
+# sync 通道的 SSH 认证（按优先级命中即用）
+#   1. [sync.scp].keypath  → 公钥认证（私钥口令取 [sync.scp].passphrase）
+#   2. [sync.scp].password → 密码认证
+#   3. SSH Agent          → 公钥认证（cron / CI 场景，无需交互）
+# 主机指纹与普通 SSH 登录共用 ~/.ssh/known_hosts（TOFU 策略）
+mysshw sync --upload    # 用 ~/.ssh/id_ed25519 登录备份服务器
 
 # 从 sshw 的 YAML 配置迁移到 mysshw TOML 配置
 mysshw yml -f ~/.sshw.yml

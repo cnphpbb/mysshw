@@ -10,6 +10,8 @@ import (
 	"mysshw/ssh"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	crypto_ssh "golang.org/x/crypto/ssh"
@@ -107,7 +109,12 @@ func buildSyncCryptoOptions(cmd *cobra.Command, syncCfg config.SyncInfo) syncCry
 
 // runScpSync 处理 SCP 协议的同步 (走 SSH 通道, 不走 SyncBackend 接口)
 func runScpSync(syncCfg config.SyncInfo, upload bool, cfgPath string, opts syncCryptoOptions) {
-	sshCfg := createSSHConfig(syncCfg)
+	sshCfg, cleanup, err := createSSHConfig(syncCfg)
+	if err != nil {
+		fmt.Printf("Failed to build SSH config: %s\n", err)
+		os.Exit(1)
+	}
+	defer cleanup()
 
 	client, err := createSCPclient(syncCfg.RemoteUri, sshCfg)
 	if err != nil {
@@ -159,19 +166,78 @@ func loadConfig() error {
 	return nil
 }
 
-// createSSHConfig 创建 SSH 客户端配置
-// 密码支持 ${ENV_VAR} 引用 (与 ssh/client.go 一致)
-func createSSHConfig(syncCfg config.SyncInfo) *crypto_ssh.ClientConfig {
-	resolvedPwd := ssh.ResolveEnvRef(syncCfg.SCPConfig.Password)
+// createSSHConfig 创建 sync 通道的 SSH 客户端配置
+//
+// 认证方式 (按优先级, 命中即用; keypath 存在时仍会叠加密码作为回退):
+//  1. [sync.scp].keypath  → 公钥认证 (私钥口令取 [sync.scp].passphrase, 支持 ${ENV} 引用)
+//  2. [sync.scp].password → 密码认证 (支持 ${ENV} 引用)
+//  3. SSH Agent          → 公钥认证 (前两者都没配时; 适配 cron / CI 无交互场景)
+//
+// 主机指纹: 复用 ssh 包的 known_hosts TOFU 机制 (与普通 SSH 登录一致),
+// MYSSHW_SKIP_HOST_KEY_CHECK=true 可临时跳过。
+//
+// 返回 (ClientConfig, cleanup, error):
+//   - cleanup 用于关闭与 SSH Agent 的连接, 调用方 defer Close
+//   - 一个认证方式都不可用时返回可执行的错误信息 (而不是让 SSH 报晦涩的
+//     "attempted methods [none], no supported methods remain")
+func createSSHConfig(syncCfg config.SyncInfo) (*crypto_ssh.ClientConfig, func(), error) {
+	noop := func() {}
+
+	scpCfg := syncCfg.SCPConfig
 	authMethods := []crypto_ssh.AuthMethod{}
-	if resolvedPwd != "" {
+	cleanup := noop
+
+	// 1. 私钥认证
+	if strings.TrimSpace(scpCfg.KeyPath) != "" {
+		signer, err := ssh.LoadKeySigner(scpCfg.KeyPath, scpCfg.Passphrase)
+		if err != nil {
+			return nil, noop, err
+		}
+		authMethods = append(authMethods, crypto_ssh.PublicKeys(signer))
+	}
+
+	// 2. 密码认证
+	if resolvedPwd := ssh.ResolveEnvRef(scpCfg.Password); resolvedPwd != "" {
 		authMethods = append(authMethods, crypto_ssh.Password(resolvedPwd))
 	}
-	return &crypto_ssh.ClientConfig{
-		User:            syncCfg.SCPConfig.Username,
-		Auth:            authMethods,
-		HostKeyCallback: crypto_ssh.InsecureIgnoreHostKey(),
+
+	// 3. SSH Agent 兜底
+	if len(authMethods) == 0 {
+		agentAuth, closer, err := ssh.AgentAuthMethod()
+		if err == nil {
+			authMethods = append(authMethods, agentAuth)
+			cleanup = func() { _ = closer.Close() }
+		} else {
+			// agent 不可用不是致命错误 —— 交给下面的"无可用认证方式"分支给出明确提示
+			fmt.Fprintf(os.Stderr, "mysshw:: %v\n", err)
+		}
 	}
+
+	if len(authMethods) == 0 {
+		return nil, noop, fmt.Errorf(
+			"no usable SSH authentication method for the sync target: " +
+				"[sync.scp] needs one of keypath / password, or an SSH agent must be available " +
+				"(set [sync.scp].keypath = \"~/.ssh/id_ed25519\" or [sync.scp].password = \"${MYSSHW_PWD_sync}\")")
+	}
+
+	// 主机指纹校验 (TOFU, 与普通 SSH 登录一致)
+	hostKeyCallback, err := ssh.SyncHostKeyCallback()
+	if err != nil {
+		return nil, noop, fmt.Errorf("mysshw:: failed to initialize host key verification: %w", err)
+	}
+
+	cfg := &crypto_ssh.ClientConfig{
+		User:            scpCfg.Username,
+		Auth:            authMethods,
+		HostKeyCallback: hostKeyCallback,
+		Timeout:         30 * time.Second,
+		// 主机密钥算法偏好与 OpenSSH 对齐 (ed25519 优先), 与普通 SSH 登录保持一致
+		// 详见 ssh.PreferredHostKeyAlgorithms 注释
+		HostKeyAlgorithms: ssh.PreferredHostKeyAlgorithms,
+	}
+	cfg.SetDefaults()
+
+	return cfg, cleanup, nil
 }
 
 // createSCPclient 创建并连接 SCP 客户端

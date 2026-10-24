@@ -217,6 +217,8 @@ func genSSHConfig(node *config.SSHNode, allowStdin bool) *defaultClient {
 		Auth:            authMethods,
 		HostKeyCallback: hostKeyCallback,
 		Timeout:         time.Second * 10,
+		// 主机密钥算法偏好与 OpenSSH 对齐 (ed25519 优先), 详见 PreferredHostKeyAlgorithms 注释
+		HostKeyAlgorithms: preferredHostKeyAlgorithms(),
 	}
 
 	config.SetDefaults()
