@@ -110,6 +110,15 @@ jobs:
           export MYSISHW_VERSION="$TAG"
           # 固定本地分支名, 让 -ldflags 的 Build 字段格式与本地构建一致 (main-<hash>)
           git checkout -B main "$TAG_SHA"
+          # go.sum 是依赖哈希锁文件, go build 会校验它, 缺失则报
+          #   missing go.sum entry for module providing package ...
+          # 历史 tag 可能在 go.sum 入库 (v26.10.25.0) 之前打的, 从 main 补齐。
+          # 必须在 git checkout 之后做, 否则会被 checkout 覆盖回去。
+          if ! cmp -s go.sum ../meta/go.sum; then
+            echo "::warning::syncing go.mod/go.sum from main (tag predates go.sum commit)"
+            cp ../meta/go.mod go.mod
+            cp ../meta/go.sum go.sum
+          fi
           # 用 go.mod 里 pin 的 mage 版本 (不用 go install @version, 否则会污染
           # module graph 导致 magefile 编译失败: missing go.sum entry)
           go run github.com/magefile/mage pack
