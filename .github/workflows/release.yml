@@ -1,0 +1,136 @@
+name: Release
+
+# 发布流水线: tag 推送 (或手动 dispatch) → 交叉编译 8 平台 → 创建 GitHub Release
+#
+# 触发方式:
+#   1. push 一个 v* tag (如 v26.10.25.0)  → 自动发布
+#   2. 手动 dispatch (Actions 页面 → Run workflow), 输入已有 tag 名
+#
+# 幂等: release 已存在时自动跳过, 不会覆盖已发布的产物
+#
+# 产物: 8 个平台归档 (darwin/freebsd/linux × amd64/arm64, windows 用 zip)
+#       + checksum.txt (sha1, 与 release body 的 checksum 段一致)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布的 tag (例: v26.10.25.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    env:
+      # push 触发时 = tag 名; dispatch 触发时 = 手动输入的 tag
+      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+    steps:
+      - name: Checkout tagged source (用于编译)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          path: src
+          fetch-depth: 0
+
+      - name: Checkout main (changelog + 构建脚本)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: meta
+
+      - name: Skip when release already exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists — skipping (idempotent)."
+            echo "SKIP_RELEASE=1" >> "$GITHUB_ENV"
+          else
+            echo "Will publish $TAG."
+          fi
+
+      - name: Resolve tag commit
+        if: env.SKIP_RELEASE != '1'
+        run: |
+          set -euo pipefail
+          cd src
+          SHA=$(git rev-parse "$TAG^{commit}")
+          echo "TAG_SHA=$SHA" >> "$GITHUB_ENV"
+          echo "Building $TAG @ $SHA"
+
+      - name: Build all platform binaries
+        if: env.SKIP_RELEASE != '1'
+        working-directory: src
+        env:
+          MYSISHW_VERSION: ${{ env.TAG }}
+        run: |
+          set -euo pipefail
+          # 固定本地分支名, 让 -ldflags 的 Build 字段格式与本地构建一致 (main-<hash>)
+          git checkout -B main "$TAG_SHA"
+          go install github.com/magefile/mage@v1.17.2
+          "$HOME/go/bin/mage" pack
+          # 清理历史遗留的非版本化产物 (dist/*-main.*)
+          rm -rf dist/*-main dist/*-main.tar.gz dist/*-main.zip
+          ls -la dist/
+
+      - name: Compose release body (changelog + checksums)
+        if: env.SKIP_RELEASE != '1'
+        run: |
+          set -euo pipefail
+          CHANGELOG="meta/changelog.${TAG}.md"
+          if [ ! -f "$CHANGELOG" ]; then
+            echo "::error::changelog not found: $CHANGELOG"
+            exit 1
+          fi
+          python3 - "$CHANGELOG" "src/dist" <<'PY'
+          import sys, glob, os, hashlib
+          changelog, dist = sys.argv[1], sys.argv[2]
+          lines = open(changelog, encoding='utf-8').read().split('\n')
+          # 去掉首行 H1 (# Changelog vX), body 从 "## Release Info" 开始
+          if lines and lines[0].startswith('# Changelog'):
+              lines = lines[1:]
+          body = '\n'.join(lines).rstrip('\n')
+          archives = sorted(glob.glob(os.path.join(dist, '*.tar.gz')) +
+                            glob.glob(os.path.join(dist, '*.zip')))
+          if not archives:
+              sys.exit('::error::no archives built')
+          checks = []
+          for p in archives:
+              with open(p, 'rb') as f:
+                  sha1 = hashlib.sha1(f.read()).hexdigest()
+              checks.append('- {}  {}'.format(sha1, os.path.basename(p)))
+          body += '\n\n## checksum files\n\n' + '\n'.join(checks) + '\n'
+          with open('/tmp/release_body.md', 'w', encoding='utf-8') as f:
+              f.write(body)
+          print('body: {} bytes, {} archives'.format(len(body), len(archives)))
+          PY
+
+      - name: Generate checksum.txt
+        if: env.SKIP_RELEASE != '1'
+        working-directory: src/dist
+        run: |
+          set -euo pipefail
+          sha1sum *.tar.gz *.zip > checksum.txt
+          cat checksum.txt
+
+      - name: Create GitHub Release
+        if: env.SKIP_RELEASE != '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file /tmp/release_body.md \
+            --verify-tag \
+            src/dist/*.tar.gz src/dist/*.zip src/dist/checksum.txt
+          echo "Published: https://github.com/${{ github.repository }}/releases/tag/$TAG"
