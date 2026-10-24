@@ -110,8 +110,9 @@ jobs:
           export MYSISHW_VERSION="$TAG"
           # 固定本地分支名, 让 -ldflags 的 Build 字段格式与本地构建一致 (main-<hash>)
           git checkout -B main "$TAG_SHA"
-          go install github.com/magefile/mage@v1.17.2
-          "$HOME/go/bin/mage" pack
+          # 用 go.mod 里 pin 的 mage 版本 (不用 go install @version, 否则会污染
+          # module graph 导致 magefile 编译失败: missing go.sum entry)
+          go run github.com/magefile/mage pack
           # 清理历史遗留的非版本化产物 (dist/*-main.*)
           rm -rf dist/*-main dist/*-main.tar.gz dist/*-main.zip
           ls -la dist/
