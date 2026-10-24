@@ -487,6 +487,45 @@ feat: 新增 S3 配置文件同步功能
 - 禁止提交 IDE/编辑器配置文件（`.idea/`, `*.swp`, `.vscode/` 等）
 - 禁止提交大型二进制文件到仓库中
 
+#### 分支工作流（重要）
+
+本项目采用 **双分支** 模型，AI 代理与开发者必须遵守：
+
+| 分支 | 用途 | 规则 |
+|------|------|------|
+| `gh-dev` | **开发分支**（日常开发都在这里进行） | 日常新功能/修复/重构全部提交到这里 |
+| `main` | **发布分支**（只放已验证可发布的代码） | 只接受从 `gh-dev` 合入的变更；`main` 上的 `v*` tag 才是正式版本发布 |
+
+**日常开发流程**：
+```bash
+git checkout gh-dev
+git pull --rebase origin gh-dev
+# ... 修改代码, 按 §9.7 规范提交 ...
+git push origin gh-dev
+```
+
+**发布到 `main`**（需要正式发版时）：
+```bash
+git checkout main && git pull origin main
+git merge gh-dev          # 或 --no-ff 保留 merge 记录
+git push origin main
+# 然后按 §9.7「Tag 与 Changelog 流程」打 tag + 写 changelog
+```
+
+**反向同步**（`main` 有新提交需要进 `gh-dev` 时）：
+```bash
+git checkout gh-dev
+git merge main --no-ff -m "Merge branch 'main' into gh-dev"
+git push origin gh-dev
+```
+
+**禁止行为**：
+- ❌ 在 `main` 分支上直接开发/提交功能（`main` 只接收从 `gh-dev` 合入的变更）
+- ❌ 在 `gh-dev` 上打 `vX.Y.Z` 格式的 tag（`v` 格式是 `main` 专用，见「分支与 Tag 分类」）
+- ❌ 未合入 `gh-dev` 就直接推送 `main`
+
+**注意**：`main` 与 `gh-dev` 存在双向合并时可能产生冲突，常见冲突点是 `ssh/client_test.go` 与 `webdav/client*.go`（两边都有改动）。解决冲突后必须跑 `go build ./... && go test ./...` 验证。
+
 #### Tag 与 Changelog 流程
 
 每次发布新 tag 时 **必须** 生成对应的 `changelog.${tag}.md` 文档并提交：
