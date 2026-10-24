@@ -21,6 +21,54 @@ import (
 // 主机指纹存储文件名（与 OpenSSH 共享 ~/.ssh/known_hosts）
 const knownHostsFileName = "known_hosts"
 
+// PreferredHostKeyAlgorithms 是 mysshw 使用的 host key 算法偏好顺序。
+//
+// 为什么必须显式指定 (而不是用 x/crypto/ssh 的默认列表):
+//
+//	SSH 握手中, **服务端** 按 **客户端** 提供的算法列表顺序, 选取第一个
+//	自己也支持的算法来签发 host key。x/crypto/ssh 的默认列表把
+//	`ssh-ed25519` 放在**最后** (KeyAlgoED25519 在 defaultHostKeyAlgorithms 末尾),
+//	而 OpenSSH 客户端把 `ssh-ed25519` 放在**最前**。
+//
+//	后果: 同一个服务器, OpenSSH 协商出 ed25519 host key, mysshw 却协商出
+//	ecdsa-sha2-nistp256 → 两者写进 known_hosts 的指纹不同 → 用 OpenSSH 写的
+//	known_hosts (含 ed25519 条目) 校验 mysshw 的连接时必然报
+//	"主机指纹与 known_hosts 不匹配" (疑似 MITM 告警, 实为算法协商差异)。
+//
+//	本列表与 OpenSSH 客户端默认偏好保持一致 (ed25519 优先), 从而:
+//	  - mysshw 与 OpenSSH 协商出**同一个** host key, 共用同一份 known_hosts
+//	  - 兼容 OpenSSH 写入的 known_hosts (OpenSSH 会把服务端所有 key 类型都写进去)
+//
+//	证书类算法放在最后: 仅当服务端只提供 CA 签发的主机证书时才会被选中;
+//	正常情况下服务端同时提供明文 key, 轮不到证书。
+var PreferredHostKeyAlgorithms = []string{
+	// 明文主机密钥 (顺序与 OpenSSH 客户端一致)
+	"ssh-ed25519",
+	"ecdsa-sha2-nistp256",
+	"ecdsa-sha2-nistp384",
+	"ecdsa-sha2-nistp521",
+	"rsa-sha2-512",
+	"rsa-sha2-256",
+	"ssh-rsa",
+	// 证书类算法 (兜底)
+	"ssh-ed25519-cert-v01@openssh.com",
+	"ecdsa-sha2-nistp256-cert-v01@openssh.com",
+	"ecdsa-sha2-nistp384-cert-v01@openssh.com",
+	"ecdsa-sha2-nistp521-cert-v01@openssh.com",
+	"rsa-sha2-512-cert-v01@openssh.com",
+	"rsa-sha2-256-cert-v01@openssh.com",
+	"ssh-rsa-cert-v01@openssh.com",
+}
+
+// preferredHostKeyAlgorithms 返回主机密钥算法偏好列表的副本
+//
+// 返回副本是为了避免调用方意外修改包级变量 (append 到切片底层数组会污染全局)。
+func preferredHostKeyAlgorithms() []string {
+	out := make([]string, len(PreferredHostKeyAlgorithms))
+	copy(out, PreferredHostKeyAlgorithms)
+	return out
+}
+
 // 保护 known_hosts 并发写
 var knownHostsMu sync.Mutex
 

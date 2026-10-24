@@ -132,9 +132,10 @@ encrypt = true                # encrypt before upload (default: true, remote sto
 
 [sync.scp]
 username = "root"
+# Auth priority: keypath (public key) > password (password) > SSH Agent
 password = "${MYSSHW_PWD_sync}"  # supports ${VAR} and ${VAR:-default}
-keypath = ""
-passphrase = ""
+keypath = "~/.ssh/id_ed25519"    # private key path (may be empty)
+passphrase = ""                  # key passphrase (may be empty)
 
 [sync.webdav]
 auth = "Basic"                # Basic | Digest
@@ -538,6 +539,13 @@ mysshw sync --down --keep-encrypted
 # Sync with custom configuration file path
 mysshw sync --cfg /path/to/custom/config.toml --upload
 mysshw sync -c /path/to/custom/config.toml -u   # mix short options
+
+# SSH auth for the sync channel (first match wins)
+#   1. [sync.scp].keypath  → public key (key passphrase from [sync.scp].passphrase)
+#   2. [sync.scp].password → password auth
+#   3. SSH Agent          → public key (cron / CI, no interaction)
+# Host keys share ~/.ssh/known_hosts with normal SSH logins (TOFU)
+mysshw sync --upload    # login to the backup host with ~/.ssh/id_ed25519
 
 # Migrate from old sshw YAML config to mysshw TOML config
 mysshw yml -f ~/.sshw.yml
