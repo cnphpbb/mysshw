@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -14,21 +15,34 @@ import (
 
 // fakeBackend 用于测试 SyncBackend 接口的内存实现
 type fakeBackend struct {
-	uploads   []string // 上传过的 (localPath, remoteName) 对
-	downloads []string // 下载过的 (remoteName, localPath) 对
-	uploadErr error
-	downErr   error
+	uploads    []string // 上传过的 (remoteName) 列表
+	uploaded   []byte   // 最近一次上传的字节
+	downloads  []string // 下载过的 (remoteName) 列表
+	remoteData []byte   // 下载时返回的字节
+	uploadErr  error
+	downErr    error
 }
 
-func (f *fakeBackend) UploadFile(_ context.Context, localPath, remoteName string) error {
-	f.uploads = append(f.uploads, localPath+"|"+remoteName)
+func (f *fakeBackend) UploadBytes(_ context.Context, data []byte, remoteName string) error {
+	f.uploads = append(f.uploads, remoteName)
+	f.uploaded = append([]byte(nil), data...)
 	return f.uploadErr
 }
 
-func (f *fakeBackend) DownloadFile(_ context.Context, remoteName, localPath string) error {
-	f.downloads = append(f.downloads, remoteName+"|"+localPath)
-	return f.downErr
+func (f *fakeBackend) DownloadBytes(_ context.Context, remoteName string) ([]byte, error) {
+	f.downloads = append(f.downloads, remoteName)
+	if f.downErr != nil {
+		return nil, f.downErr
+	}
+	return f.remoteData, nil
 }
+
+// 编译期断言: webdav.Client / s3.Client 必须满足 SyncBackend 接口
+// 如接口不兼容, 编译会报 "cannot use (...) as SyncBackend" 错误
+var (
+	_ SyncBackend = (*webdav.Client)(nil)
+	_ SyncBackend = (*s3.Client)(nil)
+)
 
 func TestResolveRemoteFilename(t *testing.T) {
 	tests := []struct {
@@ -49,30 +63,42 @@ func TestResolveRemoteFilename(t *testing.T) {
 	}
 }
 
-func TestUploadConfigSync(t *testing.T) {
+// writeTempSyncConfig 写一个临时配置文件, 返回路径
+func writeTempSyncConfig(t *testing.T, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "mysshw.toml")
+	assert.NoError(t, os.WriteFile(path, []byte(content), 0600))
+	return path
+}
+
+func TestUploadConfigSync_Plaintext(t *testing.T) {
 	ctx := context.Background()
 	backend := &fakeBackend{}
+	cfgPath := writeTempSyncConfig(t, "hello = \"world\"\n")
 
-	err := uploadConfigSync(ctx, backend, "/home/x/.mysshw.toml", "")
+	err := uploadConfigSync(ctx, backend, cfgPath, "", syncCryptoOptions{Encrypt: false})
 	assert.NoError(t, err)
 	assert.Len(t, backend.uploads, 1)
-	assert.Equal(t, "/home/x/.mysshw.toml|.mysshw.toml", backend.uploads[0])
+	assert.Equal(t, "hello = \"world\"\n", string(backend.uploaded))
 }
 
 func TestUploadConfigSync_WithRemoteOverride(t *testing.T) {
 	ctx := context.Background()
 	backend := &fakeBackend{}
+	cfgPath := writeTempSyncConfig(t, "hello = \"world\"\n")
 
-	err := uploadConfigSync(ctx, backend, "/home/x/.mysshw.toml", "remote/custom-name.toml")
+	err := uploadConfigSync(ctx, backend, cfgPath, "remote/custom-name.toml", syncCryptoOptions{Encrypt: false})
 	assert.NoError(t, err)
-	assert.Equal(t, "/home/x/.mysshw.toml|custom-name.toml", backend.uploads[0])
+	assert.Len(t, backend.uploads, 1)
+	assert.Equal(t, "custom-name.toml", backend.uploads[0])
 }
 
 func TestUploadConfigSync_PropagatesError(t *testing.T) {
 	ctx := context.Background()
 	backend := &fakeBackend{uploadErr: errors.New("network down")}
+	cfgPath := writeTempSyncConfig(t, "hello = \"world\"\n")
 
-	err := uploadConfigSync(ctx, backend, "/tmp/cfg.toml", "")
+	err := uploadConfigSync(ctx, backend, cfgPath, "", syncCryptoOptions{Encrypt: false})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "network down")
 	assert.Contains(t, err.Error(), "upload failed")
@@ -80,15 +106,16 @@ func TestUploadConfigSync_PropagatesError(t *testing.T) {
 
 func TestDownloadConfigSync(t *testing.T) {
 	ctx := context.Background()
-	backend := &fakeBackend{}
+	backend := &fakeBackend{remoteData: []byte("hello = \"world\"\n")}
+	localPath := filepath.Join(t.TempDir(), "out.toml")
 
-	// 用 /tmp 避免污染家目录
-	tmpDir := t.TempDir()
-	localPath := filepath.Join(tmpDir, "out.toml")
-
-	err := downloadConfigSync(ctx, backend, localPath, "")
+	err := downloadConfigSync(ctx, backend, localPath, "", syncCryptoOptions{})
 	assert.NoError(t, err)
 	assert.Len(t, backend.downloads, 1)
+
+	data, err := os.ReadFile(localPath)
+	assert.NoError(t, err)
+	assert.Equal(t, "hello = \"world\"\n", string(data))
 }
 
 func TestDownloadConfigSync_PropagatesError(t *testing.T) {
@@ -96,23 +123,7 @@ func TestDownloadConfigSync_PropagatesError(t *testing.T) {
 	backend := &fakeBackend{downErr: errors.New("404 not found")}
 
 	tmpDir := t.TempDir()
-	err := downloadConfigSync(ctx, backend, filepath.Join(tmpDir, "out.toml"), "")
+	err := downloadConfigSync(ctx, backend, filepath.Join(tmpDir, "out.toml"), "", syncCryptoOptions{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "404 not found")
 }
-
-func TestNewSyncBackend_UnsupportedType(t *testing.T) {
-	// nil config 会先 panic 在 webdav/s3 路径, 跳过此测试
-	// 实际类型校验逻辑在 webdav/s3 包内, 这里只验证 dispatch 不 panic
-	_ = errors.New("")
-}
-
-// 编译期断言: webdav.Client / s3.Client 必须满足 SyncBackend 接口
-// 如接口不兼容, 编译会报 "cannot use (...) as SyncBackend" 错误
-var (
-	_ SyncBackend = (*webdav.Client)(nil)
-	_ SyncBackend = (*s3.Client)(nil)
-)
-
-// 引用 errors 以避免 unused import 警告 (TestNewSyncBackend_UnsupportedType 使用)
-var _ = errors.New

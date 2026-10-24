@@ -9,6 +9,7 @@ import (
 	"mysshw/scp"
 	"mysshw/ssh"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 	crypto_ssh "golang.org/x/crypto/ssh"
@@ -47,11 +48,19 @@ var syncCmd = &cobra.Command{
 		}
 
 		// 根据同步类型选择不同的客户端
+		opts := buildSyncCryptoOptions(cmd, syncCfg)
+
+		// 预检: 本地配置是否已配置加密参数 (在连远程之前 fail-fast)
+		if err := checkSyncEncryptionConfigured(syncCfg, opts, upload); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+
 		switch syncCfg.Type {
 		case "scp":
-			runScpSync(syncCfg, upload, config.CFG_PATH)
+			runScpSync(syncCfg, upload, config.CFG_PATH, opts)
 		case "webdav", "s3":
-			runBackendSync(syncCfg, upload, config.CFG_PATH)
+			runBackendSync(syncCfg, upload, config.CFG_PATH, opts)
 		default:
 			fmt.Printf("Unsupported sync type: %s\n", syncCfg.Type)
 			os.Exit(1)
@@ -61,8 +70,43 @@ var syncCmd = &cobra.Command{
 	},
 }
 
+// buildSyncCryptoOptions 组装同步加解密选项
+//
+// 优先级: CLI flag (显式指定时) > 配置文件 [sync] 字段 > 内置默认值
+// 默认上传加密 (安全默认: 远程永远不落明文配置)
+func buildSyncCryptoOptions(cmd *cobra.Command, syncCfg config.SyncInfo) syncCryptoOptions {
+	opts := syncCryptoOptions{
+		PassphraseCfg: syncCfg.Passphrase,
+		PassphraseEnv: DefaultSyncPassphraseEnv,
+	}
+
+	// 上传是否加密
+	if cmd.Flags().Changed("encrypt") {
+		opts.Encrypt, _ = cmd.Flags().GetBool("encrypt")
+	} else if syncCfg.Encrypt != nil {
+		opts.Encrypt = *syncCfg.Encrypt
+	} else {
+		opts.Encrypt = true
+	}
+
+	// 下载后是否保留密文
+	if cmd.Flags().Changed("keep-encrypted") {
+		opts.KeepEncrypted, _ = cmd.Flags().GetBool("keep-encrypted")
+		opts.KeepEncryptedSet = true
+	}
+
+	// 口令环境变量名
+	if cmd.Flags().Changed("passphrase-env") {
+		if v, _ := cmd.Flags().GetString("passphrase-env"); v != "" {
+			opts.PassphraseEnv = v
+		}
+	}
+
+	return opts
+}
+
 // runScpSync 处理 SCP 协议的同步 (走 SSH 通道, 不走 SyncBackend 接口)
-func runScpSync(syncCfg config.SyncInfo, upload bool, cfgPath string) {
+func runScpSync(syncCfg config.SyncInfo, upload bool, cfgPath string, opts syncCryptoOptions) {
 	sshCfg := createSSHConfig(syncCfg)
 
 	client, err := createSCPclient(syncCfg.RemoteUri, sshCfg)
@@ -73,12 +117,12 @@ func runScpSync(syncCfg config.SyncInfo, upload bool, cfgPath string) {
 	defer client.Close()
 
 	if upload {
-		if err := uploadConfig(client, cfgPath, syncCfg.RemotePath); err != nil {
+		if err := uploadConfig(client, cfgPath, syncCfg.RemotePath, opts); err != nil {
 			fmt.Printf("Upload failed: %s\n", err)
 			os.Exit(1)
 		}
 	} else {
-		if err := downloadConfig(client, cfgPath, syncCfg.RemotePath); err != nil {
+		if err := downloadConfig(client, cfgPath, syncCfg.RemotePath, opts); err != nil {
 			fmt.Printf("Download failed: %s\n", err)
 			os.Exit(1)
 		}
@@ -86,7 +130,7 @@ func runScpSync(syncCfg config.SyncInfo, upload bool, cfgPath string) {
 }
 
 // runBackendSync 处理 WebDAV / S3 协议的同步 (走 SyncBackend 统一接口)
-func runBackendSync(syncCfg config.SyncInfo, upload bool, cfgPath string) {
+func runBackendSync(syncCfg config.SyncInfo, upload bool, cfgPath string, opts syncCryptoOptions) {
 	ctx := context.Background()
 	backend, err := newSyncBackend(ctx, &syncCfg)
 	if err != nil {
@@ -95,12 +139,12 @@ func runBackendSync(syncCfg config.SyncInfo, upload bool, cfgPath string) {
 	}
 
 	if upload {
-		if err := uploadConfigSync(ctx, backend, cfgPath, syncCfg.RemotePath); err != nil {
+		if err := uploadConfigSync(ctx, backend, cfgPath, syncCfg.RemotePath, opts); err != nil {
 			fmt.Printf("Upload failed: %s\n", err)
 			os.Exit(1)
 		}
 	} else {
-		if err := downloadConfigSync(ctx, backend, cfgPath, syncCfg.RemotePath); err != nil {
+		if err := downloadConfigSync(ctx, backend, cfgPath, syncCfg.RemotePath, opts); err != nil {
 			fmt.Printf("Download failed: %s\n", err)
 			os.Exit(1)
 		}
@@ -140,12 +184,19 @@ func createSCPclient(remoteURI string, sshCfg *crypto_ssh.ClientConfig) (scp.Cli
 }
 
 // uploadConfig SCP 协议专用: 上传本地配置到远程服务器
-func uploadConfig(client scp.Client, localCfgPath, remotePath string) error {
+//
+// opts.Encrypt=true 时先加密再上传, 远程只存密文 (防远程被入侵后备份被拖走)
+func uploadConfig(client scp.Client, localCfgPath, remotePath string, opts syncCryptoOptions) error {
 	fmt.Println("Starting to upload local config to remote server...")
 
 	cfgBytes, err := config.LoadConfigBytes(localCfgPath)
 	if err != nil {
 		return fmt.Errorf("failed to load local config: %w", err)
+	}
+
+	cfgBytes, err = encryptUploadPayload(cfgBytes, opts)
+	if err != nil {
+		return err
 	}
 
 	if err := client.CopyFile(bytes.NewReader(cfgBytes), remotePath, "0644"); err != nil {
@@ -157,19 +208,51 @@ func uploadConfig(client scp.Client, localCfgPath, remotePath string) error {
 }
 
 // downloadConfig SCP 协议专用: 从远程服务器下载配置到本地
-func downloadConfig(client scp.Client, localCfgPath, remotePath string) error {
+//
+// 远端是密文时解密后落盘明文 (--keep-encrypted 则保留密文)
+// 解密失败不覆盖本地已有配置 (先落临时文件, 解密成功才替换)
+func downloadConfig(client scp.Client, localCfgPath, remotePath string, opts syncCryptoOptions) error {
 	fmt.Println("Starting to download remote config to local...")
 
-	localPath, _ := config.GetCfgPath(localCfgPath)
-	f, err := os.OpenFile(localPath, os.O_RDWR|os.O_CREATE, 0644)
+	localPath, err := config.GetCfgPath(localCfgPath)
 	if err != nil {
-		return fmt.Errorf("couldn't open output file: %w", err)
+		return fmt.Errorf("resolve local config path: %w", err)
 	}
-	defer f.Close()
+	opts = preserveLocalEncryptionState(localPath, opts)
 
-	if err := client.CopyFromRemote(f, remotePath); err != nil {
+	// 先落到临时文件: 解密失败时不破坏本地已有配置
+	if err := os.MkdirAll(filepath.Dir(localPath), 0755); err != nil {
+		return fmt.Errorf("create local dir failed: %w", err)
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(localPath), ".mysshw-sync-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temp file failed: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	if err := client.CopyFromRemote(tmp, remotePath); err != nil {
+		tmp.Close()
 		return fmt.Errorf("failed to copy from remote: %w", err)
 	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp file failed: %w", err)
+	}
+
+	data, err := os.ReadFile(tmpPath)
+	if err != nil {
+		return fmt.Errorf("read temp file failed: %w", err)
+	}
+
+	data, kind, err := decryptDownloaded(data, opts)
+	if err != nil {
+		return err
+	}
+
+	if err := saveDownloadedConfig(localPath, data); err != nil {
+		return err
+	}
+	reportPayloadKind(kind)
 
 	fmt.Println("Successfully downloaded remote config to local.")
 	return nil

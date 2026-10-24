@@ -1,10 +1,11 @@
 package s3
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -76,58 +77,50 @@ func NewClient(ctx context.Context, cfg *config.SyncInfo) (*Client, error) {
 	}, nil
 }
 
-// UploadFile 上传文件到S3服务器
-func (c *Client) UploadFile(ctx context.Context, localPath string, remoteName string) error {
+// UploadBytes 上传内存中的字节到S3服务器
+// 用于上传加密后的配置 (远程只存密文)
+func (c *Client) UploadBytes(ctx context.Context, data []byte, remoteName string) error {
 	// 构建远程文件路径
 	remotePath := joinRemotePath(c.config.RemotePath, remoteName)
 
-	// 获取文件大小
-	fileInfo, err := os.Stat(localPath)
-	if err != nil {
-		return fmt.Errorf("获取文件信息失败: %w", err)
-	}
-
-	// 上传文件
-	uploadInfo, err := c.client.FPutObject(ctx, c.config.S3Config.BucketName, remotePath, localPath, minio.PutObjectOptions{
+	// 上传对象
+	_, err := c.client.PutObject(ctx, c.config.S3Config.BucketName, remotePath, bytes.NewReader(data), int64(len(data)), minio.PutObjectOptions{
 		ContentType: "application/octet-stream",
 	})
 	if err != nil {
 		return fmt.Errorf("上传文件失败: %w", err)
 	}
 
-	// 验证上传大小
-	if uploadInfo.Size != fileInfo.Size() {
-		return fmt.Errorf("上传文件大小不匹配，预期: %d, 实际: %d", fileInfo.Size(), uploadInfo.Size)
-	}
-
 	return nil
 }
 
-// DownloadFile 从S3服务器下载文件
-func (c *Client) DownloadFile(ctx context.Context, remoteName string, localPath string) error {
+// DownloadBytes 从S3服务器下载文件内容到内存
+func (c *Client) DownloadBytes(ctx context.Context, remoteName string) ([]byte, error) {
 	// 构建远程文件路径
 	remotePath := joinRemotePath(c.config.RemotePath, remoteName)
 
-	// 检查文件是否存在
+	// 检查对象是否存在
 	_, err := c.client.StatObject(ctx, c.config.S3Config.BucketName, remotePath, minio.StatObjectOptions{})
 	if err != nil {
 		if minio.ToErrorResponse(err).Code == "NoSuchKey" {
-			return fmt.Errorf("远程文件不存在: %s", remotePath)
+			return nil, fmt.Errorf("远程文件不存在: %s", remotePath)
 		}
-		return fmt.Errorf("检查远程文件失败: %w", err)
+		return nil, fmt.Errorf("检查远程文件失败: %w", err)
 	}
 
-	// 确保本地目录存在
-	if err := os.MkdirAll(filepath.Dir(localPath), 0755); err != nil {
-		return fmt.Errorf("创建本地目录失败: %w", err)
+	// 下载对象
+	obj, err := c.client.GetObject(ctx, c.config.S3Config.BucketName, remotePath, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("下载文件失败: %w", err)
+	}
+	defer obj.Close()
+
+	content, err := io.ReadAll(obj)
+	if err != nil {
+		return nil, fmt.Errorf("读取远程文件失败: %w", err)
 	}
 
-	// 下载文件
-	if err := c.client.FGetObject(ctx, c.config.S3Config.BucketName, remotePath, localPath, minio.GetObjectOptions{}); err != nil {
-		return fmt.Errorf("下载文件失败: %w", err)
-	}
-
-	return nil
+	return content, nil
 }
 
 // ListFiles 列出S3服务器上的文件

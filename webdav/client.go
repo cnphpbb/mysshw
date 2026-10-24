@@ -3,9 +3,7 @@ package webdav
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
-	"path/filepath"
 
 	"mysshw/config"
 
@@ -50,34 +48,22 @@ func NewClient(ctx context.Context, cfg *config.SyncInfo) (*Client, error) {
 	}, nil
 }
 
-// UploadFile 上传文件到WebDAV服务器
-func (c *Client) UploadFile(ctx context.Context, localPath string, remoteName string) error {
-	// 打开本地文件
-	file, err := os.Open(localPath)
-	if err != nil {
-		return fmt.Errorf("打开本地文件失败: %w", err)
-	}
-	defer file.Close()
-
-	// 读取文件内容
-	content, err := io.ReadAll(file)
-	if err != nil {
-		return fmt.Errorf("读取文件内容失败: %w", err)
-	}
-
+// UploadBytes 上传内存中的字节到WebDAV服务器
+// 用于上传加密后的配置 (远程只存密文)
+func (c *Client) UploadBytes(ctx context.Context, data []byte, remoteName string) error {
 	// 构建远程文件路径
 	remotePath := joinRemotePath(c.config.RemotePath, remoteName)
 
 	// 上传文件
-	if err := c.client.Write(remotePath, content, 0644); err != nil {
+	if err := c.client.Write(remotePath, data, 0644); err != nil {
 		return fmt.Errorf("上传文件失败: %w", err)
 	}
 
 	return nil
 }
 
-// DownloadFile 从WebDAV服务器下载文件
-func (c *Client) DownloadFile(ctx context.Context, remoteName string, localPath string) error {
+// DownloadBytes 从WebDAV服务器下载文件内容到内存
+func (c *Client) DownloadBytes(ctx context.Context, remoteName string) ([]byte, error) {
 	// 构建远程文件路径
 	remotePath := joinRemotePath(c.config.RemotePath, remoteName)
 
@@ -85,28 +71,18 @@ func (c *Client) DownloadFile(ctx context.Context, remoteName string, localPath 
 	_, err := c.client.Stat(remotePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("远程文件不存在: %s", remotePath)
+			return nil, fmt.Errorf("远程文件不存在: %s", remotePath)
 		}
-		return fmt.Errorf("检查远程文件失败: %w", err)
+		return nil, fmt.Errorf("检查远程文件失败: %w", err)
 	}
 
 	// 读取远程文件内容
 	content, err := c.client.Read(remotePath)
 	if err != nil {
-		return fmt.Errorf("读取远程文件失败: %w", err)
+		return nil, fmt.Errorf("读取远程文件失败: %w", err)
 	}
 
-	// 确保本地目录存在
-	if err := os.MkdirAll(filepath.Dir(localPath), 0755); err != nil {
-		return fmt.Errorf("创建本地目录失败: %w", err)
-	}
-
-	// 写入本地文件
-	if err := os.WriteFile(localPath, content, 0644); err != nil {
-		return fmt.Errorf("写入本地文件失败: %w", err)
-	}
-
-	return nil
+	return content, nil
 }
 
 // ListFiles 列出WebDAV服务器上的文件
