@@ -186,3 +186,18 @@ mysshw 提供两层工具：
 - [ ] 不让 Agent 接触 `~/.mysshw.toml` 文件路径
 - [ ] 批量操作优先用 `--node X --node Y` 重复而不是多次 subprocess 调用
 - [ ] AI 输出的 shell 命令在 mysshw 看来是单条命令（`--` 后整段），避免 shell 注入
+
+### 4.1 配置体检（可选的启动前步骤）
+
+mysshw 每次运行都会在 **stderr** 输出配置体检结果（`warn` / `error` 级）。
+Agent 如需结构化结果，可显式调用：
+
+```bash
+mysshw config check -o json
+```
+
+返回 `{"config_path": "...", "ok": true, "counts": {"error": 0, "warn": 1, "info": 2}, "issues": [...]}`
+
+- 退出码 `0` → 无 error 级问题；`1` → 存在 error 级问题
+- 建议在自动化流程开头先跑一次，把 `issues[].item` / `issues[].hint` 回传给用户
+- 注意：体检结果默认写 stderr，`-o json` 时 stdout 是纯 JSON，解析时不要混用两个流

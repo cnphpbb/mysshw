@@ -127,6 +127,8 @@ cfg_dir = "~/.mysshw.toml"   # default: $HOME/.mysshw.toml
 type = "scp"                  # scp | webdav | s3
 remote_uri = "127.0.0.1:22"
 remote_path = "/data/backup/mysshw/mysshw.toml"
+encrypt = true                # encrypt before upload (default: true, remote stores ciphertext only)
+# passphrase = "${MYSSHW_SYNC_PASSPHRASE}"  # sync encryption passphrase (${VAR} supported)
 
 [sync.scp]
 username = "root"
@@ -521,6 +523,17 @@ mysshw sync --upload | -u
 
 # Download configuration file from remote server
 mysshw sync --down | -z
+
+# Sync (encrypted by default — remote only ever stores ciphertext)
+export MYSSHW_SYNC_PASSPHRASE="your-passphrase"
+mysshw sync --upload
+mysshw sync --down
+
+# Disable encryption for the upload (⚠️ remote will hold plaintext)
+mysshw sync --upload --encrypt=false
+
+# Keep the downloaded file encrypted on disk (skip local decryption)
+mysshw sync --down --keep-encrypted
 
 # Sync with custom configuration file path
 mysshw sync --cfg /path/to/custom/config.toml --upload
@@ -1056,7 +1069,7 @@ JSON schema per node:
 
 ### `config` — CRUD for SSH Nodes
 
-Manage SSH nodes directly in `mysshw.toml` without manual editing. 6 subcommands:
+Manage SSH nodes directly in `mysshw.toml` without manual editing. 7 subcommands:
 
 ```bash
 # List nodes (with all editable fields)
@@ -1082,6 +1095,10 @@ mysshw config update prod-1 --group Production --confirm
 
 # Diff two nodes (JSON output)
 mysshw config diff prod-1 prod-2
+
+# Check whether the key config items are configured correctly
+mysshw config check
+mysshw config check -o json
 ```
 
 **Safety**:
@@ -1089,6 +1106,29 @@ mysshw config diff prod-1 prod-2
 - Every write uses atomic-rewrite + backup (see `backup_keep` in config).
 - Password is recommended as bcrypt hash or `${ENV}` reference; plain text triggers a warning.
 - JSON output never contains the password field.
+
+### `config check` — Key Config Item Audit
+
+Every `mysshw` run performs a **non-blocking** audit of the local config and prints the findings to **stderr** (so machine-readable output on stdout stays clean). It reports `warn` / `error` items only; run `mysshw config check` for the full report including `info` items.
+
+```bash
+# Full audit (all levels: error / warn / info)
+mysshw config check
+
+# Machine-readable output for AI agents / CI
+mysshw config check -o json
+```
+
+What is checked:
+
+| Area | Items |
+|------|-------|
+| SSH nodes | missing credential, plaintext password, duplicated name/alias, unknown `proxy` reference, `strict_host_key_checking = false`, invalid port, key file not found |
+| Sync | protocol type validity + required fields per type (`scp` / `webdav` / `s3`), **encryption parameters** (`sync.encrypt`, `sync.passphrase`) |
+| Encryption fields | `encryption_algorithm` validity, `secret_key` ↔ `bcrypt-pepper` pairing, `cipher` validity |
+| File | config file permission (0600 recommended) |
+
+Exit code: `0` no error-level issue, `1` at least one error-level issue (e.g. unreadable / unparsable config, missing key file).
 
 ### `export` / `import` — Config Portability
 
@@ -1139,6 +1179,20 @@ mysshw sync -c /path/to/custom/config.toml -u
 - `scp` — over SSH (username + password / key)
 - `webdav` — HTTP WebDAV (Basic / Digest auth)
 - `s3` — S3-compatible (MinIO / RustFS / AWS S3)
+
+**End-to-end encryption (default on)** — protects the backup from a compromised remote server:
+
+| Step | Behaviour |
+|------|-----------|
+| Upload | Local config → Argon2id + AES-256-GCM → remote stores **ciphertext only** |
+| Download | Remote ciphertext → decrypted → saved locally as plaintext (0600) |
+
+- Passphrase sources (highest priority first): `--passphrase-env` variable (default `MYSSHW_SYNC_PASSPHRASE`) → `[sync].passphrase` in the config (supports `${VAR}`) → interactive prompt (asked twice on upload, since a lost passphrase means lost data).
+- The passphrase is never written to disk, logged, or passed as a CLI argument.
+- `--keep-encrypted` keeps the downloaded file encrypted on disk (the local mysshw then prompts for the passphrase at load time). If your **local** config is already encrypted, mysshw keeps the downloaded file encrypted too (use `--keep-encrypted=false` to force decryption).
+- `--encrypt=false` (or `encrypt = false` under `[sync]`) disables upload encryption — the remote then holds a plaintext copy.
+- Backups created by older versions (plaintext) still download fine; mysshw stores them as-is and warns.
+- If decryption fails (wrong passphrase / tampered file) the local config is left untouched.
 
 ### `yml` — Migrate from Old sshw YAML
 

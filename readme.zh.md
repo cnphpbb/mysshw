@@ -125,6 +125,8 @@ cfg_dir = "~/.mysshw.toml"   # default: $HOME/.mysshw.toml
 type = "scp"                  # scp | webdav | s3
 remote_uri = "127.0.0.1:22"
 remote_path = "/data/backup/mysshw/mysshw.toml"
+encrypt = true                # 上传前加密 (默认 true, 远程只存密文)
+# passphrase = "${MYSSHW_SYNC_PASSPHRASE}"  # 同步加解密口令 (支持 ${VAR})
 
 [sync.scp]
 username = "root"
@@ -519,6 +521,17 @@ mysshw sync --upload | -u
 
 # 从远程服务器下载配置文件
 mysshw sync --down | -z
+
+# 同步（默认加密上传 —— 远程永远只存密文）
+export MYSSHW_SYNC_PASSPHRASE="your-passphrase"
+mysshw sync --upload
+mysshw sync --down
+
+# 关闭上传加密（⚠️ 远程会存放明文）
+mysshw sync --upload --encrypt=false
+
+# 下载后本地仍保留密文（不做本地解密）
+mysshw sync --down --keep-encrypted
 
 # 使用自定义配置文件路径进行同步
 mysshw sync --cfg /path/to/custom/config.toml --upload
@@ -1054,7 +1067,7 @@ mysshw info --node target -o json | jq '.[0].memory.total_bytes > 8589934592'
 
 ### `config` — SSH 节点 CRUD
 
-直接在 `mysshw.toml` 中管理 SSH 节点，无需手动编辑。6 个子命令：
+直接在 `mysshw.toml` 中管理 SSH 节点，无需手动编辑。7 个子命令：
 
 ```bash
 # 列出所有节点（含全部可编辑字段）
@@ -1080,6 +1093,10 @@ mysshw config update prod-1 --group Production --confirm
 
 # 对比两个节点（JSON 输出）
 mysshw config diff prod-1 prod-2
+
+# 检查本地配置文件的关键配置项是否配置
+mysshw config check
+mysshw config check -o json
 ```
 
 **安全设计**：
@@ -1087,6 +1104,29 @@ mysshw config diff prod-1 prod-2
 - 每次写入使用原子重写 + 自动备份（见配置中的 `backup_keep`）
 - 密码推荐使用 bcrypt hash 或 `${ENV}` 引用；明文会触发警告
 - JSON 输出永远不会包含 password 字段
+
+### `config check` — 关键配置项体检
+
+每次运行 `mysshw` 都会对本地配置文件做一次**不阻断**的体检，结果输出到 **stderr**（stdout 保持干净，不影响 `list -o json` 等机器可读输出）。默认只报 `warn` / `error` 级别；`mysshw config check` 会输出含 `info` 的完整报告。
+
+```bash
+# 完整体检（含 error / warn / info）
+mysshw config check
+
+# 机器可读输出（供 AI agent / CI 使用）
+mysshw config check -o json
+```
+
+检查范围：
+
+| 范围 | 检查项 |
+|------|--------|
+| SSH 节点 | 缺凭据、明文密码、name/alias 重复、`proxy` 引用不存在、`strict_host_key_checking = false`、端口非法、密钥文件不存在 |
+| sync | 协议类型合法性 + 各类型必填项（`scp` / `webdav` / `s3`）、**加密参数**（`sync.encrypt`、`sync.passphrase`） |
+| 加密字段 | `encryption_algorithm` 合法性、`secret_key` ↔ `bcrypt-pepper` 配对、`cipher` 合法性 |
+| 文件 | 配置文件权限（建议 0600） |
+
+退出码：`0` 无 error 级问题；`1` 存在 error 级问题（如配置无法读取/解析、密钥文件不存在）。
 
 ### `export` / `import` — 配置可移植性
 
@@ -1137,6 +1177,20 @@ mysshw sync -c /path/to/custom/config.toml -u
 - `scp` — 通过 SSH（用户名 + 密码 / 密钥）
 - `webdav` — HTTP WebDAV（Basic / Digest 认证）
 - `s3` — S3 兼容（MinIO / RustFS / AWS S3）
+
+**端到端加密（默认开启）** —— 防止远程备份服务器被入侵后备份文件被拖走：
+
+| 步骤 | 行为 |
+|------|------|
+| 上传 | 本地配置 → Argon2id + AES-256-GCM → 远程**只存密文** |
+| 下载 | 远程密文 → 本地解密 → 落盘明文（权限 0600） |
+
+- 口令来源（优先级从高到低）：`--passphrase-env` 指定的环境变量（默认 `MYSSHW_SYNC_PASSPHRASE`）→ 配置文件 `[sync].passphrase`（支持 `${VAR}` 引用）→ 交互输入（上传时要求输入两次，口令丢了数据就找不回来）。
+- 口令不落盘、不进日志、不作为命令行参数传递（避免 `ps` / shell history 泄露）。
+- `--keep-encrypted`：下载后本地也保留密文（mysshw 加载时再提示输入口令）。若**本地配置本来就是密文**，下载后同样保持密文（用 `--keep-encrypted=false` 可强制解密落盘）。
+- `--encrypt=false`（或配置里 `encrypt = false`）关闭上传加密 —— 此时远程存放明文副本。
+- 旧版本产生的明文备份仍可正常下载，mysshw 会原样落地并给出提示。
+- 解密失败（口令错误 / 文件被篡改）时**不会覆盖本地已有配置**。
 
 ### `yml` — 从旧版 sshw YAML 迁移
 

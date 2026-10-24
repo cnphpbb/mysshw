@@ -47,6 +47,8 @@ mysshw/
 │   ├── cobra_cmd.go           # 根命令：flag注册、子命令注册
 │   ├── runssh_cmd.go          # 主交互循环：读取配置 → 选择节点 → SSH登录
 │   ├── sync_cobra.go          # sync 命令：SCP/WebDAV/S3 上传下载
+│   ├── sync_crypto.go         # sync 端到端加密：口令解析 + 加解密助手
+│   ├── sync_backend.go        # SyncBackend 统一接口 (WebDAV/S3 字节级传输)
 │   ├── version_cobra.go       # version 命令：打印版本信息
 │   ├── yml_cmd.go             # yml 命令：sshw YAML → mysshw TOML 迁移
 │   ├── init_cmd.go            # init 命令：首次运行向导
@@ -60,6 +62,7 @@ mysshw/
 │   ├── info_cmd.go            # info 子命令：远程系统信息收集
 │   ├── hash_cmd.go            # hash 子命令：密码哈希生成/验证/pepper 生成
 │   ├── encrypt_cmd.go         # encrypt 子命令：配置文件加密/解密
+│   ├── config_check_cmd.go    # config check 子命令：关键配置项体检
 │   ├── mcp_cmd.go             # mcp 子命令：MCP server (stdio)
 │   ├── output.go              # -o plain|json 全局输出器
 │   ├── errors.go              # BSD sysexits 退出码 + ExitError
@@ -68,6 +71,8 @@ mysshw/
 │
 ├── config/                    # 配置管理层
 │   ├── config.go              # LoadViperConfig / LoadConfig 主入口
+│   ├── config_check.go        # 关键配置项体检 (CheckConfigItems 等)
+│   ├── env.go                 # ${VAR} / ${VAR:-default} 引用解析
 │   ├── model_config.go        # 数据结构定义 + 默认TOML配置模板
 │   ├── utils.go               # 路径解析（家目录、跨平台兼容）
 │   ├── validated_config.go    # 配置校验（同步配置、节点、SSH参数）
@@ -196,10 +201,15 @@ main → cmd → config, ssh
 - 支持返回上级（"返回上级"虚拟节点）
 - Lip Gloss 着色：别名黄色、主机蓝色、父节点灰色
 
-### 6.3 配置同步 (`cmd/sync_cobra.go`)
+### 6.3 配置同步 (`cmd/sync_cobra.go` / `cmd/sync_backend.go` / `cmd/sync_crypto.go`)
 - 三协议统一接口：`upload` / `down` 操作
 - SCP 通过 SSH 通道传输
-- WebDAV/S3 通过对应 SDK
+- WebDAV/S3 通过 `SyncBackend` 字节级接口 (`UploadBytes` / `DownloadBytes`)
+- **端到端加密（默认开启）**：上传前 Argon2id + AES-256-GCM 加密，远程只存密文；
+  下载后本地解密落盘（0600）。口令来源：env（默认 `MYSSHW_SYNC_PASSPHRASE`）> `[sync].passphrase`（`${VAR}`）> 交互输入
+- 开关：`--encrypt=false`（关闭上传加密）、`--keep-encrypted`（下载后本地也保留密文）
+- 本地配置本来就是密文 → 下载后保持密文（`--keep-encrypted=false` 可强制解密落盘）
+- 解密失败不覆盖本地已有配置（SCP 先落临时文件，解密成功才替换）
 
 ### 6.4 YAML 迁移 (`cmd/yml_cmd.go`)
 - 解析 `sshw` 的 YAML 格式
@@ -345,6 +355,51 @@ mage build
 | ✅ | 安全: dry-run 默认, --confirm 才写, 重复检测 (skip/overwrite), 原子写+备份 | `cmd/import_cmd.go` |
 | ✅ | `--group` 覆盖导入组, `--overwrite` 覆盖已有节点 | `cmd/import_cmd.go` |
 | ✅ | 20+ 集成测试 (export JSON/TOML/筛选/文件, import dry-run/confirm/skip/overwrite/TOML/生命期) | `cmd/import_export_test.go` |
+
+---
+
+## 8.8 已完成 ✅ sync 端到端加密 (防远程被入侵后备份被拖走)
+
+| 状态 | 任务 | 涉及文件 |
+|------|------|---------|
+| ✅ | 上传默认加密 (Argon2id + AES-256-GCM), 远程只存密文 | `cmd/sync_crypto.go` |
+| ✅ | 下载本地解密落盘 (0600), `--keep-encrypted` 可保留密文 | `cmd/sync_crypto.go` |
+| ✅ | 口令解析: env (默认 `MYSSHW_SYNC_PASSPHRASE`) > `[sync].passphrase` (`${VAR}`) > 交互输入 | `cmd/sync_crypto.go::resolveSyncPassphrase` |
+| ✅ | 上传时口令二次确认 (防打错), 口令不落盘/不进日志/不进命令行参数 | `cmd/sync_crypto.go` |
+| ✅ | 幂等: 本地已是密文 (MSEC magic) 不做双重加密 | `cmd/sync_crypto.go::encryptForSync` |
+| ✅ | 兼容旧版明文备份 (原样落地 + 告警) | `cmd/sync_crypto.go::decryptDownloaded` |
+| ✅ | 解密失败不覆盖本地已有配置 (SCP 走临时文件) | `cmd/sync_cobra.go::downloadConfig` |
+| ✅ | `SyncBackend` 字节级统一接口 (WebDAV/S3) | `cmd/sync_backend.go`、`webdav/client.go`、`s3/client.go` |
+| ✅ | 配置字段: `[sync].encrypt` (bool) + `[sync].passphrase` (string) | `config/model_config.go` |
+| ✅ | 30+ 单元测试 (口令优先级/幂等/往返/错误口令/选项优先级) | `cmd/sync_crypto_test.go`、`cmd/sync_backend_test.go` |
+| ✅ | 文档: readme.md / readme.zh.md / example/mysshw.toml / TODO.md | — |
+
+---
+
+## 8.9 已完成 ✅ 配置关键项体检 (config check)
+
+| 状态 | 任务 | 涉及文件 |
+|------|------|---------|
+| ✅ | `config check` 子命令: 关键配置项体检 (error/warn/info 三级) | `cmd/config_check_cmd.go` |
+| ✅ | 启动自动检查: 每次加载配置后自动体检, 只报 warn/error, 写 stderr 不污染 stdout | `config/config.go::ReportConfigIssues` |
+| ✅ | 节点项检查: 凭据缺失 / 明文密码 / name+alias 重复 / proxy 引用不存在 / strict_host_key_checking=false / 端口非法 / 密钥文件不存在 | `config/config_check.go::checkSSHNodeItems` |
+| ✅ | sync 项检查: 协议类型合法性 + 各类型必填项 + **加密参数** (encrypt / passphrase) | `config/config_check.go::checkSyncItems` |
+| ✅ | 加密字段检查: encryption_algorithm / secret_key↔bcrypt-pepper 配对 / cipher | `config/config_check.go::checkEncryptionItems` |
+| ✅ | 文件权限检查 (建议 0600) | `config/config_check.go::CheckConfigFilePerm` |
+| ✅ | sync 上传前 fail-fast 预检: 加密开启但无口令且非 TTY → 直接报错 (不挂起等输入) | `cmd/sync_crypto.go::checkSyncEncryptionConfigured` |
+| ✅ | `${VAR}` / `${VAR:-default}` 引用解析下沉到 config 包 (config 不反向依赖 ssh) | `config/env.go` |
+| ✅ | 单元测试 (config 43 + cmd 13) | `config/config_check_test.go`, `cmd/config_check_cmd_test.go`, `cmd/sync_check_test.go` |
+
+**关键设计决策**:
+- 启动检查只报 warn/error (info 级别如 "user 未配置用默认 root" 过于刷屏); 完整视图用 `mysshw config check`
+- 体检报告走 stderr → `list -o json` / `mcp` (stdout 是 JSON-RPC) 不受影响
+- 检查是**软检查**, 不阻断启动; 硬校验仍由 `config.ValidateConfig` 负责 (不通过直接 error)
+- 缺凭据用 warn 而非 error: SSH Agent 也可能提供认证
+- `config check` 用只读解析 (`config.ReadConfigOrEmpty`) 而非 `LoadViperConfig`, 避免检查时修改用户配置
+- 口令来源检测: env (`MYSSHW_SYNC_PASSPHRASE`) > `[sync].passphrase`; 常量 `config.DefaultSyncPassphraseEnv` 定义在 config 包 (检查需感知 env)
+
+> 安全默认值：上传加密默认开启（`--encrypt=false` 或 `encrypt = false` 可关闭）。
+> 威胁模型：远程备份服务器被入侵 → 攻击者只能拿到密文 → 无口令无法离线破解。
 
 ---
 
