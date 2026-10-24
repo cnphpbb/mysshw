@@ -1353,4 +1353,4 @@ mage test          # 含覆盖率报告
 
 ## 更新日志
 
-最新发布见 [changelog.v26.07.08.0.md](changelog.v26.07.08.0.md)。流程规则：每次在 `main` 分支打版本 tag 前必须生成 `changelog.${tag}.md`（详见 [AGENTS.md](AGENTS.md)）。
+最新发布见 [changelog.v26.07.26.0.md](changelog.v26.07.26.0.md)。流程规则：每次在 `main` 分支打版本 tag 前必须生成 `changelog.${tag}.md`（详见 [AGENTS.md](AGENTS.md)）。

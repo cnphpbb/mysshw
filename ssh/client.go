@@ -123,7 +123,8 @@ func genSSHConfig(node *config.SSHNode, allowStdin bool) *defaultClient {
 		// 主要是在Mac系统的配置文件，在Windows系统中使用不需要替换
 		keyPath, expandErr := expandHomeDir(node.KeyPath)
 		if expandErr != nil {
-			fmt.Printf("路径解析错误: %v\n", expandErr)
+			// 走 stderr: MCP stdio 模式下 os.Stdout 是 JSON-RPC 通道, 诊断写入会污染协议流导致客户端断开
+			fmt.Fprintf(os.Stderr, "路径解析错误: %v\n", expandErr)
 		} else {
 			pemBytes, err = os.ReadFile(keyPath)
 		}
@@ -131,7 +132,7 @@ func genSSHConfig(node *config.SSHNode, allowStdin bool) *defaultClient {
 
 	if err != nil {
 		//fmt.Println(err)
-		fmt.Printf("mysshw:: 无法读取私钥 %s: %v\n", node.KeyPath, err)
+		fmt.Fprintf(os.Stderr, "mysshw:: 无法读取私钥 %s: %v\n", node.KeyPath, err)
 
 	} else {
 		var signer ssh.Signer
@@ -143,7 +144,7 @@ func genSSHConfig(node *config.SSHNode, allowStdin bool) *defaultClient {
 			signer, err = ssh.ParsePrivateKey(pemBytes)
 		}
 		if err != nil {
-			fmt.Println(err)
+			fmt.Fprintln(os.Stderr, err)
 		} else {
 			authMethods = append(authMethods, ssh.PublicKeys(signer))
 		}
@@ -156,7 +157,8 @@ func genSSHConfig(node *config.SSHNode, allowStdin bool) *defaultClient {
 	//   4. 空字符串: ""                    (Phase 3 新行为: 交互输入, 不写回)
 	resolvedPwd := ResolveEnvRef(node.Password)
 	if resolvedPwd != node.Password {
-		fmt.Printf("mysshw:: password resolved from env var for %s@%s\n", node.SetUser(), node.Host)
+		// 走 stderr: ${ENV} 密码节点每次连接都触发, 写 stdout 会污染 MCP JSON-RPC 流导致断开
+		fmt.Fprintf(os.Stderr, "mysshw:: password resolved from env var for %s@%s\n", node.SetUser(), node.Host)
 	}
 
 	password, pwdCleartext := resolvePasswordForSSH(node, resolvedPwd, allowStdin, config.CFG)
@@ -168,13 +170,19 @@ func genSSHConfig(node *config.SSHNode, allowStdin bool) *defaultClient {
 		authMethods = append(authMethods, password)
 	} else if allowStdin {
 		// 非交互路径下, AuthMethod=nil 是预期 (Exec 不需要密码); 静默即可
-		fmt.Println("警告: 密码认证方式不可用，将尝试其他认证方式")
+		fmt.Fprintln(os.Stderr, "警告: 密码认证方式不可用，将尝试其他认证方式")
 	}
 
 	authMethods = append(authMethods, ssh.KeyboardInteractive(func(user, instruction string, questions []string, echos []bool) ([]string, error) {
+		// 非交互场景 (exec/copy/MCP): os.Stdin 是 MCP JSON-RPC 通道, 读取会吞协议字节
+		// 导致客户端 desync 断开。直接拒绝, 让 dial 失败 → 上层返回 tool error。
+		// (依赖 keyboard-interactive 的节点本来就无法在无人工场景下认证成功)
+		if !allowStdin {
+			return nil, fmt.Errorf("keyboard-interactive auth not supported in non-interactive mode")
+		}
 		answers := make([]string, 0, len(questions))
 		for i, q := range questions {
-			fmt.Print(q)
+			fmt.Fprint(os.Stderr, q)
 			if echos[i] {
 				scan := bufio.NewScanner(os.Stdin)
 				if scan.Scan() {
@@ -189,7 +197,7 @@ func genSSHConfig(node *config.SSHNode, allowStdin bool) *defaultClient {
 				if err != nil {
 					return nil, err
 				}
-				fmt.Println()
+				fmt.Fprintln(os.Stderr)
 				answers = append(answers, string(b))
 			}
 		}
@@ -200,7 +208,7 @@ func genSSHConfig(node *config.SSHNode, allowStdin bool) *defaultClient {
 	// 优先级: MYSSHW_SKIP_HOST_KEY_CHECK env > per-node strict_host_key_checking > 默认 TOFU
 	hostKeyCallback, cbErr := getHostKeyCallback(node)
 	if cbErr != nil {
-		fmt.Printf("mysshw:: failed to initialize host key verification: %s\n", cbErr)
+		fmt.Fprintf(os.Stderr, "mysshw:: failed to initialize host key verification: %s\n", cbErr)
 		return nil
 	}
 

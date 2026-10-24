@@ -24,6 +24,11 @@ type Client struct {
 // NewClient 创建S3客户端
 // 校验 remote_path 不以 '/' 开头 (S3 key 不应带前导 /, 避免与 ListObjects 前缀语义混淆)
 func NewClient(ctx context.Context, cfg *config.SyncInfo) (*Client, error) {
+	// 前置校验 remote_path: 必须在任何网络调用之前拒绝, 避免不必要的网络失败混淆错误
+	if strings.HasPrefix(cfg.RemotePath, "/") {
+		return nil, fmt.Errorf("S3 远程路径不应以 '/' 开头: %s", cfg.RemotePath)
+	}
+
 	// 获取endpoint，如果为空则使用remote_uri
 	endpoint := cfg.S3Config.Endpoint
 	if endpoint == "" {
@@ -63,12 +68,6 @@ func NewClient(ctx context.Context, cfg *config.SyncInfo) (*Client, error) {
 		}); err != nil {
 			return nil, fmt.Errorf("创建存储桶失败: %w", err)
 		}
-	}
-
-	// 校验 remote_path 不以 '/' 开头
-	// 原因: S3 key 不应带前导斜杠, ListObjects 的 Prefix 参数会原样匹配
-	if strings.HasPrefix(cfg.RemotePath, "/") {
-		return nil, fmt.Errorf("S3 远程路径不应以 '/' 开头: %s", cfg.RemotePath)
 	}
 
 	return &Client{

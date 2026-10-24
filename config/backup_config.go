@@ -128,8 +128,8 @@ func secureConfigFile(path string) {
 		return // 已经是安全的 (group/other 无权限)
 	}
 	if err := os.Chmod(path, 0600); err != nil {
-		fmt.Printf("mysshw:: warning: failed to chmod 0600 %s: %v\n", path, err)
+		fmt.Fprintf(os.Stderr, "mysshw:: warning: failed to chmod 0600 %s: %v\n", path, err)
 		return
 	}
-	fmt.Printf("mysshw:: config file permissions tightened to 0600: %s\n", path)
+	fmt.Fprintf(os.Stderr, "mysshw:: config file permissions tightened to 0600: %s\n", path)
 }

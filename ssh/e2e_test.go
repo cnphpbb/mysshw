@@ -701,3 +701,59 @@ func generateTestPrivateKeyPEM(t *testing.T) []byte {
 	}
 	return pem.EncodeToMemory(pemBlock)
 }
+
+// TestE2E_KeyboardInteractiveGuardDoesNotReadStdin 锁定 MCP 偶发断连回归:
+// 只提供 keyboard-interactive 认证的服务器 + 无 password/key 的节点,
+// 客户端必须走 keyboard-interactive callback。
+// allowStdin=false 守卫应直接返回 error → dial 快速失败, 不读 os.Stdin
+// (MCP 模式下 os.Stdin 是 JSON-RPC 通道, 读取会吞协议字节 → 客户端 desync 断开)。
+// 守卫若回退 (重新读 stdin): term.ReadPassword 会 hang → 触发本测试的 6s 超时 fatal。
+func TestE2E_KeyboardInteractiveGuardDoesNotReadStdin(t *testing.T) {
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	pemBlock := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)}
+	signer, err := gossh.ParsePrivateKey(pem.EncodeToMemory(pemBlock))
+	require.NoError(t, err)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	host := "127.0.0.1"
+	port, err := strconv.Atoi(strings.Split(listener.Addr().String(), ":")[1])
+	require.NoError(t, err)
+
+	srv := &gliderssh.Server{
+		HostSigners: []gliderssh.Signer{signer},
+		// 只提供 keyboard-interactive (不设 PasswordHandler → password 认证不提供)
+		KeyboardInteractiveHandler: func(ctx gliderssh.Context, challenger gossh.KeyboardInteractiveChallenge) bool {
+			_, _ = challenger(ctx.User(), "", []string{"pwd: "}, []bool{false})
+			return true
+		},
+	}
+	go func() { _ = srv.Serve(listener) }()
+	defer srv.Close()
+	time.Sleep(150 * time.Millisecond)
+
+	// 跳过 host key 副作用 (本测试只验证 keyboard-interactive 守卫)
+	t.Setenv("MYSSHW_SKIP_HOST_KEY_CHECK", "true")
+
+	node := &config.SSHNode{Name: "ki-node", Host: host, Port: port, User: "u"} // 无密码无 key
+	exec, err := NewExecutor(node, ExecOptions{UsePTY: false})
+	require.NoError(t, err)
+	defer exec.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = exec.RunCommand(ctx, "echo hi")
+	}()
+
+	select {
+	case <-done:
+		// 守卫生效: dial 快速失败, 没读 os.Stdin, 没 hang
+	case <-time.After(6 * time.Second):
+		t.Fatal("keyboard-interactive 守卫未生效: RunCommand hang (可能在读 os.Stdin → 会吞 MCP JSON-RPC 字节)")
+	}
+}

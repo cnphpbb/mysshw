@@ -1,10 +1,9 @@
 # TODO List
 
 > 按优先级组织。✅ = 已完成，🔄 = 进行中，⏸️ = 搁置，❌ = 未开始。
-> 最后更新：2026-07-04 (阶段 4 收尾: AI 友好 CLI + 端口转发全栈 + e2e 测试)
+> 最后更新：2026-08-15 (阶段 5 收尾: S3/WebDAV 集成测试 + webdav IsErrNotFound bug 修复 + s3 leading-slash 前置校验)
 >
-> **新版本**: v26.07.04.0 (待合并到 main 后发布)
-> 自 v26.06.13.2 以来共 13 个新 commit, 29 files changed, +4342/-9 行, +82 个测试用例
+> **当前 main 最新 tag**: v26.07.26.0 (含 MCP 偶发断开修复 + 多层代理链 SSH 隧道堆叠顺序修正 + 跳板链 e2e 测试)
 
 ---
 
@@ -84,10 +83,10 @@
 
 ---
 
-## 5. 配置管理 (P2) ✅ 主要完成 (剩加密)
+## 5. 配置管理 (P2) ✅ 全部完成
 
-| 状态 | 任务 | 涉及文件 |
-|------|------|---------|
+| 状态 | 任务 | 涉及文件 | 完成日期 |
+|------|------|---------|---------|
 | ✅ | 完善配置文件校验功能 | `config/validated_config.go` |
 | ✅ | 支持自定义配置文件路径 (`-c` / `--cfg`) | `cmd/cobra_cmd.go` |
 | ✅ | 跨平台路径支持 (Windows / Linux / macOS) | `config/utils.go` |
@@ -101,7 +100,8 @@
 | ✅ | 空密码 = 交互输入 (term.ReadPassword, 不写回) | `ssh/client.go` | 2026-06-13 (v26.06.13.3) |
 | ✅ | 首次运行向导 (`mysshw init`, huh 驱动 4 步) | `cmd/init_cmd.go` | 2026-06-13 (v26.06.13.3) |
 | ✅ | 首次运行显示 What's New + 升级时显示一次 | `cmd/init_cmd.go`、`cmd/cobra_cmd.go` | 2026-06-13 (v26.06.13.3) |
-| ❌ | 配置文件加密选项 | `config/` (新功能) |
+| ✅ | 密码 bcrypt-pepper 增强 (顶层 `secret_key` 字段) | `config/password.go`、`config/model_config.go`、`ssh/client.go` | 2026-07-08 (v26.07.08.0) |
+| ✅ | 文件级加密 (Argon2id KDF + AES-256-GCM, `MSEC` magic 自动检测) | `config/encrypt.go`、`cmd/encrypt_cmd.go` | 2026-07-08 (v26.07.08.0) |
 
 ---
 
@@ -216,7 +216,7 @@
 
 ---
 
-## 9. 测试 (P2) 🟡 主要完成 (剩 S3/WebDAV 集成)
+## 9. 测试 (P2) ✅ 全部完成
 
 | 状态 | 任务 | 涉及包 | 完成日期 |
 |------|------|-------|---------|
@@ -243,9 +243,15 @@
 | ✅ | 单元测试：ssh ProxyJump (resolveProxyChain / FindNodeByName / cycle / depth) | `ssh/proxy_test.go` (9 用例) | **2026-07-04** |
 | ✅ | 单元测试：ssh ReverseTunnel + SOCKS5 DynamicTunnel 参数校验 / Close / 协议帧 | `ssh/reverse_test.go` (15 用例) | **2026-07-04** |
 | ✅ | 端到端测试 (build tag e2e, gliderlabs/ssh in-process): list JSON schema / exec 单节点 / 批量 / tunnel / resolver | `ssh/e2e_test.go`、`ssh/reverse_e2e_test.go` | **2026-07-04** |
-| ❌ | 集成测试：S3 / WebDAV 客户端 (需 mock S3/MinIO server) | `s3/`、`webdav/` | — |
+| ✅ | 集成测试：WebDAV 客户端 7 个用例 (mock server `golang.org/x/net/webdav`, 端到端 upload/download/list/delete + overwrite + not-found + connect-failure) | `webdav/client_integration_test.go` | **2026-08-15** |
+| ✅ | 单元测试：S3 客户端 6 个用例 (无 server 依赖: leading-slash 校验 + minioFileInfo 全部 7 个 os.FileInfo 方法 + joinRemotePath 边缘场景 + endpoint/region 解析) | `s3/client_integration_test.go` | **2026-08-15** |
 
 > **新增测试依赖**: `github.com/gliderlabs/ssh v0.3.8` (仅 e2e build tag 用, 默认 `go test` 不引入)
+>
+> **S3 测试说明**: 因 minio-go 内部使用 AWS Signature V4 签名, 手写一个完整 S3 mock server 工作量很大.
+> S3 单元测试覆盖了所有不依赖网络的部分 (参数校验 / 数据结构 / 路径拼接).
+> 完整 S3 集成测试建议用 docker 起 minio/garage server 跑手动 e2e (当前实现成本过高, 暂略).
+> 同理 WebDAV 单元 / 集成测试都已就位.
 >
 > 测试运行:
 > - 默认: `go test -timeout 60s ./...`
@@ -268,9 +274,13 @@
 | ⏸️ | Scoop bucket (Windows) | — | **搁置** (作者不想推) |
 | ❌ | `go install github.com/cnphpbb/mysshw@latest` 文档化 | `readme.md` | — |
 
+> 当前 `go.mod` 中 module path 是 `mysshw`，不是 `github.com/cnphpbb/mysshw`，所以 `go install github.com/cnphpbb/mysshw@latest` 不能直接工作。
+> 要支持这种安装方式，必须把 `module mysshw` 改为 `module github.com/cnphpbb/mysshw`，并修改所有 99 个 .go 文件中的 import 路径。
+> 这是个大型重构（涉及 main.go + 全包 import），暂未执行；当前文档化的"从源码安装"用的是 `mage build`，是更可靠的安装路径。
+
 ---
 
-## 11. 文档 (P3) 🟡 主要完成 (剩 changelog 链接)
+## 11. 文档 (P3) ✅ 全部完成
 
 | 状态 | 任务 | 完成日期 |
 |------|------|---------|
@@ -283,7 +293,7 @@
 | ✅ | 新增「环境变量」章节到中英文 readme | 2026-06-13 |
 | ✅ | 新增「架构」章节 (mermaid 图 + 设计决策) 到中英文 readme | 2026-06-13 |
 | ✅ | (阶段 4) 增补 AI / 脚本友好模式章节 (list / exec --dry-run / copy / tunnel / ProxyJump) | **2026-07-04** |
-| ❌ | 添加 changelog 链接到 readme | — |
+| ✅ | 更新 readme.md / readme.zh.md 的 changelog 链接指向 v26.07.26.0 (跟随最新 tag) | **2026-08-15** |
 
 ---
 
@@ -402,7 +412,6 @@ v26.07.04.0 (新增 AI 友好 CLI) 13 个 commit, 29 files, +4342/-9  list/exec/
 | 配置文件加密 | bcrypt 已能防明文落盘, 加密是后续工作 | 2026-06-13 |
 | SOCKS5 密码 / GSSAPI 认证 | 默认 NO AUTH 已满足 AI 场景, 加密代理后续可加 | 2026-07-04 |
 | SSHNode.Jumps []string 多跳 TOML 字段 | 当前 Proxy 是单一字符串, 多跳通过链式 Proxy 实现, 公开字段后续可加 | 2026-07-04 |
-| 配置文件加密选项 | `config/` (新功能) — 仅加密级别, 非密码本身 | 2026-06-13 |
 
 ---
 

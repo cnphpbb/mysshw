@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"time"
 
 	"mysshw/config"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 // ============================================================
@@ -95,6 +97,9 @@ func runMCP(cmd *cobra.Command, args []string) error {
 		"mysshw",
 		Version,
 		server.WithToolCapabilities(false),
+		// handler panic 不杀进程: recover → 返回 error 给客户端, 保持 stdio 连接存活
+		// 否则任何 resolver/SSH 边界的 nil-deref 会导致 EOF 断开 (偶发现象之一)
+		server.WithRecovery(),
 		server.WithInstructions(`
 mysshw MCP server exposes SSH operations as tools. Use ssh_list_nodes first to
 discover available nodes, then ssh_exec to run commands. All tools return
@@ -228,10 +233,9 @@ explicit list rather than relying on defaults.`),
 func sshExecHandler(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	cmdLine := []string{"exec", "-o", "json"}
 
-	// 节点选择
-	for _, n := range req.GetStringSlice("node", nil) {
-		cmdLine = append(cmdLine, "--node", n)
-	}
+	// 节点选择 — 走 appendNodeArgFromRequest 兜底 mcp-go 0.32.0 GetStringSlice 的裸 string bug
+	appendNodeArgFromRequest(req, &cmdLine)
+
 	if v := req.GetString("alias", ""); v != "" {
 		cmdLine = append(cmdLine, "--alias", v)
 	}
@@ -354,10 +358,9 @@ func sshCopyHandler(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallTool
 
 	cmdLine := []string{"copy", "-o", "json"}
 
-	// 节点选择 (跟 exec 一致)
-	for _, n := range req.GetStringSlice("node", nil) {
-		cmdLine = append(cmdLine, "--node", n)
-	}
+	// 节点选择 (跟 exec 一致; 同样绕开 mcp-go 0.32.0 GetStringSlice 的裸 string bug)
+	appendNodeArgFromRequest(req, &cmdLine)
+
 	if v := req.GetString("alias", ""); v != "" {
 		cmdLine = append(cmdLine, "--alias", v)
 	}
@@ -664,6 +667,45 @@ func sshCompletionsHandler(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 	return mcp.NewToolResultText(out), nil
 }
 
+// appendNodeArgFromRequest 把 MCP 参数 "node" 展开成 --node <v> 追加到 cmdLine.
+//
+// 必要性: mcp-go 0.32.0 的 GetStringSlice 对裸 string 值 (e.g. `node: "Manages-Node"`)
+// 返回 nil — 只接受 []string / []any. AI 客户端 (hermes 等) 经常发裸 string 单节点,
+// GetStringSlice 吞掉 → --node 不进 cmdLine → resolver fall-through 到 "全部节点"
+// mass fan-out → 多节点 SSH 失败 → batch 完成失败.
+//
+// 修复: 直接读 req.GetArguments() (类型断言 map[string]any), switch 处理三种类型:
+//   - string  (裸 string, AI 客户端发单节点常见)
+//   - []any   (JSON 数组, mcp-go 0.32.0 已支持)
+//   - []string (测试场景直接传 Go []string, mcp-go 0.32.0 也支持)
+//
+// nil / 其它类型不动 (前者表示未提供).
+func appendNodeArgFromRequest(req mcp.CallToolRequest, cmdLine *[]string) {
+	args := req.GetArguments()
+	v, ok := args["node"]
+	if !ok {
+		return
+	}
+	switch x := v.(type) {
+	case string:
+		if x != "" {
+			*cmdLine = append(*cmdLine, "--node", x)
+		}
+	case []any:
+		for _, item := range x {
+			if s, ok := item.(string); ok && s != "" {
+				*cmdLine = append(*cmdLine, "--node", s)
+			}
+		}
+	case []string:
+		for _, s := range x {
+			if s != "" {
+				*cmdLine = append(*cmdLine, "--node", s)
+			}
+		}
+	}
+}
+
 // ============================================================
 // 内部 helper: 执行子命令并捕获输出
 // ============================================================
@@ -690,9 +732,24 @@ var mcpSubcommandMu sync.Mutex
 //
 // ctx 来自 MCP 请求 (per-request): 透传给 rootCmd.SetContext 让内层 SSH/cobra 收到
 // 客户端取消/超时信号。否则 AI 客户端 cancel 后内层 SSH 仍跑到自然结束, 占用资源。
-func runSubcommandCaptured(ctx context.Context, cmd *cobra.Command, args []string) (string, error) {
+//
+// 何时 reset:
+//   - 必须 reset 再 Execute, 不然 cobra 的 flag Set() 把新值 append 到旧 slice 上
+//     (e.g. execNodesFlag StringSlice 累积, execDryRun bool 残留), 第二次调用跑出来
+//     还是第一次的参数, exec 完全失效。
+//   - 历史上出过 bug: 用户先调 dry-run, 之后所有 exec 都成 dry-run, AI 以为自己执行了
+//     实则没有。本函数统一 reset 解决, 不依赖每个 MCP handler 自觉。
+//
+// 何时 recover:
+//   - 子命令内部任何 panic (SSH resolver / config / viper 边缘 case) 都不应杀进程。
+//   - WithRecovery() 只 wrap handler, 不 cover runSubcommandCaptured 自身 + cobra 解析路径。
+//   - 兜底: 内层 panic → 转 ExitError(70) 包 error 返回, MCP 连接存活。
+func runSubcommandCaptured(ctx context.Context, _ *cobra.Command, args []string) (out string, retErr error) {
 	mcpSubcommandMu.Lock()
 	defer mcpSubcommandMu.Unlock()
+
+	// reset 全局 flag 变量: 防止 MCP / CLI 多次调用之间状态泄漏
+	resetCmdGlobals()
 
 	var buf bytes.Buffer
 	rootCmd.SetArgs(args)
@@ -705,8 +762,18 @@ func runSubcommandCaptured(ctx context.Context, cmd *cobra.Command, args []strin
 		rootCmd.SetErr(nil)
 	}()
 
+	// 兜底 panic: 任何内层 panic (resolver / SSH client / viper 边缘 nil-deref)
+	// 都不应杀掉 MCP 进程. WithRecovery() 只 wrap tool handler, 不覆盖此层.
+	// 命中即转 ExitError(70) "internal error", AI 客户端拿错误而不是 EOF.
+	defer func() {
+		if r := recover(); r != nil {
+			out = buf.String()
+			retErr = WrapExit(ExitSoftware, fmt.Errorf("panic in subcommand: %v", r))
+		}
+	}()
+
 	err := rootCmd.Execute()
-	out := buf.String()
+	out = buf.String()
 
 	if err != nil {
 		if ee, ok := err.(ExitError); ok {
@@ -721,4 +788,73 @@ func runSubcommandCaptured(ctx context.Context, cmd *cobra.Command, args []strin
 		return "", err
 	}
 	return out, nil
+}
+
+// resetCmdGlobals 重置所有 cobra flag 全局变量到默认值.
+//
+// 必要性: cobra 用 StringSliceVar/BoolVar 等绑定到 Go 全局变量作为 flag 的值.
+// flag 解析器 (pflag) 的 Set() 方法对 StringSlice 是 append, 对 Bool 只在见到 flag 时
+// 才改值. 因此 cobra 不会"自动清零" — 上一轮的 flag 残留会污染下一轮.
+//
+// 典型 bug: MCP 客户端连续调两次 ssh_exec:
+//   - 第 1 次: --node A --dry-run  → execNodesFlag=[A], execDryRun=true
+//   - 第 2 次: --node B             → cobra append → execNodesFlag=[A,B], execDryRun=true 残留
+//   - 结果: 第 2 次实际跑在 A+B 节点上, dry-run 模式, 看起来"exec 跑不通"
+//
+// reset 时机: runSubcommandCaptured 入口, Execute() 之前. 这样 cobra 解析新 args 时
+// 从干净的默认值开始, 没有 append-on-stale 问题.
+//
+// 影响范围: reset 只在 MCP 路径 (runSubcommandCaptured) 调用, 不影响直接 CLI 调用.
+// CLI 单次进程内多次调子命令本来也是 stateless (进程结束状态丢), reset 也不破坏.
+// 命令 reset 时机是 rootCmd.Execute() 之前, 用 mutex 串行保证并发安全 (mcpSubcommandMu).
+func resetCmdGlobals() {
+	// exec 子命令
+	execNodesFlag = nil
+	execAlias = ""
+	execHost = ""
+	execUser = ""
+	execPort = 0
+	execTimeout = 30 * time.Second
+	execParallel = 10
+	execNoPTY = false
+	execStopOnError = false
+	execDryRun = false
+	execRotateKnownHosts = false
+	execStream = false
+
+	// list 子命令
+	listGroup = ""
+	listSearch = ""
+
+	// copy 子命令
+	copyNodesFlag = nil
+	copyAlias = ""
+	copyHost = ""
+	copyUser = ""
+	copyPort = 0
+	copyDirection = ""
+	copyLocal = ""
+	copyRemote = ""
+	copyMode = "0644"
+	copyTimeout = 5 * time.Minute
+	copyParallel = 5
+	copyRotateKnownHosts = false
+
+	// completions 子命令
+	completionsSubCmd = ""
+	completionsFlat = false
+
+	// hostkey update 子命令
+	hostkeyUpdateNode = ""
+	hostkeyUpdateTimeout = 30 * time.Second
+	hostkeyUpdateConfirm = false
+	hostkeyUpdateExpectFP = ""
+	hostkeyAuditCheckConfig = false
+
+	// config 全局: 防止上一次 --cfg 路径泄漏到下一次 (用户没显式传 --cfg 时)
+	// 同 resetRootCmd 测试辅助函数的策略: 清回默认 + 清空已加载的 config
+	config.CFG_PATH = "~/.mysshw.toml"
+	config.CFG = nil
+	// viper 全局: 防止上次缓存的 config path 影响下次 getConfigPath 解析
+	viper.Reset()
 }
