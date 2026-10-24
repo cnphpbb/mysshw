@@ -15,6 +15,11 @@ on:
   push:
     tags:
       - 'v*'
+    branches:
+      # 分支触发: release/<tag> (例 release/v26.10.25.0)
+      # 用途: 为已存在但发布时 workflow 尚未加入仓库的 tag 补发 release
+      # (tag 推送触发要求 workflow 文件存在于该 tag 指向的 commit 中)
+      - 'release/**'
   workflow_dispatch:
     inputs:
       tag:
@@ -30,14 +35,17 @@ jobs:
     name: Build and publish
     runs-on: ubuntu-latest
     env:
-      # push 触发时 = tag 名; dispatch 触发时 = 手动输入的 tag
-      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      # TAG 解析:
+      #   workflow_dispatch → 手动输入的 tag
+      #   push tag         → tag 名
+      #   push branch      → release/<tag> 去掉前缀
+      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || (github.ref_type == 'tag' && github.ref_name || replace(github.ref_name, 'release/', '')) }}
 
     steps:
       - name: Checkout tagged source (用于编译)
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          ref: ${{ env.TAG }}
           path: src
           fetch-depth: 0
 
