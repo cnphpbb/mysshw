@@ -1070,7 +1070,7 @@ func TestMCP_WithRecovery_PanicDoesNotBreakStdio(t *testing.T) {
 // 历史 bug 表现:
 //   - call 1: --node A --dry-run       → execNodesFlag=[A], execDryRun=true
 //   - call 2: --node B                  → cobra append → execNodesFlag=[A,B], execDryRun=true 残留
-//                                            → 第 2 次返回 dry-run 输出, 不是真执行
+//     → 第 2 次返回 dry-run 输出, 不是真执行
 //
 // 修复: runSubcommandCaptured 入口 resetCmdGlobals(), Execute() 之前重置所有 flag 全局变量.
 func TestMCPExecHandler_StateNotLeakedAcrossCalls(t *testing.T) {
@@ -1317,8 +1317,8 @@ host = "10.0.0.2"
 	// JSON 写到 stdout, 找 "nodes": [ 后面的内容
 	// 简化: 解析完整 JSON
 	var plan struct {
-		DryRun  bool `json:"dry_run"`
-		Nodes   []struct {
+		DryRun bool `json:"dry_run"`
+		Nodes  []struct {
 			Name string `json:"name"`
 		} `json:"nodes"`
 	}
@@ -1382,10 +1382,10 @@ host = "10.0.0.2"
 // MCP stdio 连接 EOF, AI 客户端失联. 修复: defer recover() 兜底, panic 转 string 写入 result.
 //
 // 验证策略:
-//   1. 空 nodes 不会 crash (existing code 已处理, sanity check)
-//   2. 网络不可达节点: dial 失败/timeout, 验证 batch 不死锁、不 panic, 每个 node 都返回 result
-//   3. 触发 panic 的 wrapper: 用同样 defer recover() 模式封装一个 panic 函数, 验证
-//      recover 把 panic 转成 error 而不是退出进程 (Go 语言内置机制, 这里验证用法正确)
+//  1. 空 nodes 不会 crash (existing code 已处理, sanity check)
+//  2. 网络不可达节点: dial 失败/timeout, 验证 batch 不死锁、不 panic, 每个 node 都返回 result
+//  3. 触发 panic 的 wrapper: 用同样 defer recover() 模式封装一个 panic 函数, 验证
+//     recover 把 panic 转成 error 而不是退出进程 (Go 语言内置机制, 这里验证用法正确)
 func TestRunExecBatch_RecoversPanic(t *testing.T) {
 	// 1. 空 nodes: 验证不让循环跑起来, 立即返回空
 	be := &ssh.BatchExecutor{

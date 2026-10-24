@@ -112,11 +112,18 @@
 | ✅ | SCP 同步 | 2025-08 |
 | ✅ | WebDAV 同步 (RustFS / MinIO / 云平台) | 2025-09-24 |
 | ✅ | S3 同步 (RustFS / MinIO / 云平台 S3) | 2025-09-24 |
+| ✅ | **同步端到端加密**：上传默认加密 (远程只存密文, 防远程被入侵后备份被拖走) + 下载本地解密落盘 | 2026-07-05 |
 
 > **设计决定**：以下协议作者明确放弃（安全顾虑）：
 > - GitHub / Gitee Gist 同步
 > - API-HTTP(s) 同步接口
 > - RPC 同步功能
+>
+> **同步加密说明**：`mysshw sync -u` 默认用 Argon2id + AES-256-GCM 加密后再上传，
+> 远程（SCP / WebDAV / S3）永远只存密文；`mysshw sync -z` 下载后自动解密落盘（0600）。
+> 口令来源：环境变量（默认 `MYSSHW_SYNC_PASSPHRASE`）> `[sync].passphrase`（支持 `${VAR}`）> 交互输入。
+> 开关：`--encrypt=false` 关闭上传加密、`--keep-encrypted` 下载后本地也保留密文。
+> 相关文件：`cmd/sync_crypto.go`、`cmd/sync_backend.go`、`config/model_config.go`、`webdav/client.go`、`s3/client.go`
 
 ---
 

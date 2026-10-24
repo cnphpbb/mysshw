@@ -56,6 +56,16 @@ type = "scp" # type: ( scp || webdav || s3 ) default: scp
 remote_uri = "127.0.0.1:22"
 remote_path = "/data/backup/mysshw/mysshw.toml" # remote file path
 
+# encrypt: 上传到远程前是否加密 (默认 true)
+#   true  → 上传前用 Argon2id + AES-256-GCM 加密, 远程只存密文
+#           (远程服务器被入侵 / 备份文件被拖走, 也读不到明文配置)
+#   false → 明文上传 (仅用于兼容需要旧版 mysshw 读取远程备份的场景)
+encrypt = true
+
+# passphrase: 同步加解密口令, 推荐用 ${ENV} 引用, 不要写明文
+#   优先级: MYSSHW_SYNC_PASSPHRASE 环境变量 > 本字段 > 交互输入
+passphrase = "${MYSSHW_PWD_sync_passphrase}"
+
 [sync.scp]
 username = "root"
 password = "${MYSSHW_PWD_sync}"  # 支持 ${VAR} 或 ${VAR:-default} 引用环境变量
@@ -202,9 +212,22 @@ type (
 	}
 
 	SyncInfo struct {
-		Type         string       `toml:"type" mapstructure:"type"`
-		RemoteUri    string       `toml:"remote_uri" mapstructure:"remote_uri"`
-		RemotePath   string       `toml:"remote_path" mapstructure:"remote_path"`
+		Type       string `toml:"type" mapstructure:"type"`
+		RemoteUri  string `toml:"remote_uri" mapstructure:"remote_uri"`
+		RemotePath string `toml:"remote_path" mapstructure:"remote_path"`
+		// Encrypt 上传到远程前是否加密 (默认 true)
+		//   nil   → 默认 true (安全默认: 远程服务器永远不落明文配置,
+		//           即使远程被入侵, 备份文件被拖走也无法直接读取)
+		//   false → 明文上传 (仅用于兼容需要旧版 mysshw 读取远程备份的场景)
+		// CLI --encrypt / --encrypt=false 优先级高于本字段
+		Encrypt *bool `toml:"encrypt,omitempty" mapstructure:"encrypt"`
+		// Passphrase 同步加解密口令, 推荐用 ${ENV} 引用环境变量, 避免明文落盘
+		// 例: passphrase = "${MYSSHW_PWD_sync_passphrase}"
+		// 口令解析优先级:
+		//   1. 环境变量 (--passphrase-env 指定, 默认 MYSSHW_SYNC_PASSPHRASE)
+		//   2. 本字段 (支持 ${ENV} / ${ENV:-default} 引用)
+		//   3. 交互输入 (加密时需输入两次确认)
+		Passphrase   string       `toml:"passphrase,omitempty" mapstructure:"passphrase"`
 		SCPConfig    SCPConfig    `toml:"scp" mapstructure:"scp"`
 		S3Config     S3Config     `toml:"s3" mapstructure:"s3"`
 		WebDAVConfig WebDAVConfig `toml:"webdav" mapstructure:"webdav"`

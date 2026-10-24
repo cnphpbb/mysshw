@@ -17,10 +17,13 @@ import (
 // 不再需要为每个协议手写 wrapper (避免 uploadWebDAVConfig / uploadS3Config
 // 这种 N×2 复制粘贴)。
 //
+// 采用字节级接口而非文件级: 上传前需要加密 (远程只存密文),
+// 下载后需要解密再落地, 字节级最直接。
+//
 // SCP 协议有自己的传输层 (走 SSH 通道), 不走此接口。
 type SyncBackend interface {
-	UploadFile(ctx context.Context, localPath, remoteName string) error
-	DownloadFile(ctx context.Context, remoteName, localPath string) error
+	UploadBytes(ctx context.Context, data []byte, remoteName string) error
+	DownloadBytes(ctx context.Context, remoteName string) ([]byte, error)
 }
 
 // newSyncBackend 根据 sync 配置创建对应的 backend 实例
@@ -52,12 +55,24 @@ func resolveRemoteFilename(localCfgPath, remotePath string) string {
 }
 
 // uploadConfigSync 通用上传流程 (WebDAV / S3 共用)
-func uploadConfigSync(ctx context.Context, backend SyncBackend, localCfgPath, remotePath string) error {
+//
+// opts.Encrypt=true 时先加密再上传, 远程只存密文
+func uploadConfigSync(ctx context.Context, backend SyncBackend, localCfgPath, remotePath string, opts syncCryptoOptions) error {
 	fmt.Println("Starting to upload local config to remote server...")
 
 	filename := resolveRemoteFilename(localCfgPath, remotePath)
 
-	if err := backend.UploadFile(ctx, localCfgPath, filename); err != nil {
+	data, err := config.LoadConfigBytes(localCfgPath)
+	if err != nil {
+		return fmt.Errorf("failed to load local config: %w", err)
+	}
+
+	data, err = encryptUploadPayload(data, opts)
+	if err != nil {
+		return err
+	}
+
+	if err := backend.UploadBytes(ctx, data, filename); err != nil {
 		return fmt.Errorf("upload failed: %w", err)
 	}
 
@@ -66,7 +81,9 @@ func uploadConfigSync(ctx context.Context, backend SyncBackend, localCfgPath, re
 }
 
 // downloadConfigSync 通用下载流程 (WebDAV / S3 共用)
-func downloadConfigSync(ctx context.Context, backend SyncBackend, localCfgPath, remotePath string) error {
+//
+// 远端是密文时解密后落盘明文 (--keep-encrypted 则保留密文)
+func downloadConfigSync(ctx context.Context, backend SyncBackend, localCfgPath, remotePath string, opts syncCryptoOptions) error {
 	fmt.Println("Starting to download config from remote server...")
 
 	filename := resolveRemoteFilename(localCfgPath, remotePath)
@@ -74,10 +91,22 @@ func downloadConfigSync(ctx context.Context, backend SyncBackend, localCfgPath, 
 	if err != nil {
 		return fmt.Errorf("resolve local config path: %w", err)
 	}
+	opts = preserveLocalEncryptionState(localPath, opts)
 
-	if err := backend.DownloadFile(ctx, filename, localPath); err != nil {
+	data, err := backend.DownloadBytes(ctx, filename)
+	if err != nil {
 		return fmt.Errorf("download failed: %w", err)
 	}
+
+	data, kind, err := decryptDownloaded(data, opts)
+	if err != nil {
+		return err
+	}
+
+	if err := saveDownloadedConfig(localPath, data); err != nil {
+		return err
+	}
+	reportPayloadKind(kind)
 
 	fmt.Println("Successfully downloaded config from local.")
 	return nil

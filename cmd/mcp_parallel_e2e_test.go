@@ -24,9 +24,9 @@ import (
 
 	"mysshw/config"
 
+	gliderssh "github.com/gliderlabs/ssh"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/require"
-	gliderssh "github.com/gliderlabs/ssh"
 	gossh "golang.org/x/crypto/ssh"
 )
 

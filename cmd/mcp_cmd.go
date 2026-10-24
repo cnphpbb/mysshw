@@ -678,6 +678,7 @@ func sshCompletionsHandler(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 //   - string  (裸 string, AI 客户端发单节点常见)
 //   - []any   (JSON 数组, mcp-go 0.32.0 已支持)
 //   - []string (测试场景直接传 Go []string, mcp-go 0.32.0 也支持)
+//
 // nil / 其它类型不动 (前者表示未提供).
 func appendNodeArgFromRequest(req mcp.CallToolRequest, cmdLine *[]string) {
 	args := req.GetArguments()

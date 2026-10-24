@@ -174,6 +174,10 @@ func init() {
 	// 为 sync 命令添加标志
 	syncCmd.Flags().BoolP("upload", "u", false, "Upload local config to remote server")
 	syncCmd.Flags().BoolP("down", "z", false, "Download remote config to local")
+	// 加密相关 (默认上传加密: 远程只存密文, 防远程被入侵后备份被拖走)
+	syncCmd.Flags().Bool("encrypt", true, "Encrypt config before upload (remote stores ciphertext only). Use --encrypt=false to upload plaintext")
+	syncCmd.Flags().Bool("keep-encrypted", false, "Keep downloaded config encrypted on disk (skip local decryption)")
+	syncCmd.Flags().String("passphrase-env", DefaultSyncPassphraseEnv, "Environment variable holding the sync encryption passphrase")
 	//rootCmd.Context()
 	rootCmd.SetContext(context.Background())
 	rootCmd.SetContext(context.WithValue(rootCmd.Context(), cfgKey, config.CFG_PATH))

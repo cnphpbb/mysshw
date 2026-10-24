@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -70,11 +71,70 @@ func unmarshalAndValidateConfig(c *Configs) error {
 		return fmt.Errorf("mysshw:: Configuration validation failed: %v", err)
 	}
 
+	// 关键配置项体检 (软检查, 不阻止启动; 告警写 stderr 不污染 stdout)
+	ReportConfigIssues(c, CFG_PATH)
+
 	// 安全加固: 加载成功后强制配置文件权限为 0600
 	// 配置文件可能含密码/keypath 等敏感信息
 	secureConfigFile(CFG_PATH)
 
 	return nil
+}
+
+// configCheckOutput 配置检查报告的输出目标 (默认 stderr)
+// 设为 io.Discard 可关闭报告 (例如 `mysshw config check` 自己输出结果)
+var configCheckOutput io.Writer = os.Stderr
+
+// SetConfigCheckOutput 设置配置检查报告的输出目标 (传 nil 恢复默认 stderr)
+func SetConfigCheckOutput(w io.Writer) {
+	if w == nil {
+		configCheckOutput = os.Stderr
+		return
+	}
+	configCheckOutput = w
+}
+
+// ReportConfigIssues 检查本地配置文件的关键配置项并把问题输出到 stderr
+//
+// 启动时 (以及任何加载配置的命令) 自动调用:
+// 让"关键配置项没配 / 配得不安全"在真正用到之前就暴露出来。
+// 输出走 stderr, 保证 `mysshw list -o json` 之类的机器可读输出不被污染。
+//
+// 默认只输出 warn / error 级别 (info 级别如 "user 未配置, 用默认 root" 过于刷屏,
+// 需要完整视图时用 `mysshw config check`)。
+func ReportConfigIssues(cfg *Configs, cfgPath string) []ConfigIssue {
+	return ReportConfigIssuesAt(cfg, cfgPath, IssueWarn)
+}
+
+// ReportConfigIssuesAt 与 ReportConfigIssues 相同, 但可指定最低输出级别
+func ReportConfigIssuesAt(cfg *Configs, cfgPath string, minLevel IssueLevel) []ConfigIssue {
+	issues := CheckConfigItems(cfg)
+	if cfgPath != "" {
+		issues = append(issues, CheckConfigFilePerm(cfgPath)...)
+	}
+	shown := make([]ConfigIssue, 0, len(issues))
+	for _, it := range issues {
+		if levelRank(it.Level) >= levelRank(minLevel) {
+			shown = append(shown, it)
+		}
+	}
+	if len(shown) > 0 {
+		fmt.Fprint(configCheckOutput, FormatConfigIssues(shown))
+	}
+	return issues
+}
+
+// levelRank 给级别排序 (数值越大越严重)
+func levelRank(l IssueLevel) int {
+	switch l {
+	case IssueError:
+		return 3
+	case IssueWarn:
+		return 2
+	case IssueInfo:
+		return 1
+	}
+	return 0
 }
 
 // LoadViperConfig 加载配置文件
@@ -177,5 +237,7 @@ func decryptAndLoadConfig(cipherdata []byte) error {
 		return fmt.Errorf("mysshw:: configuration validation failed: %v", err)
 	}
 	CFG = c
+	// 关键配置项体检 (与普通配置加载路径保持一致)
+	ReportConfigIssues(c, CFG_PATH)
 	return nil
 }

@@ -18,7 +18,7 @@ import (
 
 // startWebDAVMock 启动一个内存 WebDAV server, 返回 base URL + cleanup 函数.
 // 使用 golang.org/x/net/webdav (标准库) 实现 server, gowebdav 实现 client.
-// 这是真实端到端集成测试, 覆盖 NewClient / UploadFile / DownloadFile / ListFiles / DeleteFile 全流程.
+// 这是真实端到端集成测试, 覆盖 NewClient / UploadBytes / DownloadBytes / ListFiles / DeleteFile 全流程.
 func startWebDAVMock(t *testing.T) (baseURL string, cleanup func()) {
 	t.Helper()
 	fs := webdav.NewMemFS()
@@ -53,6 +53,14 @@ func writeTestFile(t *testing.T, name, content string) string {
 	p := filepath.Join(dir, name)
 	require.NoError(t, os.WriteFile(p, []byte(content), 0644))
 	return p
+}
+
+// readTestFile 读取测试文件内容为字节.
+func readTestFile(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	return data
 }
 
 func TestNewClient_LeadingSlashRejected(t *testing.T) {
@@ -95,8 +103,8 @@ func TestWebDAV_RoundTrip_UploadDownloadListDelete(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, client)
 
-	// 2. UploadFile - 上传
-	err = client.UploadFile(ctx, localPath, remoteName)
+	// 2. UploadBytes - 上传
+	err = client.UploadBytes(ctx, readTestFile(t, localPath), remoteName)
 	require.NoError(t, err, "upload 应成功")
 
 	// 3. ListFiles - 列出
@@ -105,16 +113,14 @@ func TestWebDAV_RoundTrip_UploadDownloadListDelete(t *testing.T) {
 	require.Len(t, files, 1)
 	assert.Equal(t, "mysshw.toml", files[0].Name())
 
-	// 4. DownloadFile - 下载到另一临时位置
-	downloadDir := t.TempDir()
-	downloadPath := filepath.Join(downloadDir, "downloaded.toml")
-	err = client.DownloadFile(ctx, remoteName, downloadPath)
-	require.NoError(t, err)
-
-	// 验证下载内容
-	downloaded, err := os.ReadFile(downloadPath)
+	// 4. DownloadBytes - 下载到内存 (再落到另一临时位置校验)
+	downloaded, err := client.DownloadBytes(ctx, remoteName)
 	require.NoError(t, err)
 	assert.Equal(t, "[nodes]\nname=\"web1\"\n", string(downloaded))
+
+	downloadDir := t.TempDir()
+	downloadPath := filepath.Join(downloadDir, "downloaded.toml")
+	require.NoError(t, os.WriteFile(downloadPath, downloaded, 0644))
 
 	// 5. DeleteFile - 删除
 	err = client.DeleteFile(ctx, remoteName)
@@ -138,9 +144,7 @@ func TestWebDAV_DownloadMissingFile_ReturnsError(t *testing.T) {
 	require.NoError(t, err)
 
 	// 下载不存在的文件应返回错误
-	downloadDir := t.TempDir()
-	downloadPath := filepath.Join(downloadDir, "nope.toml")
-	err = client.DownloadFile(ctx, "nope.toml", downloadPath)
+	_, err = client.DownloadBytes(ctx, "nope.toml")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "远程文件不存在")
 }
@@ -175,20 +179,16 @@ func TestWebDAV_UploadOverwrite(t *testing.T) {
 
 	// 第一次上传
 	localPath1 := writeTestFile(t, "v1.toml", "v1")
-	err = client.UploadFile(ctx, localPath1, "config.toml")
+	err = client.UploadBytes(ctx, readTestFile(t, localPath1), "config.toml")
 	require.NoError(t, err)
 
 	// 第二次上传覆盖
 	localPath2 := writeTestFile(t, "v2.toml", "v2")
-	err = client.UploadFile(ctx, localPath2, "config.toml")
+	err = client.UploadBytes(ctx, readTestFile(t, localPath2), "config.toml")
 	require.NoError(t, err)
 
 	// 验证下载的是 v2
-	downloadDir := t.TempDir()
-	downloadPath := filepath.Join(downloadDir, "config.toml")
-	err = client.DownloadFile(ctx, "config.toml", downloadPath)
-	require.NoError(t, err)
-	content, err := os.ReadFile(downloadPath)
+	content, err := client.DownloadBytes(ctx, "config.toml")
 	require.NoError(t, err)
 	assert.Equal(t, "v2", string(content))
 }
