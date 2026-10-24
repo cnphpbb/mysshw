@@ -1,9 +1,9 @@
 # TODO List
 
 > 按优先级组织。✅ = 已完成，🔄 = 进行中，⏸️ = 搁置，❌ = 未开始。
-> 最后更新：2026-10-24 (v26.10.24 发布: sync 端到端加密 + 配置关键项体检 + 双分支工作流)
+> 最后更新：2026-10-25 (v26.10.25.0 发布: sync 通道 SSH 认证修复 + 主机指纹算法与 OpenSSH 对齐)
 >
-> **当前 main 最新 tag**: v26.10.24 (sync 端到端加密 - 远程只存密文 + 配置关键项体检 - `mysshw config check`)
+> **当前 main 最新 tag**: v26.10.25.0 (fix: sync 通道支持 keypath/passphrase/SSH Agent 认证 + 主机指纹算法协商 ed25519 优先，与 OpenSSH 共用 known_hosts)
 
 ---
 

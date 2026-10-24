@@ -132,10 +132,14 @@ func buildTarget(OS, arch string, envs map[string]string, createTar bool) error 
 			// Windows 目标 → zip 格式
 			// host 可能是 Windows / Linux / macOS; 都尝试 zip + tar
 			// Windows 通常自带 zip; Linux 上需要 apt install zip
-			if err := sh.Run("zip", "-r", fmt.Sprintf("%s.zip", dir), "."); err != nil {
+			//
+			// 注意: zip 必须在 dist/<name>/ 目录内打包, 否则 "." 会把整个项目源码
+			// 目录 (662 个文件) 打进压缩包。tar 路径用 -C "dist" name 等价处理。
+			// sh 包无工作目录选项, 因此用 sh -c 显式 cd。
+			zipName := fmt.Sprintf("%s.zip", name)
+			script := fmt.Sprintf("cd %s && zip -r ../%s .", shQuote(dir), shQuote(zipName))
+			if err := sh.Run("sh", "-c", script); err != nil {
 				// 退到 tar (所有 Unix 系统可用)
-				_ = err
-				// 切到 dist dir 上 tar
 				sh.Run("tar", "-czf", fmt.Sprintf("%s.tar.gz", dir), "-C", "dist", name)
 			}
 		} else {
@@ -145,6 +149,11 @@ func buildTarget(OS, arch string, envs map[string]string, createTar bool) error 
 	}
 
 	return nil
+}
+
+// shQuote 给 shell 参数加单引号 (防路径含空格/特殊字符时出错)
+func shQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 func flags() string {

@@ -16,7 +16,10 @@
 /dist
 /build
 .idea
-go.sum
+# go.sum 必须入库 (依赖哈希锁文件):
+#   - 可复现构建 (CI / Docker / 他人 clone 都能拉到同一份依赖)
+#   - 供应链安全 (校验模块哈希, 防中间人替换)
+# 历史误加忽略规则, v26.10.25.0 修复
 
 #macosx
 .DS_Store
